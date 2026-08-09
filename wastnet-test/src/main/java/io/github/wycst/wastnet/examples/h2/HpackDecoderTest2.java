@@ -1,0 +1,60 @@
+package io.github.wycst.wastnet.examples.h2;
+
+import io.github.wycst.wast.common.utils.ByteUtils;
+import io.github.wycst.wastnet.http.h2.Http2HpackCodec;
+
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * @since 2024-2-28
+ * @author wangyc
+ */
+public class HpackDecoderTest2 {
+
+
+    public static void main(String[] args) {
+        byte[] b2 = new byte[]{-7, -7, -7};
+        System.out.println(new String(b2, StandardCharsets.ISO_8859_1));
+
+        // Stream Id: 1-> Hpack Header Bytes: 82 41 8A A0 E4 1D 13 9D 09 B8 F0 1E 07 87 84 40 85 AE C1 CD 48 FF 86 A8 EB 10 64 9C BF 58 86 A8 EB 10 64 9C BF 40 87 41 48 B1 27 5A D1 FF B8 FE 71 1C F3 50 55 2F 4F 61 E9 2F F3 F7 DE 0F E4 2C BB FC FD 29 FC DE 9E C3 D2 6B 69 FE 7E FB C1 FC 85 97 7F 9F A5 3F 9D 27 4B 10 FF 77 6C 1D 52 7F 3F 7D E0 FE 44 D7 F3 40 8B 41 48 B1 27 5A D1 AD 49 E3 35 05 02 3F 30 40 8D 41 48 B1 27 5A D1 AD 5D 03 4C A7 B2 9F 88 FE 79 1A A9 0F E1 1F CF 40 92 B6 B9 AC 1C 85 58 D5 20 A4 B6 C2 AD 61 7B 5A 54 25 1F 01 31 7A D5 D0 7F 66 A2 81 B0 DA E0 53 FA E4 6A A4 3F 84 29 A7 7A 81 02 E0 FB 53 91 AA 71 AF B5 3C B8 D7 F6 A4 35 D7 41 79 16 3C C6 4B 0D B2 EA EC B8 A7 F5 9B 1E FD 19 FE 94 A0 DD 4A A6 22 93 A9 FF B5 2F 4F 61 E9 2B 01 65 D5 C0 B8 17 02 9B 87 28 EC 33 0D B2 EA EC B9 53 E5 49 7C A5 89 D3 4D 1F 43 AE BA 0C 41 A4 C7 A9 8F 33 A6 9A 3F DF 9A 68 FA 1D 75 D0 62 0D 26 3D 4C 79 A6 8F BE D0 01 77 FE 8D 48 E6 2B 03 EE 69 7E 8D 48 E6 2B 1E 0B 1D 7F 46 A4 73 15 81 D7 54 DF 5F 2C 7C FD F6 80 0B BD F4 3A EB A0 C4 1A 4C 7A 98 41 A6 A8 B2 2C 5F 24 9C 75 4C 5F BE F0 46 CF DF 68 00 BB BF 40 8A 41 48 B4 A5 49 27 59 06 49 7F 83 A8 F5 17 40 8A 41 48 B4 A5 49 27 5A 93 C8 5F 86 A8 7D CD 30 D2 5F 40 8A 41 48 B4 A5 49 27 5A D4 16 CF 02 3F 31 40 8A 41 48 B4 A5 49 27 5A 42 A1 3F 86 90 E4 B6 92 D4 9F 50 92 9B D9 AB FA 52 42 CB 40 D2 5F A5 23 B3 E9 4F 68 4C 9F 51 8C F7 3A D7 B4 FD 7B 9F EF B4 00 5D FF 60 A4 C9 21 46 B0 5A 95 D6 DA 6E 58 1D 7D A1 BE 51 09 66 9D 69 D5 9A 23 8C AC 36 65 69 62 3A 07 80 02 46 CB C5 8F 40 86 AE C3 1E C3 27 D7 85 B6 00 7D 28 6F
+        // Stream Id: 3-> Hpack Header Bytes: 82 CE 87 04 89 62 51 F7 31 0F 52 E6 21 FF CD CC C9 C7 CB CA 53 B1 35 23 98 AC 0F B9 A5 FA 35 23 98 AC 78 2C 75 FD 1A 91 CC 56 07 5D 53 7D 1A 91 CC 56 11 DE 6F F7 E6 9A 3E 8D 48 E6 2B 1F 3F 5F 2C 7C FD F6 80 0B BD 7F 07 88 40 E9 2A C7 B0 D3 1A AF 7F 07 85 A8 EB 10 F6 23 7F 06 84 35 23 98 BF 73 91 9D 29 AD 17 18 62 83 90 74 4E 74 26 E3 C0 78 0C 7F C6 C5 C4 7F 04 85 B6 00 FD 28 6F
+        // Stream Id: 5-> Hpack Header Bytes: 82 D4 87 04 A3 61 7F 05 A2 85 BA D4 7F 15 30 3A EB 45 65 21 A5 31 18 21 E9 5C 93 D8 7A 4A BC 85 EE 93 9E 84 2F D1 07 AB D3 D2 C2 C1 7F 01 84 2D 35 A7 D7 CE C8 C7 C6 7F 00 85 B6 06 BE 94 37
+        // Stream Id: 7-> Hpack Header Bytes: 82 D6 87 84 D5 D4 D3 D2 D1 D0 CF CE CD CC CB CA C9 C8 C7 C6
+        // Stream Id: 9-> Hpack Header Bytes: 82 D6 87 04 A3 61 7F 05 A2 85 BA D4 7F 15 30 3A EB 45 65 21 A5 31 18 21 E9 5C 93 D8 7A 4A BC 85 EE 93 9E 84 2F D1 07 AB D5 D4 C4 C3 BF CF C9 C8 C7 BE
+        // Stream Id: 11-> Hpack Header Bytes: 82 D6 87 04 A3 61 7F 05 A2 85 BA D4 7F 15 30 3A EB 45 65 21 A5 31 18 21 E9 5C 93 D8 7A
+
+        String[] hpackBytesStrings = new String[]{
+                "82 41 8A A0 E4 1D 13 9D 09 B8 F0 1E 07 87 84 40 85 AE C1 CD 48 FF 86 A8 EB 10 64 9C BF 58 86 A8 EB 10 64 9C BF 40 87 41 48 B1 27 5A D1 FF B8 FE 71 1C F3 50 55 2F 4F 61 E9 2F F3 F7 DE 0F E4 2C BB FC FD 29 FC DE 9E C3 D2 6B 69 FE 7E FB C1 FC 85 97 7F 9F A5 3F 9D 27 4B 10 FF 77 6C 1D 52 7F 3F 7D E0 FE 44 D7 F3 40 8B 41 48 B1 27 5A D1 AD 49 E3 35 05 02 3F 30 40 8D 41 48 B1 27 5A D1 AD 5D 03 4C A7 B2 9F 88 FE 79 1A A9 0F E1 1F CF 40 92 B6 B9 AC 1C 85 58 D5 20 A4 B6 C2 AD 61 7B 5A 54 25 1F 01 31 7A D5 D0 7F 66 A2 81 B0 DA E0 53 FA E4 6A A4 3F 84 29 A7 7A 81 02 E0 FB 53 91 AA 71 AF B5 3C B8 D7 F6 A4 35 D7 41 79 16 3C C6 4B 0D B2 EA EC B8 A7 F5 9B 1E FD 19 FE 94 A0 DD 4A A6 22 93 A9 FF B5 2F 4F 61 E9 2B 01 65 D5 C0 B8 17 02 9B 87 28 EC 33 0D B2 EA EC B9 53 E5 49 7C A5 89 D3 4D 1F 43 AE BA 0C 41 A4 C7 A9 8F 33 A6 9A 3F DF 9A 68 FA 1D 75 D0 62 0D 26 3D 4C 79 A6 8F BE D0 01 77 FE 8D 48 E6 2B 03 EE 69 7E 8D 48 E6 2B 1E 0B 1D 7F 46 A4 73 15 81 D7 54 DF 5F 2C 7C FD F6 80 0B BD F4 3A EB A0 C4 1A 4C 7A 98 41 A6 A8 B2 2C 5F 24 9C 75 4C 5F BE F0 46 CF DF 68 00 BB BF 40 8A 41 48 B4 A5 49 27 59 06 49 7F 83 A8 F5 17 40 8A 41 48 B4 A5 49 27 5A 93 C8 5F 86 A8 7D CD 30 D2 5F 40 8A 41 48 B4 A5 49 27 5A D4 16 CF 02 3F 31 40 8A 41 48 B4 A5 49 27 5A 42 A1 3F 86 90 E4 B6 92 D4 9F 50 92 9B D9 AB FA 52 42 CB 40 D2 5F A5 23 B3 E9 4F 68 4C 9F 51 8C F7 3A D7 B4 FD 7B 9F EF B4 00 5D FF 60 A4 C9 21 46 B0 5A 95 D6 DA 6E 58 1D 7D A1 BE 51 09 66 9D 69 D5 9A 23 8C AC 36 65 69 62 3A 07 80 02 46 CB C5 8F 40 86 AE C3 1E C3 27 D7 85 B6 00 7D 28 6F",
+                "82 CE 87 04 89 62 51 F7 31 0F 52 E6 21 FF CD CC C9 C7 CB CA 53 B1 35 23 98 AC 0F B9 A5 FA 35 23 98 AC 78 2C 75 FD 1A 91 CC 56 07 5D 53 7D 1A 91 CC 56 11 DE 6F F7 E6 9A 3E 8D 48 E6 2B 1F 3F 5F 2C 7C FD F6 80 0B BD 7F 07 88 40 E9 2A C7 B0 D3 1A AF 7F 07 85 A8 EB 10 F6 23 7F 06 84 35 23 98 BF 73 91 9D 29 AD 17 18 62 83 90 74 4E 74 26 E3 C0 78 0C 7F C6 C5 C4 7F 04 85 B6 00 FD 28 6F",
+                "82 D4 87 04 A3 61 7F 05 A2 85 BA D4 7F 15 30 3A EB 45 65 21 A5 31 18 21 E9 5C 93 D8 7A 4A BC 85 EE 93 9E 84 2F D1 07 AB D3 D2 C2 C1 7F 01 84 2D 35 A7 D7 CE C8 C7 C6 7F 00 85 B6 06 BE 94 37",
+                "82 D6 87 84 D5 D4 D3 D2 D1 D0 CF CE CD CC CB CA C9 C8 C7 C6",
+                "82 D6 87 04 A3 61 7F 05 A2 85 BA D4 7F 15 30 3A EB 45 65 21 A5 31 18 21 E9 5C 93 D8 7A 4A BC 85 EE 93 9E 84 2F D1 07 AB D5 D4 C4 C3 BF CF C9 C8 C7 BE",
+                "82 D6 87 04 A3 61 7F 05 A2 85 BA D4 7F 15 30 3A EB 45 65 21 A5 31 18 21 E9 5C 93 D8 7A"
+        };
+
+        Http2HpackCodec http2HpackDecoder = new Http2HpackCodec(8192);
+        Map<String, Object> headers = new LinkedHashMap<String, Object>();
+        long l1 = System.currentTimeMillis();
+        for (String hpackBytesString : hpackBytesStrings) {
+            try {
+                http2HpackDecoder.decodeTo(ByteUtils.hexString2Bytes(hpackBytesString), headers);
+                System.out.println("success");
+            } catch (Throwable throwable) {
+                throwable.printStackTrace();
+            }
+        }
+        long l2 = System.currentTimeMillis();
+        System.out.println("use " + (l2 - l1));
+
+        System.out.println(headers);
+
+        // http2HpackDecoder.decode(bytes);
+//        System.out.println(http2HpackDecoder.decode(new byte[] {(byte) 0xCF}));
+//        System.out.println(http2HpackDecoder.decode(new byte[] {(byte) 0xBF}));
+
+        System.out.println(headers);
+        System.out.println(headers.size());
+    }
+}

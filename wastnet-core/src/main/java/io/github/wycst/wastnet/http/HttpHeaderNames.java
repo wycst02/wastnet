@@ -1,0 +1,86 @@
+package io.github.wycst.wastnet.http;
+
+public interface HttpHeaderNames {
+
+    String ACCEPT = "accept";
+    String ACCEPT_CHARSET = "accept-charset";
+    String ACCEPT_ENCODING = "accept-encoding";
+    String ACCEPT_LANGUAGE = "accept-language";
+    String ACCEPT_RANGES = "accept-ranges";
+    String ACCEPT_PATCH = "accept-patch";
+    String ACCESS_CONTROL_ALLOW_CREDENTIALS = "access-control-allow-credentials";
+    String ACCESS_CONTROL_ALLOW_HEADERS = "access-control-allow-headers";
+    String ACCESS_CONTROL_ALLOW_METHODS = "access-control-allow-methods";
+    String ACCESS_CONTROL_ALLOW_ORIGIN = "access-control-allow-origin";
+    String ACCESS_CONTROL_EXPOSE_HEADERS = "access-control-expose-headers";
+    String ACCESS_CONTROL_MAX_AGE = "access-control-max-age";
+    String ACCESS_CONTROL_REQUEST_HEADERS = "access-control-request-headers";
+    String ACCESS_CONTROL_REQUEST_METHOD = "access-control-request-method";
+    String AGE = "age";
+    String ALLOW = "allow";
+    String AUTHORIZATION = "authorization";
+    String CACHE_CONTROL = "cache-control";
+    String CONNECTION = "connection";
+    String CONTENT_BASE = "content-base";
+    String CONTENT_ENCODING = "content-encoding";
+    String CONTENT_LANGUAGE = "content-language";
+    String CONTENT_LENGTH = "content-length";
+    String CONTENT_LOCATION = "content-location";
+    String CONTENT_TRANSFER_ENCODING = "content-transfer-encoding";
+    String CONTENT_DISPOSITION = "content-disposition";
+    String CONTENT_MD5 = "content-md5";
+    String CONTENT_RANGE = "content-range";
+    String CONTENT_SECURITY_POLICY = "content-security-policy";
+    String CONTENT_TYPE = "content-type";
+    String COOKIE = "cookie";
+    String DATE = "date";
+    String ETAG = "etag";
+    String EXPECT = "expect";
+    String EXPIRES = "expires";
+    String FROM = "from";
+    String HOST = "host";
+    String IF_MATCH = "if-match";
+    String IF_MODIFIED_SINCE = "if-modified-since";
+    String IF_NONE_MATCH = "if-none-match";
+    String IF_RANGE = "if-range";
+    String IF_UNMODIFIED_SINCE = "if-unmodified-since";
+
+    String KEEP_ALIVE = "keep-alive";
+    String LAST_MODIFIED = "last-modified";
+    String LOCATION = "location";
+    String MAX_FORWARDS = "max-forwards";
+    String ORIGIN = "origin";
+    String PRAGMA = "pragma";
+    String PROXY_AUTHENTICATE = "proxy-authenticate";
+    String PROXY_AUTHORIZATION = "proxy-authorization";
+
+    String PROXY_CONNECTION = "proxy-connection";
+    String RANGE = "range";
+    String REFERER = "referer";
+    String RETRY_AFTER = "retry-after";
+    String SEC_WEBSOCKET_LOCATION = "sec-websocket-location";
+    String SEC_WEBSOCKET_ORIGIN = "sec-websocket-origin";
+    String SEC_WEBSOCKET_PROTOCOL = "sec-websocket-protocol";
+    String SEC_WEBSOCKET_VERSION = "sec-websocket-version";
+    String SEC_WEBSOCKET_KEY = "sec-websocket-key";
+    String SEC_WEBSOCKET_ACCEPT = "sec-websocket-accept";
+    String SEC_WEBSOCKET_EXTENSIONS = "sec-websocket-extensions";
+    String SERVER = "server";
+    String SET_COOKIE = "set-cookie";
+    String SET_COOKIE2 = "set-cookie2";
+    String TE = "te";
+    String TRAILER = "trailer";
+    String TRANSFER_ENCODING = "transfer-encoding";
+    String UPGRADE = "upgrade";
+    String USER_AGENT = "user-agent";
+    String VARY = "vary";
+    String VIA = "via";
+    String WARNING = "warning";
+    String WEBSOCKET_LOCATION = "websocket-location";
+    String WEBSOCKET_ORIGIN = "websocket-origin";
+    String WEBSOCKET_PROTOCOL = "websocket-protocol";
+    String WWW_AUTHENTICATE = "www-authenticate";
+    String X_FRAME_OPTIONS = "x-frame-options";
+    String X_PROXY_LOOP = "x-proxy-loop";
+
+}

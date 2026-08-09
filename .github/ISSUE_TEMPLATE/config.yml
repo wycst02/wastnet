@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/wycst02/wastnet/discussions
+    about: 如有使用疑问或讨论需求，请先到 Discussions 发起讨论。

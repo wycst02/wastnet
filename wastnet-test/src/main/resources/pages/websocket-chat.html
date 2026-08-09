@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>群聊</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        font-family: 'Segoe UI', sans-serif;
+        background: #e8e8e8;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+    h2 { margin-bottom: 20px; color: #333; font-weight: 300; }
+    .container { display: flex; gap: 16px; width: 1100px; max-width: 100%; height: 65vh; }
+    .panel {
+        flex: 1;
+        background: #fff;
+        border-radius: 10px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        min-height: 0;
+    }
+    .panel-header {
+        padding: 12px 14px;
+        background: #f5f5f5;
+        border-bottom: 1px solid #e0e0e0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .panel-header .info { font-size: 12px; color: #888; }
+    .avatar {
+        width: 32px; height: 32px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        color: #fff; font-size: 13px; font-weight: 600;
+    }
+    .av-color { background: linear-gradient(135deg, #667eea, #764ba2); }
+    .chat {
+        flex: 1; overflow-y: auto;
+        padding: 10px 14px; background: #f7f7f7;
+        min-height: 0;
+    }
+    .msg-wrapper { clear: both; margin: 3px 0; display: flex; align-items: flex-end; gap: 5px; }
+    .self-wrapper { flex-direction: row-reverse; }
+    .msg {
+        max-width: 70%;
+        padding: 7px 11px;
+        border-radius: 12px;
+        font-size: 13px; line-height: 1.4;
+        word-break: break-all;
+    }
+    .self { background: #95ec69; color: #1a3d0a; border-bottom-right-radius: 3px; }
+    .other { background: #fff; color: #333; border: 1px solid #ddd; border-bottom-left-radius: 3px; }
+    .mini-avatar {
+        width: 24px; height: 24px; border-radius: 50%;
+        display: flex; align-items: center; justify-content: center;
+        color: #fff; font-size: 10px; font-weight: 600;
+        flex-shrink: 0;
+    }
+    .system { text-align: center; color: #999; font-size: 11px; clear: both; padding: 3px 0; }
+    .footer { padding: 10px; border-top: 1px solid #e0e0e0; display: flex; gap: 6px; }
+    .footer input {
+        flex: 1; padding: 7px 10px;
+        border: 1px solid #ddd; border-radius: 18px;
+        outline: none; font-size: 12px;
+    }
+    .footer input:focus { border-color: #666; }
+    .footer input:disabled { background: #f0f0f0; }
+    .footer button { padding: 7px 14px; border: none; border-radius: 18px; cursor: pointer; font-size: 12px; color: #fff; font-weight: 500; }
+    .leave-btn { background: #e53935; }
+</style>
+</head>
+<body>
+
+<h2 id="roomTitle">群聊加载中...</h2>
+
+<div class="container">
+    <div class="panel">
+        <div class="panel-header">
+            <div class="avatar av-color">张</div>
+            <div><h3>张三</h3></div>
+        </div>
+        <div class="chat" id="chatA"></div>
+        <div class="footer">
+            <input id="msgA" placeholder="输入消息..." onkeydown="if(event.key==='Enter') sendA()"/>
+            <button class="leave-btn" onclick="toggleConn(0)">离开</button>
+            <button style="background:#667eea" onclick="sendA()">发送</button>
+        </div>
+    </div>
+    <div class="panel">
+        <div class="panel-header">
+            <div class="avatar av-color">李</div>
+            <div><h3>李四</h3></div>
+        </div>
+        <div class="chat" id="chatB"></div>
+        <div class="footer">
+            <input id="msgB" placeholder="输入消息..." onkeydown="if(event.key==='Enter') sendB()"/>
+            <button class="leave-btn" onclick="toggleConn(1)">离开</button>
+            <button style="background:#667eea" onclick="sendB()">发送</button>
+        </div>
+    </div>
+    <div class="panel">
+        <div class="panel-header">
+            <div class="avatar av-color">王</div>
+            <div><h3>王五</h3></div>
+        </div>
+        <div class="chat" id="chatC"></div>
+        <div class="footer">
+            <input id="msgC" placeholder="输入消息..." onkeydown="if(event.key==='Enter') sendC()"/>
+            <button class="leave-btn" onclick="toggleConn(2)">离开</button>
+            <button style="background:#667eea" onclick="sendC()">发送</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    function add(chat, text, cls) {
+        var w = document.createElement('div');
+        w.className = 'msg-wrapper' + (cls === 'self' ? ' self-wrapper' : '');
+        var m = document.createElement('div');
+        m.className = 'msg ' + cls;
+        m.textContent = text;
+        w.appendChild(m);
+        chat.appendChild(w);
+        chat.scrollTop = chat.scrollHeight;
+    }
+
+    function sys(chat, text) {
+        var d = document.createElement('div');
+        d.className = 'system';
+        d.textContent = text;
+        chat.appendChild(d);
+        chat.scrollTop = chat.scrollHeight;
+    }
+
+    var connCount = 0;
+    var participants = [];
+    function updateTitle() {
+        document.getElementById('roomTitle').textContent =
+            participants.join(', ') + '（' + connCount + '）';
+    }
+    function createConn(uri, chat, userName) {
+        var ws = new WebSocket(uri);
+        ws.onmessage = function(e) {
+            var payload = e.data;
+            var idx = payload.indexOf(':');
+            var from = payload.substring(0, idx);
+            var text = payload.substring(idx + 1);
+            if (from === 'system') {
+                sys(chat, text);
+            } else if (from === userName) {
+                add(chat, text, 'self');
+            } else {
+                add(chat, from + ': ' + text, 'other');
+            }
+        };
+        ws.onopen = function() {
+            connCount++;
+            participants.push(userName);
+            updateTitle();
+        };
+        return ws;
+    }
+
+    var base = 'ws://' + location.host + '/ws/chat';
+    var connections = [
+        { uri: base + '?name=张三', userName: '张三', input: document.getElementById('msgA'),
+          chat: document.getElementById('chatA'), leaveBtn: document.querySelectorAll('.leave-btn')[0] },
+        { uri: base + '?name=李四', userName: '李四', input: document.getElementById('msgB'),
+          chat: document.getElementById('chatB'), leaveBtn: document.querySelectorAll('.leave-btn')[1] },
+        { uri: base + '?name=王五', userName: '王五', input: document.getElementById('msgC'),
+          chat: document.getElementById('chatC'), leaveBtn: document.querySelectorAll('.leave-btn')[2] }
+    ];
+    // 初始化 WebSocket 连接
+    connections.forEach(function(c) {
+        c.ws = createConn(c.uri, c.chat, c.userName);
+    });
+
+    function sendA() { var c=connections[0]; var t=c.input.value.trim(); if(t){c.ws.send(t);c.input.value='';} }
+    function sendB() { var c=connections[1]; var t=c.input.value.trim(); if(t){c.ws.send(t);c.input.value='';} }
+    function sendC() { var c=connections[2]; var t=c.input.value.trim(); if(t){c.ws.send(t);c.input.value='';} }
+
+    function toggleConn(idx) {
+        var c = connections[idx];
+        if (c.ws && c.ws.readyState === WebSocket.OPEN) {
+            c.ws.close();
+            c.ws = null;
+            connCount--;
+            participants.splice(participants.indexOf(c.userName), 1);
+            updateTitle();
+            c.input.disabled = true;
+            sys(c.chat, '你已离开群聊');
+            c.leaveBtn.textContent = '加入';
+        } else {
+            c.ws = new WebSocket(c.uri);
+            c.ws.onmessage = function(e) {
+                var payload = e.data;
+                var idx = payload.indexOf(':');
+                var from = payload.substring(0, idx);
+                var text = payload.substring(idx + 1);
+                if (from === 'system') { sys(c.chat, text); }
+                else if (from === c.userName) { add(c.chat, text, 'self'); }
+                else { add(c.chat, from + ': ' + text, 'other'); }
+            };
+            c.ws.onopen = function() {
+                connCount++;
+                participants.push(c.userName);
+                updateTitle();
+            };
+            c.input.disabled = false;
+            c.leaveBtn.textContent = '离开';
+        }
+    }
+</script>
+
+</body>
+</html>

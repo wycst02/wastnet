@@ -1,0 +1,127 @@
+name: Java CI
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'SECURITY*'
+      - 'note.txt'
+      - '.github/ISSUE_TEMPLATE/**'
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - '*.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
+      - 'SECURITY*'
+      - 'note.txt'
+      - '.github/ISSUE_TEMPLATE/**'
+
+jobs:
+  # ================== Multi-JDK parallel testing ==================
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java: [8, 11, 17, 21, 25]
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java }}
+          distribution: 'temurin'
+          cache: maven
+
+      # JDK 8: skip slow / timeout-prone tests (add/remove lines as needed)
+      - name: Build and test on JDK ${{ matrix.java }}
+        run: |
+          set +o histexpand
+          EXCLUDES=""
+          if [ "${{ matrix.java }}" = "8" ]; then
+            EXCLUDES="-Dtest=!WebSocketIntegrationTest"
+            EXCLUDES="$EXCLUDES,!WebSocketFragmentationTest"
+            EXCLUDES="$EXCLUDES,!WebSocketSendStreamTest"
+            EXCLUDES="$EXCLUDES,!ChannelContextCoverageTest"
+            EXCLUDES="$EXCLUDES,!HttpProxyIntegrationTest"
+            EXCLUDES="$EXCLUDES,!ChannelRunnerTest"
+            EXCLUDES="$EXCLUDES,!Http2PriorKnowledgeIntegrationTest"
+            EXCLUDES="$EXCLUDES,!HttpServerIntegrationTest"
+            EXCLUDES="$EXCLUDES,!HttpIntegrationTest"
+            EXCLUDES="$EXCLUDES,!HttpServerChannelHandlerIntegrationTest"
+            EXCLUDES="$EXCLUDES,!TCPClientTest"
+            EXCLUDES="$EXCLUDES,!SslTlsIntegrationTest"
+            EXCLUDES="$EXCLUDES,!ChannelSSLContextTest"
+            EXCLUDES="$EXCLUDES,!AnnotationPackageCoverageTest"
+
+          fi
+          mvn verify -pl wastnet-test -am --batch-mode -Dsurefire.failIfNoSpecifiedTests=false $EXCLUDES
+
+      # Upload XML report to Codecov (all JDKs)
+      - name: Upload JaCoCo XML report for JDK ${{ matrix.java }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report-jdk-${{ matrix.java }}
+          path: wastnet-test/target/site/jacoco-aggregate/jacoco.xml
+
+      # JDK 21: also upload HTML report for direct download
+      - name: Upload HTML report for download
+        if: matrix.java == '21'
+        uses: actions/upload-artifact@v4
+        with:
+          name: combined-coverage-report
+          path: wastnet-test/target/site/jacoco-aggregate/
+
+  # ================== Codecov aggregation ==================
+  coverage:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all JaCoCo reports
+        uses: actions/download-artifact@v4
+        with:
+          path: coverage-reports
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage-reports/**/jacoco.xml
+          flags: unittests
+          name: wastnet-codecov
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  # ================== SonarCloud code quality analysis ==================
+  # sonar:
+  #   needs: test
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Set up JDK 17
+  #       uses: actions/setup-java@v4
+  #       with:
+  #         java-version: 17
+  #         distribution: 'temurin'
+  #         cache: maven
+  #
+  #     - name: Build and analyze
+  #       env:
+  #         SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  #       run: mvn verify sonar:sonar -pl wastnet-test -am --batch-mode -Dsonar.projectKey=wycst02_wastnet -Dsonar.organization=wycst02 -Dsonar.host.url=https://sonarcloud.io -Dsonar.sources=src/main/java -Dsonar.exclusions=**/wastnet-test/** -Dsonar.coverage.jacoco.xmlReportPaths=$GITHUB_WORKSPACE/wastnet-test/target/site/jacoco-aggregate/jacoco.xml
+
+

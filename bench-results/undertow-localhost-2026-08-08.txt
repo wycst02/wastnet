@@ -1,0 +1,188 @@
+[bench] ===== run at 2026-08-08 10:05:15 (impl=undertow) =====
+$ wrk -t7 -c200 -d15s --latency http://localhost:8081/hello
+Running 15s test @ http://localhost:8081/hello
+  7 threads and 200 connections
+  Thread Stats   Avg      Stdev     Max   +/- Stdev
+    Latency     1.30ms    3.14ms  63.88ms   92.26%
+    Req/Sec    47.63k     4.99k   61.48k    83.44%
+  Latency Distribution
+     50%  362.00us
+     75%  645.00us
+     90%    3.18ms
+     99%   16.15ms
+  4981478 requests in 15.10s, 717.36MB read
+Requests/sec: 329910.57
+Transfer/sec:     47.51MB
+$ h2load --h1 -n 10000 -c 10 -m 100 -D 15 http://localhost:8081/hello
+starting benchmark...
+spawning thread #0: 10 total client(s). Timing-based test with 0s of warm-up time and 15s of main duration for measurements.
+Warm-up started for thread #0.
+progress: 10% of clients started
+progress: 20% of clients started
+progress: 30% of clients started
+progress: 40% of clients started
+progress: 50% of clients started
+progress: 60% of clients started
+progress: 70% of clients started
+progress: 80% of clients started
+progress: 90% of clients started
+progress: 100% of clients started
+Warm-up phase is over for thread #0.
+Main benchmark duration is started for thread #0.
+Application protocol: http/1.1
+Main benchmark duration is over for thread #0. Stopping all clients.
+Stopped all clients for thread #0
+
+finished in 15.00s, 327000.00 req/s, 47.09MB/s
+requests: 4905000 total, 4906000 started, 4905000 done, 4905000 succeeded, 0 failed, 0 errored, 0 timeout
+status codes: 4905000 2xx, 0 3xx, 0 4xx, 0 5xx
+traffic: 706.34MB (740655000) total, 491.27MB (515130000) headers (space savings 0.00%), 51.47MB (53966000) data
+                     min         max         mean         sd        +/- sd
+time for request:      658us     13.90ms      3.05ms       748us    83.13%
+time for connect:       18us      1.12ms       551us       369us    60.00%
+time to 1st byte:     3.31ms      6.94ms      4.71ms      1.30ms    60.00%
+req/s           :   32614.89    32756.00    32696.24       46.03    60.00%
+$ h2load --h1 -n 1000 -c 10 -t 4 -d /root/source/wast-net/payload.bin -H content-type:text/plain -D 15 http://localhost:8081/hello
+starting benchmark...
+spawning thread #0: 3 total client(s). Timing-based test with 0s of warm-up time and 15s of main duration for measurements.
+spawning thread #1: 3 total client(s). Timing-based test with 0s of warm-up time and 15s of main duration for measurements.
+spawning thread #2: 2 total client(s). Timing-based test with 0s of warm-up time and 15s of main duration for measurements.
+spawning thread #3: 2 total client(s). Timing-based test with 0s of warm-up time and 15s of main duration for measurements.
+Warm-up started for thread #0.
+Warm-up started for thread #1.
+progress: 33% of clients started
+progress: 66% of clients started
+progress: 100% of clients started
+Warm-up phase is over for thread #0.
+Main benchmark duration is started for thread #0.
+Application protocol: http/1.1
+Warm-up phase is over for thread #1.
+Main benchmark duration is started for thread #1.
+Warm-up started for thread #2.
+Warm-up phase is over for thread #2.
+Main benchmark duration is started for thread #2.
+Warm-up started for thread #3.
+Warm-up phase is over for thread #3.
+Main benchmark duration is started for thread #3.
+Main benchmark duration is over for thread #0. Stopping all clients.
+Stopped all clients for thread #0
+Main benchmark duration is over for thread #2. Stopping all clients.
+Stopped all clients for thread #2
+Main benchmark duration is over for thread #1. Stopping all clients.
+Stopped all clients for thread #1
+Main benchmark duration is over for thread #3. Stopping all clients.
+Stopped all clients for thread #3
+
+finished in 15.00s, 5834.27 req/s, 860.33KB/s
+requests: 87514 total, 87524 started, 87514 done, 87514 succeeded, 0 failed, 0 errored, 0 timeout
+status codes: 87514 2xx, 0 3xx, 0 4xx, 0 5xx
+traffic: 12.60MB (13214614) total, 8.76MB (9190020) headers (space savings 0.00%), 940.20KB (962764) data
+                     min         max         mean         sd        +/- sd
+time for request:      305us     15.82ms      1.71ms       592us    80.04%
+time for connect:        4us       132us        53us        43us    50.00%
+time to 1st byte:     2.90ms      4.78ms      3.90ms       563us    70.00%
+req/s           :     477.39      737.40      583.38      125.75    60.00%
+$ h2load -n 10000 -c 10 -m 100 -D 15 https://localhost:8444/hello
+starting benchmark...
+spawning thread #0: 10 total client(s). Timing-based test with 0s of warm-up time and 15s of main duration for measurements.
+Warm-up started for thread #0.
+progress: 10% of clients started
+progress: 20% of clients started
+progress: 30% of clients started
+progress: 40% of clients started
+progress: 50% of clients started
+progress: 60% of clients started
+progress: 70% of clients started
+progress: 80% of clients started
+progress: 90% of clients started
+progress: 100% of clients started
+Warm-up phase is over for thread #0.
+Main benchmark duration is started for thread #0.
+TLS Protocol: TLSv1.2
+Cipher: ECDHE-RSA-AES256-GCM-SHA384
+Server Temp Key: ECDH P-256 256 bits
+Application protocol: h2
+Main benchmark duration is over for thread #0. Stopping all clients.
+Stopped all clients for thread #0
+
+finished in 15.01s, 97866.93 req/s, 5.69MB/s
+requests: 1468004 total, 1469004 started, 1468004 done, 1468004 succeeded, 0 failed, 0 errored, 0 timeout
+status codes: 1468004 2xx, 0 3xx, 0 4xx, 0 5xx
+traffic: 85.40MB (89548844) total, 44.80MB (46976308) headers (space savings 66.32%), 15.40MB (16148044) data
+                     min         max         mean         sd        +/- sd
+time for request:      610us    731.42ms      9.80ms      9.89ms    99.29%
+time for connect:    21.82ms     50.89ms     37.23ms     12.03ms    50.00%
+time to 1st byte:    30.77ms    770.35ms    216.23ms    290.15ms    80.00%
+req/s           :    9488.16     9934.18     9779.69      196.84    70.00%
+$ h2load -n 1000 -c 10 -t 4 -d /root/source/wast-net/payload.bin -H content-type:text/plain -D 15 https://localhost:8444/hello
+starting benchmark...
+spawning thread #0: 3 total client(s). Timing-based test with 0s of warm-up time and 15s of main duration for measurements.
+spawning thread #1: 3 total client(s). Timing-based test with 0s of warm-up time and 15s of main duration for measurements.
+spawning thread #2: 2 total client(s). Timing-based test with 0s of warm-up time and 15s of main duration for measurements.
+spawning thread #3: 2 total client(s). Timing-based test with 0s of warm-up time and 15s of main duration for measurements.
+Warm-up started for thread #0.
+Warm-up started for thread #1.
+Warm-up started for thread #3.Warm-up started for thread #
+2.
+progress: 33% of clients started
+progress: 66% of clients started
+Warm-up phase is over for thread #Warm-up phase is over for thread #2.
+Main benchmark duration is started for thread #2.
+progress: 100% of clients started
+Warm-up phase is over for thread #0.
+Main benchmark duration is started for thread #0.
+Warm-up phase is over for thread #1.
+Main benchmark duration is started for thread #1.
+3.
+Main benchmark duration is started for thread #3.
+TLS Protocol: TLSv1.2
+Cipher: ECDHE-RSA-AES256-GCM-SHA384
+Server Temp Key: ECDH P-256 256 bits
+Application protocol: h2
+Main benchmark duration is over for thread #2. Stopping all clients.
+Stopped all clients for thread #2
+Main benchmark duration is over for thread #3. Stopping all clients.
+Stopped all clients for thread #3
+Main benchmark duration is over for thread #0. Stopping all clients.
+Stopped all clients for thread #0
+Main benchmark duration is over for thread #1. Stopping all clients.
+Stopped all clients for thread #1
+
+finished in 15.00s, 1968.87 req/s, 767.31KB/s
+requests: 29533 total, 29543 started, 29533 done, 29533 succeeded, 0 failed, 0 errored, 0 timeout
+status codes: 29542 2xx, 0 3xx, 0 4xx, 0 5xx
+traffic: 11.24MB (11785908) total, 923.36KB (945524) headers (space savings 66.31%), 317.35KB (324962) data
+                     min         max         mean         sd        +/- sd
+time for request:     1.65ms     47.12ms      5.06ms      1.72ms    85.96%
+time for connect:    24.45ms     32.03ms     28.29ms      2.36ms    70.00%
+time to 1st byte:    28.64ms     46.25ms     34.53ms      7.21ms    70.00%
+req/s           :     156.53      237.06      196.88       30.63    50.00%
+$ h2load -n 10000 -c 10 -m 100 -D 15 http://localhost:8446/hello
+starting benchmark...
+spawning thread #0: 10 total client(s). Timing-based test with 0s of warm-up time and 15s of main duration for measurements.
+Warm-up started for thread #0.
+progress: 10% of clients started
+progress: 20% of clients started
+progress: 30% of clients started
+progress: 40% of clients started
+progress: 50% of clients started
+progress: 60% of clients started
+progress: 70% of clients started
+progress: 80% of clients started
+progress: 90% of clients started
+progress: 100% of clients started
+Warm-up phase is over for thread #0.
+Main benchmark duration is started for thread #0.
+Application protocol: h2c
+Main benchmark duration is over for thread #0. Stopping all clients.
+Stopped all clients for thread #0
+
+finished in 15.00s, 207489.27 req/s, 12.07MB/s
+requests: 3112339 total, 3113339 started, 3112339 done, 3112339 succeeded, 0 failed, 0 errored, 0 timeout
+status codes: 3112339 2xx, 0 3xx, 0 4xx, 0 5xx
+traffic: 181.06MB (189853279) total, 94.98MB (99595028) headers (space savings 66.32%), 32.65MB (34235729) data
+                     min         max         mean         sd        +/- sd
+time for request:      534us    358.44ms      4.77ms      5.24ms    98.17%
+time for connect:      111us      1.70ms       883us       563us    60.00%
+time to 1st byte:     4.92ms    356.85ms     90.21ms    146.00ms    80.00%
+req/s           :   19979.60    21503.82    20747.01      662.76    50.00%
