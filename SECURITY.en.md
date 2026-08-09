@@ -20,7 +20,7 @@ We will acknowledge receipt within **48 hours** and follow up promptly.
 | Version | Supported |
 | --- | --- |
 | Latest 1.x | ✅ Actively maintained |
-| 1.0.0 | ✅ Current stable release |
+| 1.0.1 | ✅ Current stable release |
 
 ## Security Best Practices
 

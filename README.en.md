@@ -65,7 +65,7 @@
 <dependency>
     <groupId>io.github.wycst</groupId>
     <artifactId>wastnet-core</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
 </dependency>
 ```
 
@@ -814,7 +814,7 @@ HTTPServer.of(8080)
 Default output:
 
 ```
-  wastnet/1.0.0 started in 1363 ms
+  wastnet/1.0.1 started in 1363 ms
   ➜  Local:   http://localhost:8080
   ➜  Network: http://10.252.31.235:8080
 ```
