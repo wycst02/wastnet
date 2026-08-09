@@ -386,19 +386,14 @@ public class HttpRequestDecoderTest {
 
     @Test
     public void testBodyStreamMode() throws Exception {
-        Object orig = setFinalStatic(HttpConf.class, "MAX_BODY_IN_MEMORY", 4);
-        try {
-            captured.set(null);
-            ChannelContext ctx = createCtx();
-            HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-            // Content-Length: 10 > MAX_BODY_IN_MEMORY(4) → BODY_MODE_STREAM
-            // onDecoded creates HttpStreamRequest
-            decodeAll(d, "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 10\r\n\r\n0123456789", ctx);
-            assertNotNull(captured.get());
-            assertTrue(captured.get().isStream());
-        } finally {
-            setFinalStatic(HttpConf.class, "MAX_BODY_IN_MEMORY", orig);
-        }
+        // Test-only: Transfer-Encoding: chunked triggers streaming mode,
+        // so the decoder produces a streaming (chunked) request.
+        captured.set(null);
+        ChannelContext ctx = createCtx();
+        HttpRequestDecoder d = new HttpRequestDecoder(ctx);
+        decodeAll(d, "POST / HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n", ctx);
+        assertNotNull(captured.get());
+        assertTrue(captured.get().isStream());
     }
 
     // ===== Remaining decoder branch coverage =====
@@ -1034,17 +1029,17 @@ public class HttpRequestDecoderTest {
 
     @Test
     public void testGetResultWithStatus() throws Exception {
-        Object orig = setFinalStatic(HttpConf.class, "MAX_URI_LENGTH", 3);
-        try {
-            HttpRequestDecoder d = new HttpRequestDecoder();
-            // URI too long sets status to REQUEST_URI_TOO_LONG, then getResult()
-            byte[] b = "GET /abc HTTP/1.1\r\nHost: a\r\n\r\n".getBytes();
-            d.decode(b, 0, b.length);
-            HttpMessage msg = d.getResult();
-            assertTrue(msg instanceof HttpBadRequest);
-            assertTrue(((HttpRequest) msg).isBad());
-        } finally {
-            setFinalStatic(HttpConf.class, "MAX_URI_LENGTH", orig);
+        // Test-only: a URI far longer than the default MAX_URI_LENGTH (16384)
+        // triggers REQUEST_URI_TOO_LONG, no final field override needed.
+        HttpRequestDecoder d = new HttpRequestDecoder();
+        StringBuilder sb = new StringBuilder("/");
+        for (int i = 0; i < 20000; i++) {
+            sb.append('a');
         }
+        byte[] b = ("GET " + sb + " HTTP/1.1\r\nHost: a\r\n\r\n").getBytes();
+        d.decode(b, 0, b.length);
+        HttpMessage msg = d.getResult();
+        assertTrue(msg instanceof HttpBadRequest);
+        assertTrue(((HttpRequest) msg).isBad());
     }
 }

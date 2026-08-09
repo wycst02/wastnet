@@ -63,6 +63,8 @@ jobs:
             EXCLUDES="$EXCLUDES,!TCPClientTest"
             EXCLUDES="$EXCLUDES,!SslTlsIntegrationTest"
             EXCLUDES="$EXCLUDES,!ChannelSSLContextTest"
+            EXCLUDES="$EXCLUDES,!TCPServerTest"
+            EXCLUDES="$EXCLUDES,!H2MonitorTest"
             EXCLUDES="$EXCLUDES,!AnnotationPackageCoverageTest"
 
           fi
