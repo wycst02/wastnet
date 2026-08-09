@@ -16,7 +16,7 @@ if not exist "%JDK8_HOME%\bin\javac.exe" goto :jdk8err
 echo.
 echo ====== Deploy core only (JDK8, sources + javadoc + gpg) ======
 set "JAVA_HOME=%JDK8_HOME%"
-call mvn -P release clean deploy -pl wastnet-core %SKIP%
+call mvn -P release clean deploy -pl "!wastnet-test" -Darguments="gpg.passphrase=12345678" %SKIP%
 if errorlevel 1 goto :deployerr
 echo.
 echo [OK] core deploy done.
