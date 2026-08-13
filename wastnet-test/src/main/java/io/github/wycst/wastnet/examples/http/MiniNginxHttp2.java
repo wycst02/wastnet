@@ -76,14 +76,14 @@ public class MiniNginxHttp2 {
                 });
         router.route("/rest", new HttpProxyRoute(proxyConfig));
 
-        HttpProxyConfig proxyConfig2 = HttpProxyConfig.target("http://10.184.251.39:8088")
+        HttpProxyConfig proxyConfig2 = HttpProxyConfig.target("http://192.168.1.5:8088")
                 .upgrade(true)
                 .connectionTimeout(3000)
                 .readTimeout(5000)
                 .changeOrigin(true)
-                .addHeader("origin", "http://10.184.251.39:8088")
+                .addHeader("origin", "http://192.168.1.5:8088")
                 .rewrite(true);
-        router.route("/znjk", new HttpProxyRoute(proxyConfig2));
+        router.route("/zk", new HttpProxyRoute(proxyConfig2));
 
         // 添加一个ws资源,返回一个websocket资源句柄
         router.ws("/ws", new WebSocketResource(30) {
