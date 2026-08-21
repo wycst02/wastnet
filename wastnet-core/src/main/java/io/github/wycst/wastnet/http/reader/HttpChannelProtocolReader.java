@@ -79,6 +79,11 @@ public final class HttpChannelProtocolReader extends ChannelDecoder<HttpMessage>
         reader.decode(ctx, buf);
     }
 
+    @Override
+    public void onClosed(ChannelContext ctx) {
+        if (reader != null) reader.onClosed(ctx);
+    }
+
     /** @param upgradeHolder protocol upgrade context (e.g. h2c upgrade from HTTP/1.1) */
     public void upgrade(UpgradeHolder upgradeHolder) {
         reader.upgrade(upgradeHolder);
