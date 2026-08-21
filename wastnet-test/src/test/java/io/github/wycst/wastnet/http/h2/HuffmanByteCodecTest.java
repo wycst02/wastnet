@@ -275,14 +275,17 @@ public class HuffmanByteCodecTest {
 
     @Test
     void testMultiByteEofEosDetectionReturnsSuccess() {
-        // 0xFE triggers multi-byte path (DECODE_BITS[254]=10). With only 1 byte of input,
-        // offset >= endOffset enters the EOF else-branch. The EOS padding check
-        // (value & mask) == mask passes, returning decoded byte successfully.
+        // 0xFE is a multi-byte code prefix (DECODE_BITS[254]=10) with only 1 byte of
+        // input: the symbol is not completed, so decode must reject it.
         byte[] input = new byte[]{(byte) 0xFE};
-        byte[] output = new byte[4];
-        int count = HuffmanByteCodec.decodeData(input, 0, input.length, output, 0);
-        assertEquals(1, count);
-        assertEquals(')', output[0]); // 0xFE decodes to ')'
+        java.io.PrintStream oldErr = System.err;
+        System.setErr(new java.io.PrintStream(new java.io.ByteArrayOutputStream()));
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> HuffmanByteCodec.decodeData(input, 0, input.length, new byte[4], 0));
+        } finally {
+            System.setErr(oldErr);
+        }
     }
 
     @Test
@@ -335,5 +338,23 @@ public class HuffmanByteCodecTest {
 
         len = Http2HpackCodec.encodeLength(1000, output, 0);
         assertTrue(len > 2);
+    }
+
+    // Convenience overload decodeData(buf, offset, len): returns a trimmed array whose length equals the actual decoded size.
+    @Test
+    void testDecodeDataConvenienceTrimsToExactLength() {
+        byte[][] cases = {
+                "hello".getBytes(StandardCharsets.US_ASCII),
+                "a".getBytes(StandardCharsets.US_ASCII),
+                new byte[]{'e'}, // 7-bit code -> non-8-multiple tail, exercises EOS padding path
+                new byte[]{0, 1, 2, 127, (byte) 255},
+                "The quick brown fox jumps over the lazy dog 0123456789".getBytes(StandardCharsets.US_ASCII)
+        };
+        for (byte[] input : cases) {
+            byte[] encoded = HuffmanByteCodec.encodeData(input);
+            byte[] decoded = HuffmanByteCodec.decodeData(encoded, 0, encoded.length);
+            assertEquals(input.length, decoded.length, "decoded length must equal actual size");
+            assertArrayEquals(input, decoded, "decoded content must match input");
+        }
     }
 }

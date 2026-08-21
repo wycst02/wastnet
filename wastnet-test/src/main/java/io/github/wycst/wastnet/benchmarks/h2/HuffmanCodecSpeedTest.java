@@ -9,17 +9,18 @@ public class HuffmanCodecSpeedTest {
     public static void main(String[] args) {
         String source = "/screen-layout/schedule/fault-command-dispatch-web/rest/failure-schedule-portal-server/login/sms/getPicVerifyCodeForSendLoginSms?backColor=255.255.255";
         // source = "/screen-layout";
-        byte[] encodedBytes = source.getBytes();
+        byte[] encodedBytes = HuffmanByteCodec.encodeData(source.getBytes());
         byte[] targetBytes = new byte[1024];
         int count = 0;
         long startTime = System.currentTimeMillis();
         for (int i = 0; i < 1000000; ++i) {
-            count = HuffmanByteCodec.encodeData(encodedBytes, 0, encodedBytes.length, targetBytes, 0);
+            count = HuffmanByteCodec.decodeData(encodedBytes, 0, encodedBytes.length, targetBytes, 0);
         }
         long endTime = System.currentTimeMillis();
         System.out.println("Time: " + (endTime - startTime) + "ms");
-        System.out.println(Arrays.toString(targetBytes));
-
+        System.out.println(source);
+        System.out.println(new String(targetBytes, 0, count));
+        System.out.println(new String(targetBytes, 0, count).equals(source));
     }
 
 }
