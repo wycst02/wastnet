@@ -204,40 +204,34 @@ public class ChannelContext {
         if (!closeResolved.compareAndSet(false, true)) {
             return;
         }
-        try {
-            if(readKey != null) readKey.cancel();
-            channel.close();
-            channelHandler.onClosed(this);
-        } catch (Throwable ignored) {
-        } finally {
-            // Wake up any thread blocked waiting for write (e.g. sendFileZeroCopy)
-            wakeupWrite();
-            // Release idle-state trigger even if onClosed above threw
-            if (idleStateHandlerTrigger != null) {
-                idleStateHandlerTrigger.release();
-            }
-            // Clear attributes even if onClosed above threw
-            if (attributes != null) {
-                attributes.clear();
-            }
-            // Notify all close listeners
-            if (closeListeners != null) {
-                for (Runnable listener : closeListeners) {
-                    try {
-                        listener.run();
-                    } catch (Throwable ignored) {
-                    }
-                }
-                closeListeners = null;
-            }
-            if (worker != null) {
-                worker.decrementConnectionCount();
-                worker = null;
-            }
-            attachment = null;
-            binding = null;
-            attributes = null;
+        if(readKey != null) readKey.cancel();
+        try { channelReader.onClosed(this); } catch (Throwable ignored) { }
+        try { channelHandler.onClosed(this); } catch (Throwable ignored) { }
+        try { channel.close(); } catch (Throwable ignored) { }
+        // Wake up any thread blocked waiting for write (e.g. sendFileZeroCopy)
+        wakeupWrite();
+        // Release idle-state trigger even if onClosed above threw
+        if (idleStateHandlerTrigger != null) {
+            idleStateHandlerTrigger.release();
         }
+        // Clear attributes even if onClosed above threw
+        if (attributes != null) {
+            attributes.clear();
+        }
+        // Notify all close listeners
+        if (closeListeners != null) {
+            for (Runnable listener : closeListeners) {
+                try { listener.run(); } catch (Throwable ignored) {}
+            }
+            closeListeners = null;
+        }
+        if (worker != null) {
+            worker.decrementConnectionCount();
+            worker = null;
+        }
+        attachment = null;
+        binding = null;
+        attributes = null;
     }
 
     /**

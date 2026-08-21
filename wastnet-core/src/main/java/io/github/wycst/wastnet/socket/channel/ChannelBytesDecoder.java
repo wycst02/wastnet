@@ -35,9 +35,4 @@ public abstract class ChannelBytesDecoder<E> extends ChannelDecoder<E> {
         buf.clear();
         decode(ctx, buf.array(), offset, len);
     }
-
-    @Override
-    public void wakeup() {
-
-    }
 }

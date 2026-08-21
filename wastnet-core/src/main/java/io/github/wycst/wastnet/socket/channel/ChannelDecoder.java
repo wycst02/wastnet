@@ -12,14 +12,6 @@ import java.util.Arrays;
  */
 public abstract class ChannelDecoder<T> implements ChannelReader<T> {
 
-    @Override
-    public void init(ChannelContext ctx) throws Exception {
-    }
-
-    @Override
-    public void wakeup() {
-    }
-
     /**
      * Read len bytes starting from offset (automatically expand if length exceeds)
      *

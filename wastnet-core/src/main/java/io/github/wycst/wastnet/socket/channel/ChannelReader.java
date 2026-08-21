@@ -14,20 +14,7 @@ import java.nio.ByteBuffer;
  */
 public interface ChannelReader<T> {
 
-    ChannelReader<ByteBuffer> UNDO = new ChannelReader<ByteBuffer>() {
-        @Override
-        public void init(ChannelContext ctx) throws Exception {
-        }
-
-        @Override
-        public void decode(ChannelContext ctx, ByteBuffer buf) throws IOException {
-            ctx.invokeHandle(buf);
-        }
-
-        @Override
-        public void wakeup() {
-        }
-    };
+    ChannelReader<ByteBuffer> UNDO = ChannelContext::invokeHandle;
 
     /**
      * Called before the channel is ready
@@ -35,7 +22,8 @@ public interface ChannelReader<T> {
      * @param ctx channel context
      * @throws Exception if initialization fails
      */
-    void init(ChannelContext ctx) throws Exception;
+    default void init(ChannelContext ctx) throws Exception {
+    }
 
     /**
      * Decode data from the channel buffer into structured objects
@@ -49,5 +37,15 @@ public interface ChannelReader<T> {
     /**
      * Wake up the decoder (e.g., to handle buffered data)
      */
-    void wakeup();
+    default void wakeup() {
+    }
+
+    /**
+     * Called after the channel is closed, symmetric to {@link #init(ChannelContext)}.
+     * Override to release per-connection resources (e.g. unblock pending readers).
+     *
+     * @param ctx channel context
+     */
+    default void onClosed(ChannelContext ctx) {
+    }
 }

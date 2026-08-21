@@ -176,6 +176,7 @@ public abstract class Http2Stream {
                 // Rapid Reset (CVE-2023-44487) defense: count client-sent RST_STREAM.
                 // Server-initiated RST is never dispatched through this path.
                 reader.onInboundRstStream(ctx);
+                cleanup();
                 reader.removeStream(streamId);
                 return;
             // SETTINGS/PING/GOAWAY are stream-0-only (RFC 7540 §6.5/§6.7/§6.8);
@@ -331,6 +332,7 @@ public abstract class Http2Stream {
      * Send an RST_STREAM with the given error code and remove this stream from the connection.
      */
     private void rstStream(ChannelContext ctx, int errorCode) throws IOException {
+        cleanup();
         reader.sendRstStreamFrame(ctx, streamId, errorCode);
         reader.removeStream(streamId);
     }
@@ -567,6 +569,7 @@ public abstract class Http2Stream {
         if (bodyStream != null) {
             // feed() copies bytes into its own buffer and does not retain the reference.
             if (!bodyStream.feed(frame.frameData, frame.payloadActualOffset, frame.payloadActualLength)) {
+                log.warn("feed rejected, send RST_STREAM(FLOW_CONTROL_ERROR) streamId={} recvWindow={}", streamId, receiveWindow);
                 reader.sendRstStreamFrame(ctx, streamId, 3);
                 return;
             }
@@ -579,6 +582,16 @@ public abstract class Http2Stream {
             // Abort the client's remaining body upload; NO_ERROR keeps the early response
             // valid (RFC 7540 §8.1). In-flight DATA is tolerated by the reader (§5.1).
             reader.sendRstStreamFrame(ctx, streamId, 0);
+        }
+    }
+
+    /**
+     * Finalize the stream lifecycle: unblock any thread blocked reading the
+     * request body and release the body stream. Reused on RST and abnormal close.
+     */
+    void cleanup() {
+        if (needStreaming && !bodyStream.ended) {
+            bodyStream.endStream();
         }
     }
 

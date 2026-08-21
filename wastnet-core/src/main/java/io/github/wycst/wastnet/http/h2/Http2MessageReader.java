@@ -423,7 +423,6 @@ public abstract class Http2MessageReader extends HttpMessageReader<HttpMessage> 
         if (errorCode != 0) {
             LOG.warn("HTTP/2 peer sent GOAWAY with error code {} (last-stream-id={})", errorCode, lastStreamId);
         }
-        H2Monitor.unregister(ctx.getId());
         ctx.close(); // graceful TCP close; no GOAWAY echo needed since peer initiated shutdown
     }
 
@@ -583,6 +582,20 @@ public abstract class Http2MessageReader extends HttpMessageReader<HttpMessage> 
     // ==================== Stream management ====================
 
     /**
+     * Called when the channel closes; finalizes all streams so blocked body
+     * readers are released instead of leaking on abnormal disconnect.
+     */
+    @Override
+    public void onClosed(ChannelContext ctx) {
+        H2Monitor.unregister(ctx.getId());
+        if (!streamMap.isEmpty()) {
+            for (Http2Stream stream : streamMap.values()) {
+                stream.cleanup();
+            }
+        }
+    }
+
+    /**
      * Remove a stream and reclaim its connection-level receive credit.
      * Idempotent: only the first successful removal reclaims (guards double reclaim).
      */
@@ -693,7 +706,6 @@ public abstract class Http2MessageReader extends HttpMessageReader<HttpMessage> 
         lastCloseReason = "errorCode=" + errorCode;
         sendGoawayFrame(ctx, currentMaxStreamId, errorCode);
         ctx.close();
-        H2Monitor.unregister(ctx.getId());
     }
 
     /** Fill connection-level diagnostic data for the monitor (no logic impact). */
