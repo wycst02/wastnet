@@ -84,8 +84,8 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.2.5</version>
                 <configuration>
-<!--                    <forkCount>1</forkCount>-->
-<!--                    <reuseForks>false</reuseForks>-->
+                    <forkCount>1</forkCount>
+                    <reuseForks>false</reuseForks>
                     <systemPropertyVariables>
                         <wastnet.http2.debug>true</wastnet.http2.debug>
                     </systemPropertyVariables>
