@@ -25,7 +25,6 @@ public class HttpServerTest {
                         .sslContext(createSslContext())
                         .h2()
                         .bufferSize(1024 * 16)
-                        .printReadErrorLog(true)
                         .requestHandler(new HttpRequestHandler() {
                             @Override
                             public void handle(HttpRequest request, HttpResponse response) throws Throwable {

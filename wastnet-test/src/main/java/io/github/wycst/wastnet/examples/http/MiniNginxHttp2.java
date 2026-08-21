@@ -1,7 +1,6 @@
 package io.github.wycst.wastnet.examples.http;
 
 import io.github.wycst.wastnet.http.HTTPServer;
-import io.github.wycst.wastnet.http.HttpHeaderUtils;
 import io.github.wycst.wastnet.http.HttpRequest;
 import io.github.wycst.wastnet.http.HttpResponse;
 import io.github.wycst.wastnet.http.handler.HttpRequestHandler;
