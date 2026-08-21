@@ -154,6 +154,7 @@ HTTP/2 相关配置已统一纳入 `HttpConf` 管理，可通过 `wastnet-http.p
 | `wastnet.http2.hpack.huffman.enabled` | `true` | HPACK Huffman 编码开关。开启后对 ASCII-only 且长度 > 5 字节的 header 字符串启用 Huffman 压缩（典型节省 30-50% 带宽）。设为 `false` 可在 CPU 受限环境或调试时关闭。可通过 `HttpConf.HTTP2_HPACK_HUFFMAN_ENABLED` 程序化访问 |
 | `wastnet.http2.debug` | `false` | 调试开关，开启后打印 H2 帧的详细信息（仍通过 JVM 系统属性 `Boolean.getBoolean` 直接读取，不纳入 `HttpConf`） |
 | `wastnet.http2.flow-control-wait-timeout-ms` | `30000` (30秒，最小值 `1000`) | 等待对端通过 WINDOW_UPDATE 授予更多发送窗口的最大时间（毫秒）；超时则判定为 FLOW_CONTROL_ERROR 并关闭连接（RFC 7540 §6.9.2） |
+| `wastnet.http2.body-read-timeout-ms` | `30000` (30秒，最小值 `1000`) | 应用线程在 `Http2BodyInputStream.read(byte[], int, int)` 中阻塞等待对端送达 DATA 帧的最大时间（毫秒）。超时抛出 `SocketTimeoutException`，错误处理交由应用层负责（自 1.0.2 起） |
 | `wastnet.http2.stream-early` | `true` | 首次接收窗口耗尽即进入流式模式（而非缓冲到 `MAX_STREAM_CAPACITY_SIZE`）。开启后流在初始接收窗口耗尽时立即切换为流式（环形缓冲 = `INITIAL_RECEIVE_WINDOW_SIZE`），大幅降低大请求体的单流内存占用。可通过 `HttpConf.HTTP2_STREAM_EARLY` 程序化访问 |
 
 ### 通过系统属性设置

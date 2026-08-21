@@ -295,6 +295,18 @@ public final class HttpConf extends Conf {
     public static final int HTTP2_FLOW_CONTROL_WAIT_TIMEOUT_MS;
 
     /**
+     * Max time in milliseconds an application thread may block in
+     * {@code Http2BodyInputStream.read(byte[], int, int)} waiting for the peer to deliver DATA frames.
+     * Key: {@code wastnet.http2.body-read-timeout-ms}
+     * <p>
+     * Default: 30000 (30s), min: 1000 (1s). On expiry the read throws SocketTimeoutException,
+     * leaving error handling to the application layer.
+     *
+     * @since 1.0.2
+     */
+    public static final int HTTP2_BODY_READ_TIMEOUT_MS;
+
+    /**
      * Enter streaming mode at first window exhaustion instead of buffering up to MAX_STREAM_CAPACITY_SIZE.
      * Key: {@code wastnet.http2.stream-early}
      * <p>
@@ -378,6 +390,7 @@ public final class HttpConf extends Conf {
         HTTP2_CLIENT_RST_MAX_COUNT = Math.max(1, getPropInt(APP_PROPS, "wastnet.http2.client-rst.max-count", 100));
         HTTP2_HPACK_HUFFMAN_ENABLED = isPropTrue(APP_PROPS, "wastnet.http2.hpack.huffman.enabled", true);
         HTTP2_FLOW_CONTROL_WAIT_TIMEOUT_MS = Math.max(1000, getPropInt(APP_PROPS, "wastnet.http2.flow-control-wait-timeout-ms", 30000)); // Default: 30000ms, min: 1000ms
+        HTTP2_BODY_READ_TIMEOUT_MS = Math.max(1000, getPropInt(APP_PROPS, "wastnet.http2.body-read-timeout-ms", 30000)); // Default: 30000ms, min: 1000ms
         HTTP2_STREAM_EARLY = isPropTrue(APP_PROPS, "wastnet.http2.stream-early", true); // Default: true
         HTTP2_MAX_HEADER_TABLE_SIZE = (int) Math.min(1048576L, Math.max(4096L, getPropSize(APP_PROPS, "wastnet.http2.max-header-table-size", 4096L))); // Default: 4096, min: 4096, max: 1MB
     }
@@ -429,6 +442,7 @@ public final class HttpConf extends Conf {
                 "wastnet.http2.max-concurrent-streams=" + HTTP2_MAX_CONCURRENT_STREAMS + '\n' +
                 "wastnet.http2.max-header-table-size=" + HTTP2_MAX_HEADER_TABLE_SIZE + '\n' +
                 "wastnet.http2.flow-control-wait-timeout-ms=" + HTTP2_FLOW_CONTROL_WAIT_TIMEOUT_MS + '\n' +
+                "wastnet.http2.body-read-timeout-ms=" + HTTP2_BODY_READ_TIMEOUT_MS + '\n' +
                 "wastnet.http2.stream-early=" + HTTP2_STREAM_EARLY + '\n' +
                 "wastnet.http2.hpack.huffman.enabled=" + HTTP2_HPACK_HUFFMAN_ENABLED + '\n' +
                 "wastnet.http2.client-rst.window-seconds=" + HTTP2_CLIENT_RST_WINDOW_SECONDS + '\n' +

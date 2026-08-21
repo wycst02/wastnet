@@ -16,9 +16,12 @@
 package io.github.wycst.wastnet.http.h2;
 
 import io.github.wycst.wastnet.http.HttpConf;
+import io.github.wycst.wastnet.log.Log;
+import io.github.wycst.wastnet.log.LogFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.SocketTimeoutException;
 
 /**
  * HTTP/2 body input stream for streaming request body consumption.
@@ -35,8 +38,9 @@ import java.io.InputStream;
  * Implementation notes:
  * <ul>
  *   <li>{@code bodyPos} and {@code feedPos} are actual indexes in {@code [0, capacity)}</li>
- *   <li>A {@code full} flag disambiguates the case {@code bodyPos == feedPos}:
- *       {@code !full} means empty, {@code full} means the buffer is full</li>
+ *   <li>The buffered byte count is {@code totalLength - consumed} (monotonic counters),
+ *       so free space is {@code capacity - (totalLength - consumed)}; no empty/full
+ *       ambiguity on {@code bodyPos == feedPos} arises.</li>
  * </ul>
  *
  * @author wangyc
@@ -48,6 +52,7 @@ public class Http2BodyInputStream extends InputStream {
      */
     static final Http2BodyInputStream EMPTY = new Http2BodyInputStream();
 
+    static final Log log = LogFactory.getLog(Http2BodyInputStream.class);
     final byte[] bodyData;
     final int capacity;
     /**
@@ -69,17 +74,7 @@ public class Http2BodyInputStream extends InputStream {
     long totalLength;
     volatile boolean ended;
 
-    /**
-     * Disambiguator for {@code bodyPos == feedPos}:
-     * <ul>
-     *   <li>{@code false} and {@code bodyPos == feedPos} → buffer empty</li>
-     *   <li>{@code true}  and {@code bodyPos == feedPos} → buffer full</li>
-     * </ul>
-     * When {@code bodyPos != feedPos}, this flag is ignored.
-     */
-    volatile boolean full;
-
-    long consumed = 0;
+    volatile long consumed = 0;
     final byte[] singleByte = new byte[1];
 
     /**
@@ -88,18 +83,14 @@ public class Http2BodyInputStream extends InputStream {
     private Http2BodyInputStream() {
         this.stream = null;
         this.bodyData = new byte[0];
-        this.capacity = 0;
-        this.feedPos = 0;
-        this.totalLength = 0;
-        this.full = false;
+        capacity = feedPos = bodyPos = 0;
     }
 
     /**
      * Create a circular buffer pre-filled with {@code bodyData[0..bodyData.length)}.
      * <p>
-     * The initial data occupies all {@code capacity} slots; the buffer starts in
-     * the {@code full} state. Reading consumes data and transitions to normal
-     * circular operation once {@code full} is cleared.
+     * The initial data occupies all {@code capacity} slots; the buffer starts
+     * with {@code totalLength - consumed == capacity} (i.e. full).
      */
     public Http2BodyInputStream(byte[] bodyData, Http2Stream stream) {
         this.stream = stream;
@@ -107,7 +98,6 @@ public class Http2BodyInputStream extends InputStream {
         this.capacity = bodyData.length;
         this.feedPos = 0;
         this.totalLength = bodyData.length;
-        this.full = capacity > 0;
     }
 
     @Override
@@ -118,36 +108,28 @@ public class Http2BodyInputStream extends InputStream {
 
     @Override
     public int read(byte[] b, int off, int len) throws IOException {
-        if (b == null) throw new NullPointerException();
         if (off < 0 || len < 0 || len > b.length - off) throw new IndexOutOfBoundsException();
         if (len == 0) return 0;
         // Empty singleton: no body to read
         if (capacity == 0) return -1;
-
+        long deadline = HttpConf.HTTP2_BODY_READ_TIMEOUT_MS > 0
+                ? System.currentTimeMillis() + HttpConf.HTTP2_BODY_READ_TIMEOUT_MS : Long.MAX_VALUE;
         while (true) {
-            boolean f = full;
-            int pos = bodyPos;
-            int feed = feedPos;
-            int avail = f ? capacity : (pos <= feed ? feed - pos : capacity - pos + feed);
+            int pos = bodyPos, feed = feedPos;
+            // avail from cursors: linear (pos<feed) or wrapped (pos>feed); pos==feed is empty(0)/full(capacity),
+            // distinguished by counter totalLength-consumed.
+            int avail = pos < feed ? feed - pos : (pos > feed ? capacity - pos + feed : (int) (totalLength - consumed));
             if (avail > 0) {
                 int toRead = Math.min(avail, len);
-                int cap = capacity;
-                if (pos + toRead <= cap) {
+                int firstSeg = capacity - pos, newPos;
+                if (toRead <= firstSeg) {
                     // Linear read [pos, pos + toRead)
                     System.arraycopy(bodyData, pos, b, off, toRead);
+                    newPos = toRead == firstSeg ? 0 : pos + toRead;
                 } else {
                     // Wrapped read: [pos, cap) then [0, ...)
-                    int firstSeg = cap - pos;
                     System.arraycopy(bodyData, pos, b, off, firstSeg);
-                    System.arraycopy(bodyData, 0, b, off + firstSeg, toRead - firstSeg);
-                }
-
-                int newPos = pos + toRead;
-                if (newPos >= cap) {
-                    newPos -= cap;
-                }
-                if (full) {
-                    full = false;
+                    System.arraycopy(bodyData, 0, b, off + firstSeg, newPos = toRead - firstSeg);
                 }
                 bodyPos = newPos;
                 consumed += toRead;
@@ -158,15 +140,15 @@ public class Http2BodyInputStream extends InputStream {
                 return toRead;
             }
             if (ended) return -1;
+            if (System.currentTimeMillis() >= deadline) {
+                throw new SocketTimeoutException("HTTP/2 body read timeout after "
+                        + HttpConf.HTTP2_BODY_READ_TIMEOUT_MS + "ms");
+            }
             synchronized (this) {
-                boolean fullSnapshot = full;
-                int p = bodyPos;
-                int fPos = feedPos;
-                int a = fullSnapshot ? capacity : (p <= fPos ? fPos - p : capacity - p + fPos);
-                if (a > 0) continue;
+                if (totalLength > consumed) continue;
                 if (ended) return -1;
                 try {
-                    wait();
+                    wait(10000);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     throw new IOException("Read interrupted", e);
@@ -178,57 +160,40 @@ public class Http2BodyInputStream extends InputStream {
     /**
      * Feed DATA frame payload into the ring buffer.
      * <p>
-     * Lock-free hot path: uses volatile read/write on {@code bodyPos},
-     * {@code feedPos} and {@code full} for thread-safe SPSC operation.
-     * Only acquires the monitor briefly for {@code notifyAll()} when new
-     * data is available. If buffer is full, marks stream as ended to
-     * signal back-pressure.
+     * Lock-free hot path: uses volatile read/write on {@code bodyPos} and
+     * {@code feedPos}, with free space derived from the monotonic counters
+     * {@code totalLength - consumed}. A full buffer is a correct state: when
+     * the application layer does not consume, flow control must stop the peer
+     * from sending more. Only if the peer violates flow control (sends more
+     * while buffer is full) is it a protocol violation.
      *
      * @return true if normal, false if protocol violation (buffer full but more data sent)
      */
     public boolean feed(byte[] buf, int offset, int len) {
         if (ended || len == 0) return true;
-
-        int cap = capacity;
-        int pos = bodyPos;
-        int feed = feedPos;
-        int free;
-        if (full) {
-            free = 0;
-        } else if (pos <= feed) {
-            free = cap - feed + pos;
-        } else {
-            free = pos - feed;
-        }
-
+        int cap = capacity, feed = feedPos;
+        long free = cap - (totalLength - consumed);
         if (free < len) {
+            // A full buffer is expected; the peer must not send more. If it does,
+            // that is a flow-control violation.
+            log.warn("[FEED-FAIL] free={} len={} cap={} bodyPos={} feedPos={} totalLength={} consumed={} recvWindow={}",
+                    free, len, cap, bodyPos, feed, totalLength, consumed, (stream != null ? stream.receiveWindow : -1));
             ended = true;
             synchronized (this) {
                 notifyAll();
             }
-            return false;  // protocol violation: buffer full but client sent more
+            return false;
         }
-
-        int untilEnd = cap - feed;
+        int untilEnd = cap - feed, newFeed;
         if (len <= untilEnd) {
             System.arraycopy(buf, offset, bodyData, feed, len);
+            newFeed = len == untilEnd ? 0 : feed + len;
         } else {
             System.arraycopy(buf, offset, bodyData, feed, untilEnd);
-            System.arraycopy(buf, offset + untilEnd, bodyData, 0, len - untilEnd);
-        }
-
-        int newFeed = feed + len;
-        if (newFeed >= cap) {
-            newFeed -= cap;
-        }
-        // Must read bodyPos fresh (volatile) to correctly detect full:
-        // the reader may have advanced bodyPos between our earlier cached read and here.
-        if (newFeed == bodyPos) {
-            full = true;
+            System.arraycopy(buf, offset + untilEnd, bodyData, 0, newFeed = len - untilEnd);
         }
         feedPos = newFeed;
         totalLength += len;
-
         synchronized (this) {
             notifyAll();
         }
