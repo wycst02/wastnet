@@ -528,7 +528,8 @@ public final class Http2HpackCodec {
     private static void validateBytes(byte[] buf, int offset, int len) {
         for (int i = offset, end = offset + len; i < end; ++i) {
             byte b = buf[i];
-            if (b < ' ' && (b == 0 || b == '\r' || b == '\n')) { // short-circuit: skip printable ASCII
+            if( b > '\r') continue; // fast path: most bytes are printable ASCII, skip check
+            if (b == 0 || b == '\r' || b == '\n') {
                 throw new Http2HpackException("Invalid control character in header field (RFC 7540 §8.1.2.6)");
             }
         }
