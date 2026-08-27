@@ -28,7 +28,6 @@ public final class Http2Frame {
     public static final byte FRAME_TYPE_GOAWAY = 0x07;
     public static final byte FRAME_TYPE_WINDOW_UPDATE = 0x08;
     public static final byte FRAME_TYPE_CONTINUATION = 0x09;
-    public final static byte[] EMPTY = new byte[0];
 
     // Frame flags (bit positions vary by frame type — see RFC 7540)
     /**
@@ -61,12 +60,13 @@ public final class Http2Frame {
      */
     public static final int PRIORITY = 0x20;
     /**
-     * PING ACK (bit 7), {@code 0x80}.
+     * PING ACK (bit 0), {@code 0x01}.
      * <p>
      * Used by: {@code PING} (RFC 7540 §6.7).
      * The PING response MUST have this flag set.
+     * Note: the h2 ACK flag is always bit 0 (0x01), shared by PING and SETTINGS.
      */
-    public static final int PING_ACK = 0x80;
+    public static final int PING_ACK = 0x01;
     /**
      * SETTINGS ACK (bit 0), {@code 0x01}.
      * <p>
