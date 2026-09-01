@@ -25,7 +25,6 @@ import io.github.wycst.wastnet.log.Log;
 import io.github.wycst.wastnet.log.LogFactory;
 import io.github.wycst.wastnet.socket.handler.ClearableHandler;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
-import io.github.wycst.wastnet.util.Utils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -62,12 +61,16 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
      * Default health check route path
      */
     public static final String DEFAULT_HEALTH_ROUTE = "/health";
+    static String defaultHealthContentType = HttpHeaderValues.APPLICATION_JSON_UTF8;
+    static String defaultHealthResponseBody = "{\"status\":\"UP\"}";
+
     private final String contextPath;
     private String healthRoute = DEFAULT_HEALTH_ROUTE;
     private final int contextPathLen;
     // exactRoutes is rarely seen
-    protected final Map<String, HttpRoute> exactRoutes = new HashMap<String, HttpRoute>();
-    protected final List<RouteEntry> routes = new ArrayList<RouteEntry>();
+    protected final Map<String, HttpRoute> exactRoutes = new HashMap<>();
+    protected final List<RouteEntry> routes = new ArrayList<>();
+    private boolean disableAutoSort; // when true, keep registration order in prepare()
     private HttpRequestHandler notFoundHandler;
     private byte[] notFoundBytes;
     private boolean autoRedirect = true;
@@ -75,7 +78,7 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
     private boolean interceptorsDisabled = false;
     private HttpProxyWorkerManager proxyWorkerManager;
     // Route-level interceptors (ordered chain), independent of server-wide HttpServerInterceptor
-    private final List<RouterInterceptor> interceptors = new ArrayList<RouterInterceptor>();
+    private final List<RouterInterceptor> interceptors = new ArrayList<>();
 
     /**
      * Create a router handler with root context path ({@code "/"}).
@@ -281,7 +284,7 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
      */
     public HttpRouterHandler resource(HttpResourceRoute resource) {
         routes.add(new RouteEntry(resource.routePath, true, resource));
-        resource.setBasePath(contextPath);
+        resource.basePath(contextPath);
         return this;
     }
 
@@ -458,8 +461,7 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
 
         // Health route check (before prefix/regex match)
         if (subPath.equals(healthRoute)) {
-            response.setHeader("Content-Type", "application/json; charset=utf-8");
-            response.status(HttpStatus.OK).body("{\"status\":\"UP\"}".getBytes(Utils.UTF_8));
+            response.contentType(defaultHealthContentType).status(HttpStatus.OK).body(defaultHealthResponseBody);
             return;
         }
 
@@ -590,7 +592,7 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
      * @return this router handler for chaining
      */
     public HttpRouterHandler sse(String path, SseHandler handler) {
-        return sse(path, HttpConf.SSE_TIMEOUT_MS, handler);
+        return sse(path, -1, handler);
     }
 
     /**
@@ -600,7 +602,8 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
      * {@link SseEmitter#close()} is called or the timeout elapses.
      *
      * @param path      the exact path for SSE endpoint
-     * @param timeoutMs idle timeout in milliseconds
+     * @param timeoutMs maximum duration in milliseconds before the SSE connection is closed;
+     *                   if {@code < 0}, the global/instance option {@link HttpOptions#SSE_TIMEOUT_MS} is used instead
      * @param handler   the SSE handler
      * @return this router handler for chaining
      */
@@ -617,10 +620,66 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
                     emitter.close();
                 }
             });
-            if (!emitter.awaitClose(timeoutMs)) {
+            final long effectiveTimeoutMs = timeoutMs < 0 ? sseCtx.option(HttpOptions.SSE_TIMEOUT_MS) : timeoutMs;
+            if (!emitter.awaitClose(effectiveTimeoutMs)) {
                 emitter.close(); // timeout: force close
             }
         });
         return this;
+    }
+
+    /**
+     * Set the default health-check response body and its content type.
+     * <p>Affects all {@link HttpRouterHandler} instances' health route unless overridden
+     * per-instance via {@link #healthRoute(String)}. Defaults: {@code application/json; charset=utf-8}
+     * and {@code {"status":"UP"}}.</p>
+     *
+     * @param contentType the response Content-Type header value
+     * @param body        the response body string
+     */
+    public static void setDefaultHealthResponse(String contentType, String body) {
+        defaultHealthContentType = contentType;
+        defaultHealthResponseBody = body;
+    }
+
+    /**
+     * Disable the automatic route sorting done at startup.
+     * <p>By default {@link #prepare()} reorders routes (most specific first). Call this to
+     * keep the exact registration order, i.e. first-registered route is matched first.</p>
+     *
+     * @return this router handler for chaining
+     */
+    public HttpRouterHandler disableAutoSort() {
+        this.disableAutoSort = true;
+        return this;
+    }
+
+    /**
+     * One-time startup preparation: sort routes so the most specific matches first.
+     * <p>Order: non-root prefixes by descending length (e.g. {@code /user/aaa} before
+     * {@code /user}), then regex routes in registration order, then the root prefix
+     * {@code /} last as the catch-all. This mirrors nginx prefix-location priority
+     * while keeping regex order and preserving prefix-before-regex semantics. Skipped
+     * when {@link #disableAutoSort()} has been called.</p>
+     */
+    @Override
+    public void prepare() {
+        if (disableAutoSort || routes.size() <= 1) {
+            return;
+        }
+        routes.sort((a, b) -> {
+            boolean aRoot = a.prefix && "/".equals(a.pattern);
+            boolean bRoot = b.prefix && "/".equals(b.pattern);
+            if (aRoot != bRoot) {
+                return aRoot ? 1 : -1; // root prefix last
+            }
+            if (a.prefix != b.prefix) {
+                return a.prefix ? -1 : 1; // prefix routes before regex routes
+            }
+            if (a.prefix) {
+                return b.pattern.length() - a.pattern.length(); // longer prefix first
+            }
+            return 0; // regex routes: preserve registration order (stable sort)
+        });
     }
 }

@@ -20,7 +20,7 @@ import java.util.Objects;
  * @since 2024-1-19
  * @author wangyc
  */
-public final class HttpServerChannelHandler extends ChannelHandler<HttpMessage> implements ClearableHandler {
+public final class HttpServerChannelHandler implements ChannelHandler<HttpMessage>, ClearableHandler {
 
     static final Log log = LogFactory.getLog(HttpServerChannelHandler.class);
 
@@ -105,6 +105,7 @@ public final class HttpServerChannelHandler extends ChannelHandler<HttpMessage> 
      * assemble the internal delegate once (left {@code null} when neither is set, for zero overhead).
      */
     public void prepare() {
+        requestHandler.prepare();
         if (requestHandler instanceof UpgradeHandler) {
             this.upgradeHandler = (UpgradeHandler) requestHandler;
         }
