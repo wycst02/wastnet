@@ -114,6 +114,9 @@ public final class HttpUriDecoder {
                             resetContentBa();
                             return;
                         }
+                        // '=' inside a value is a literal char (e.g. base64/JWT); write as-is
+                         contentBa.write(b);
+                         return;
                     }
                 }
                 case '&': {
@@ -205,14 +208,14 @@ public final class HttpUriDecoder {
 
     private void nextParam(String key, String value) {
         if (parameters == null) {
-            parameters = new HashMap<String, List<String>>(8);
+            parameters = new HashMap<>(8);
         }
-        List<String> values = parameters.computeIfAbsent(key, k -> new ArrayList<String>(1));
+        List<String> values = parameters.computeIfAbsent(key, k -> new ArrayList<>(1));
         values.add(value);
     }
 
     public Map<String, List<String>> getParameters() {
-        return parameters == null ? Collections.<String, List<String>>emptyMap() : parameters;
+        return parameters == null ? Collections.emptyMap() : parameters;
     }
 
     public void setRawUri(String uri) {
