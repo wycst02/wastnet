@@ -93,16 +93,6 @@
                         <include>**/*Test.java</include>
                         <include>**/*Test*.java</include>
                     </includes>
-                    <excludes>
-                        <exclude>**/integration/WebSocketIntegrationTest.java</exclude>
-                        <exclude>**/integration/WebSocketFragmentationTest.java</exclude>
-                        <exclude>**/integration/WebSocketSendStreamTest.java</exclude>
-<!--                        <exclude>**/http/h2/H2MonitorTest.java</exclude>-->
-<!--                        <exclude>**/integration/SslTlsIntegrationTest.java</exclude>-->
-<!--                        <exclude>**/socket/tcp/ChannelContextTest.java</exclude>-->
-<!--                        <exclude>**/socket/tcp/ChannelRunnerTest.java</exclude>-->
-<!--                        <exclude>**/integration/HttpProxyIntegrationTest.java</exclude>-->
-                    </excludes>
                 </configuration>
             </plugin>
             <plugin>
