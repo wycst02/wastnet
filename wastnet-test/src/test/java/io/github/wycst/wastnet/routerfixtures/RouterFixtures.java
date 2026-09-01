@@ -10,14 +10,14 @@ import java.lang.annotation.Target;
 import java.util.List;
 
 /**
- * Fixture controllers/components for {@code AnnotationRouterHandler} coverage tests.
+ * Fixture controllers/components for {@code AnnotationRouterHandler} tests.
  * Kept in an isolated package (NOT under {@code http.annotation}) so the existing
- * full-package scan in {@code AnnotationPackageCoverageTest} is not disturbed.
+ * full-package scan in {@code AnnotationPackageTest} is not disturbed.
  * Nested types are discovered by {@link io.github.wycst.wastnet.http.annotation.PackageScanner}.
  */
 public class RouterFixtures {
 
-    // ============ real controllers scanned for runtime coverage ============
+    // ============ real controllers scanned for runtime ============
 
     @Controller("/pv")
     public static class PathVarController {

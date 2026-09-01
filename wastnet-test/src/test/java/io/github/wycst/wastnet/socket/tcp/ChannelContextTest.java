@@ -22,10 +22,11 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Coverage tests for {@link ChannelContext}.
+ * tests for {@link ChannelContext}.
  * Covers simple getter/setter, I/O helper, and error-handling branches.
  */
-public class ChannelContextCoverageTest {
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
+public class ChannelContextTest {
 
     private java.nio.channels.SocketChannel realChannel;
     private ChannelContext ctx;
@@ -241,7 +242,6 @@ public class ChannelContextCoverageTest {
     }
 
     /**
-     * Cover the 2-arg schedule(Runnable, long delayMs) delegate (ChannelContext L741-743),
      * which forwards to schedule(runnable, delayMs, TimeUnit.MILLISECONDS).
      */
     @Test
@@ -419,7 +419,7 @@ public class ChannelContextCoverageTest {
         Assertions.assertTrue(ok.get(), "waitForWrite should return true after wakeup");
     }
 
-    /** InterruptedException branch (L193-196): pass timeoutMs <= 0 so wait(30000), then interrupt. */
+    /** InterruptedException branch : pass timeoutMs <= 0 so wait(30000), then interrupt. */
     @Test
     public void testWaitForWriteInterruptedException() throws Exception {
         ChannelWorker worker = newRealWorker();
@@ -448,7 +448,7 @@ public class ChannelContextCoverageTest {
         Assertions.assertFalse(result.get(), "waitForWrite should return false on interrupt");
     }
 
-    /** doRemoveWriteInterest false branch (L184): readKey != null but invalid -> interestOps not called. */
+    /** doRemoveWriteInterest false branch : readKey != null but invalid -> interestOps not called. */
     @Test
     public void testDoRemoveWriteInterestWhenKeyInvalid() throws Exception {
         ChannelWorker worker = newRealWorker();
@@ -464,7 +464,7 @@ public class ChannelContextCoverageTest {
         verify(key, never()).interestOps(anyInt());
     }
 
-    /** doRegisterWrite false branch (L177): worker != null but readKey == null -> interestOps skipped. */
+    /** doRegisterWrite false branch : worker != null but readKey == null -> interestOps skipped. */
     @Test
     public void testWaitForWriteThreadPoolPathNoReadKey() throws Exception {
         ChannelWorker worker = newRealWorker();   // no readKey set -> readKey == null
@@ -822,7 +822,7 @@ public class ChannelContextCoverageTest {
         Assertions.assertFalse(stillThere, "getAttributeNames should not include removed key 'foo'");
     }
 
-    /** close() must enter the 'attributes != null' branch (L233) and clear the lazy map. */
+    /** close() must enter the 'attributes != null' branch  and clear the lazy map. */
     @Test
     public void testCloseClearsAttributes() {
         // setAttribute makes the lazy 'attributes' map non-null so close() reaches attributes.clear()

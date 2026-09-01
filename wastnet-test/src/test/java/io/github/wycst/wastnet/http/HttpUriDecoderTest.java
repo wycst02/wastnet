@@ -175,7 +175,7 @@ public class HttpUriDecoderTest {
     }
 
     /**
-     * Cover L92: a second '?' while already in parameter mode is treated as a literal char.
+     * Cover : a second '?' while already in parameter mode is treated as a literal char.
      * Uses parameter=true constructor so the very first '?' does not flip the flag.
      */
     @Test
@@ -184,12 +184,12 @@ public class HttpUriDecoderTest {
         decoder.codec("a?b?c".getBytes());
         decoder.endCodec();
         // In parameter mode (constructor flag) the first '?' does not flip the flag,
-        // so every '?' is a literal char written to content -> covers L92.
+        // so every '?' is a literal char written to content -> covers .
         Assertions.assertNotNull(decoder.getParameters().get("a?b?c"));
     }
 
     /**
-     * Cover L155-156 (strict, codecState==2 with invalid low hex): % + valid high nibble + invalid low nibble.
+     * Cover  (strict, codecState==2 with invalid low hex): % + valid high nibble + invalid low nibble.
      */
     @Test
     public void testStrictModeInvalidLowHex() {
@@ -204,7 +204,7 @@ public class HttpUriDecoderTest {
     }
 
     /**
-     * Cover L158-160 (non-strict, codecState==2 with invalid low hex): rollback to literal '%'.
+     * Cover  (non-strict, codecState==2 with invalid low hex): rollback to literal '%'.
      */
     @Test
     public void testNonStrictModeInvalidLowHex() {
@@ -216,7 +216,7 @@ public class HttpUriDecoderTest {
     }
 
     /**
-     * Cover L110/L123 false branches: in non-parameter (URI) mode, '=' and '&' are NOT
+     * Cover / false branches: in non-parameter (URI) mode, '=' and '&' are NOT
      * treated as delimiters and are written verbatim.
      */
     @Test
@@ -229,7 +229,7 @@ public class HttpUriDecoderTest {
     }
 
     /**
-     * Cover L236: reset() when contentBa has grown beyond MAX_CACHE_SIZE reallocates a fresh buffer.
+     * Cover : reset() when contentBa has grown beyond MAX_CACHE_SIZE reallocates a fresh buffer.
      */
     @Test
     public void testResetAfterLargeBuffer() {

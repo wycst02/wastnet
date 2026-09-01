@@ -17,11 +17,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Extra coverage tests for {@link AnnotationRouterHandler} gaps:
+ * Extra tests for {@link AnnotationRouterHandler} gaps:
  * builder setters, path-variable / request-param / file-param routing,
  * scan-time exceptions, named-inject resolution and private static helpers.
  * Fixtures live in the {@code extratest} subpackage so the existing
- * full-package scan in {@code AnnotationPackageCoverageTest} is not disturbed.
+ * full-package scan in {@code AnnotationPackageTest} is not disturbed.
  */
 public class AnnotationRouterHandlerExtraTest {
 
@@ -120,7 +120,7 @@ public class AnnotationRouterHandlerExtraTest {
         return m;
     }
 
-    // ==================== builder setters (L90-91, L103-104) ====================
+    // ==================== builder setters (, ) ====================
 
     @Test
     public void testBuilderChainsAll() {
@@ -166,7 +166,7 @@ public class AnnotationRouterHandlerExtraTest {
             Response fr = client.newCall(new Request.Builder()
                     .url("http://127.0.0.1:51120/rp2/upload").post(body).build()).execute();
             fr.close();
-            // SSE handler that throws -> L506-507
+            // SSE handler that throws -> 
             Response sr = client.newCall(new Request.Builder()
                     .url("http://127.0.0.1:51120/sse-throw/stream").get().build()).execute();
             sr.close();
@@ -182,7 +182,7 @@ public class AnnotationRouterHandlerExtraTest {
         return c;
     }
 
-    // ==================== general-path @RequestBody without converter (L469 false) ====================
+    // ==================== general-path @RequestBody without converter ( false) ====================
 
     @Test
     public void testGeneralBodyNoConverter() throws Throwable {
@@ -336,7 +336,7 @@ public class AnnotationRouterHandlerExtraTest {
         // scalar with default
         when(req.getParameter("z")).thenReturn(null);
         assertEquals("d", m.invoke(null, req, "z", String.class, String.class, false, "d", false, false));
-        // multi missing but not required -> return null (L673)
+        // multi missing but not required -> return null 
         when(req.getParameterValues("m")).thenReturn(null);
         assertNull(m.invoke(null, req, "m", String[].class, String.class, false, "", false, true));
     }
@@ -355,7 +355,7 @@ public class AnnotationRouterHandlerExtraTest {
         // multi present
         when(req.getMultipartFields("fs")).thenReturn(Arrays.asList(f));
         assertNotNull(m.invoke(null, req, "fs", MultipartField[].class, false));
-        // multi missing but not required -> return null (L697)
+        // multi missing but not required -> return null 
         when(req.getMultipartFields("fs")).thenReturn(null);
         assertNull(m.invoke(null, req, "fs", MultipartField[].class, false));
         // multi missing required -> throw

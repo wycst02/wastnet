@@ -44,31 +44,10 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      # JDK 8: skip slow / timeout-prone tests (add/remove lines as needed)
+      # JDK8-prone flaky/integration tests are disabled via @DisabledOnJre(JRE.JAVA_8)
       - name: Build and test on JDK ${{ matrix.java }}
         run: |
-          set +o histexpand
-          EXCLUDES=""
-          if [ "${{ matrix.java }}" = "8" ]; then
-            EXCLUDES="-Dtest=!WebSocketIntegrationTest"
-            EXCLUDES="$EXCLUDES,!WebSocketFragmentationTest"
-            EXCLUDES="$EXCLUDES,!WebSocketSendStreamTest"
-            EXCLUDES="$EXCLUDES,!ChannelContextCoverageTest"
-            EXCLUDES="$EXCLUDES,!HttpProxyIntegrationTest"
-            EXCLUDES="$EXCLUDES,!ChannelRunnerTest"
-            EXCLUDES="$EXCLUDES,!Http2PriorKnowledgeIntegrationTest"
-            EXCLUDES="$EXCLUDES,!HttpServerIntegrationTest"
-            EXCLUDES="$EXCLUDES,!HttpIntegrationTest"
-            EXCLUDES="$EXCLUDES,!HttpServerChannelHandlerIntegrationTest"
-            EXCLUDES="$EXCLUDES,!TCPClientTest"
-            EXCLUDES="$EXCLUDES,!SslTlsIntegrationTest"
-            EXCLUDES="$EXCLUDES,!ChannelSSLContextTest"
-            EXCLUDES="$EXCLUDES,!TCPServerTest"
-            EXCLUDES="$EXCLUDES,!H2MonitorTest"
-            EXCLUDES="$EXCLUDES,!AnnotationPackageCoverageTest"
-
-          fi
-          mvn verify -pl wastnet-test -am --batch-mode -Dsurefire.failIfNoSpecifiedTests=false $EXCLUDES
+          mvn verify -pl wastnet-test -am --batch-mode -Dsurefire.failIfNoSpecifiedTests=false
 
       # Upload XML report to Codecov (all JDKs)
       - name: Upload JaCoCo XML report for JDK ${{ matrix.java }}

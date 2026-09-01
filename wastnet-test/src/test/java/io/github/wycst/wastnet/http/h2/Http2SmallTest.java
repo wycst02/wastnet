@@ -8,9 +8,9 @@ import java.nio.channels.SocketChannel;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
- * Coverage tests for Http2ServerStream, Http2ClientStream, Http2ClientReader, Http2Request.
+ * tests for Http2ServerStream, Http2ClientStream, Http2ClientReader, Http2Request.
  */
-public class Http2SmallCoverageTest {
+public class Http2SmallTest {
 
     private static Http2MessageReader createReader() {
         // Use a test instance with proper fields

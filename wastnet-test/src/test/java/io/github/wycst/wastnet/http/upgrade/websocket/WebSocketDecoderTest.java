@@ -503,6 +503,23 @@ class WebSocketDecoderTest {
         assertEquals("12345678", new String(capturedFrames.get(0).getData()));
     }
 
+    @Test
+    void testUnmaskJdk8Path() throws Exception {
+        // Force the JDK 8 fallback unmask path (unrolled byte loop) regardless of the
+        // actual runtime JDK, by overriding the white-box hook useNativeUnmask().
+        WebSocketDecoder jdk8Decoder = new WebSocketDecoder() {
+            @Override
+            protected boolean useNativeUnmask() {
+                return false;
+            }
+        };
+        byte[] payload = "Hello, JDK8!".getBytes();
+        jdk8Decoder.decode(frame(true, 0x1, payload), 0, 6 + payload.length, ctx);
+        assertFalse(closeCalled);
+        assertEquals(1, capturedFrames.size());
+        assertEquals("Hello, JDK8!", new String(capturedFrames.get(0).getData()));
+    }
+
     // ================================================================
     //  Partial extended-length header (readFully needed)
     // ================================================================
@@ -604,5 +621,246 @@ class WebSocketDecoderTest {
         decoder.decode(all, 0, all.length, ctx);
         assertTrue(closeCalled);
         assertEquals(0, capturedFrames.size());
+    }
+
+    //
+
+    @Test
+    void testRsvBitsSetReturns1002() throws Exception {
+        byte[] payload = "hello".getBytes();
+        byte[] f = new byte[6 + payload.length];
+        f[0] = (byte) 0xC1;
+        f[1] = (byte) (0x80 | payload.length);
+        for (int i = 0; i < payload.length; ++i) {
+            f[6 + i] = payload[i];
+        }
+        decoder.decode(f, 0, f.length, ctx);
+        assertTrue(closeCalled);
+        assertEquals(0, capturedFrames.size());
+    }
+
+    @Test
+    void testIncompleteHeaderRead() throws Exception {
+        byte[] f = frame(true, 0x1, "hello".getBytes());
+        byte[] partial = new byte[4];
+        System.arraycopy(f, 0, partial, 0, 4);
+        final int[] readOffset = {4};
+        doAnswer(inv -> {
+            byte[] buf = inv.getArgument(0);
+            int off = inv.getArgument(1);
+            int len = inv.getArgument(2);
+            int avail = f.length - readOffset[0];
+            int toCopy = Math.min(len, avail);
+            System.arraycopy(f, readOffset[0], buf, off, toCopy);
+            readOffset[0] += toCopy;
+            return toCopy;
+        }).when(ctx).readFully(any(byte[].class), anyInt(), anyInt(), anyLong());
+        decoder.decode(partial, 0, 4, ctx);
+        assertEquals("hello", new String(capturedFrames.get(0).getData()));
+    }
+
+    @Test
+    void testIncomplete16BitHeader() throws Exception {
+        byte[] payload = new byte[200];
+        for (int i = 0; i < payload.length; ++i) payload[i] = (byte) i;
+        byte[] f = frame(true, 0x2, payload);
+        byte[] partial = new byte[6];
+        System.arraycopy(f, 0, partial, 0, 6);
+        final int[] readOffset = {6};
+        doAnswer(inv -> {
+            byte[] buf = inv.getArgument(0);
+            int off = inv.getArgument(1);
+            int len = inv.getArgument(2);
+            int avail = f.length - readOffset[0];
+            int toCopy = Math.min(len, avail);
+            System.arraycopy(f, readOffset[0], buf, off, toCopy);
+            readOffset[0] += toCopy;
+            return toCopy;
+        }).when(ctx).readFully(any(byte[].class), anyInt(), anyInt(), anyLong());
+        decoder.decode(partial, 0, 6, ctx);
+        assertEquals(1, capturedFrames.size());
+        assertArrayEquals(payload, capturedFrames.get(0).getData());
+    }
+
+    @Test
+    void testIncomplete64BitHeader() throws Exception {
+        byte[] payload = new byte[70000];
+        for (int i = 0; i < payload.length; ++i) payload[i] = (byte) (i & 0xFF);
+        byte[] f = frame(true, 0x2, payload);
+        byte[] partial = new byte[10];
+        System.arraycopy(f, 0, partial, 0, 10);
+        final int[] readOffset = {10};
+        doAnswer(inv -> {
+            byte[] buf = inv.getArgument(0);
+            int off = inv.getArgument(1);
+            int len = inv.getArgument(2);
+            int avail = f.length - readOffset[0];
+            int toCopy = Math.min(len, avail);
+            System.arraycopy(f, readOffset[0], buf, off, toCopy);
+            readOffset[0] += toCopy;
+            return toCopy;
+        }).when(ctx).readFully(any(byte[].class), anyInt(), anyInt(), anyLong());
+        decoder.decode(partial, 0, 10, ctx);
+        assertEquals(1, capturedFrames.size());
+        assertArrayEquals(payload, capturedFrames.get(0).getData());
+    }
+
+    @Test
+    void test64BitLengthMsbSetReturns1002() throws Exception {
+        byte[] payload = "hi".getBytes();
+        byte[] f = new byte[14 + payload.length];
+        f[0] = (byte) 0x81;
+        f[1] = (byte) (0x80 | 127);
+        f[2] = (byte) 0x80;
+        for (int i = 0; i < payload.length; ++i) {
+            f[14 + i] = payload[i];
+        }
+        decoder.decode(f, 0, f.length, ctx);
+        assertTrue(closeCalled);
+        assertEquals(0, capturedFrames.size());
+    }
+
+    @Test
+    void test16BitLengthExceedsMax() throws Exception {
+        resource.maxPayloadSize(100);
+        byte[] f = frame(true, 0x1, new byte[200]);
+        decoder.decode(f, 0, f.length, ctx);
+        assertTrue(closeCalled);
+    }
+
+    @Test
+    void testPartialPayloadRead() throws Exception {
+        byte[] payload = "This is a long message that spans multiple chunks".getBytes();
+        byte[] f = frame(true, 0x1, payload);
+        int split = f.length - 15;
+        byte[] chunk = new byte[split];
+        System.arraycopy(f, 0, chunk, 0, split);
+        final int[] readOffset = {split};
+        doAnswer(inv -> {
+            byte[] buf = inv.getArgument(0);
+            int off = inv.getArgument(1);
+            int len = inv.getArgument(2);
+            int avail = f.length - readOffset[0];
+            int toCopy = Math.min(len, avail);
+            System.arraycopy(f, readOffset[0], buf, off, toCopy);
+            readOffset[0] += toCopy;
+            return toCopy;
+        }).when(ctx).readFully(any(byte[].class), anyInt(), anyInt(), anyLong());
+        decoder.decode(chunk, 0, split, ctx);
+        assertEquals(1, capturedFrames.size());
+        assertArrayEquals(payload, capturedFrames.get(0).getData());
+    }
+
+    @Test
+    void testNonZeroMask() throws Exception {
+        byte[] payload = "Hello".getBytes();
+        byte[] f = new byte[6 + payload.length];
+        f[0] = (byte) 0x81;
+        f[1] = (byte) (0x80 | payload.length);
+        f[2] = 0x12; f[3] = 0x34; f[4] = 0x56; f[5] = 0x78;
+        for (int i = 0; i < payload.length; ++i) {
+            f[6 + i] = (byte) (payload[i] ^ f[2 + (i % 4)]);
+        }
+        decoder.decode(f, 0, f.length, ctx);
+        assertEquals(1, capturedFrames.size());
+        assertEquals("Hello", new String(capturedFrames.get(0).getData()));
+    }
+
+    @Test
+    void testNonFinControlBetweenFragments() throws Exception {
+        byte[] all = concat(
+                frame(false, 0x1, "chunk1".getBytes()),
+                frame(false, 0x8, new byte[0]),
+                frame(true, 0x0, "chunk2".getBytes()));
+        decoder.decode(all, 0, all.length, ctx);
+        assertTrue(closeCalled);
+    }
+
+    @Test
+    void testBatchMergeTooLargeFlush() throws Exception {
+        resource.continuationStrategy(WebSocketResource.ContinuationStrategy.BATCH).maxPayloadSize(10);
+        byte[] all = concat(
+                frame(false, 0x1, "AAAAA".getBytes()),
+                frame(false, 0x0, "BBBBB".getBytes()),
+                frame(true, 0x0, "CCCCC".getBytes()));
+        decoder.decode(all, 0, all.length, ctx);
+        assertEquals(2, capturedFrames.size());
+    }
+
+    @Test
+    void testControlFrameRemZeroBetweenContinuations() throws Exception {
+        byte[] all = concat(
+                frame(false, 0x1, "chunk1".getBytes()),
+                frame(true, 0x9, new byte[0]));
+        decoder.decode(all, 0, all.length, ctx);
+        assertEquals(1, capturedFrames.size());
+    }
+
+    @Test
+    void testUnmaskSwitchAllRemainders() throws Exception {
+        byte[][] frames = new byte[7][];
+        for (int i = 1; i <= 7; ++i) {
+            byte[] pl = new byte[i];
+            for (int j = 0; j < i; j++) pl[j] = (byte) (j + 1);
+            frames[i - 1] = frame(true, 0x2, pl);
+        }
+        byte[] all = concat(frames);
+        capturedFrames.clear();
+        decoder.decode(all, 0, all.length, ctx);
+        assertEquals(7, capturedFrames.size());
+    }
+
+    @Test
+    void testUnmaskAlignedEqualsLen() throws Exception {
+        decoder.decode(frame(true, 0x2, "12345678".getBytes()), 0, 14, ctx);
+        assertEquals(1, capturedFrames.size());
+        assertArrayEquals("12345678".getBytes(), capturedFrames.get(0).getData());
+    }
+
+    @SuppressWarnings("unchecked")
+    private String getErrorMessage(int code) throws Exception {
+        java.lang.reflect.Method m = WebSocketDecoder.class.getDeclaredMethod("getWebSocketErrorMessage", int.class);
+        m.setAccessible(true);
+        return (String) m.invoke(decoder, code);
+    }
+
+    @Test
+    void testGetWebSocketErrorMessageElse() throws Exception {
+        String msg = getErrorMessage(1006);
+        assertTrue(msg.contains("1006"));
+        assertTrue(getErrorMessage(1002).contains("Protocol Error"));
+        assertTrue(getErrorMessage(1009).contains("Message Too Big"));
+    }
+
+    @Test
+    void testControlFramePayloadTooLarge() throws Exception {
+        byte[] payload = new byte[200];
+        byte[] f = frame(true, 0x9, payload);
+        decoder.decode(f, 0, f.length, ctx);
+        assertTrue(closeCalled);
+        assertEquals(0, capturedFrames.size());
+    }
+
+    @Test
+    void testLine155RemZero() throws Exception {
+        byte[] frame1 = frame(false, 0x1, "hello".getBytes());
+        byte[] frame2 = frame(true, 0x0, " world".getBytes());
+        byte[] all = concat(frame1, frame2);
+        int frame1Len = frame1.length;
+        final int[] readOffset = {frame1Len};
+        doAnswer(inv -> {
+            byte[] buf = inv.getArgument(0);
+            int off = inv.getArgument(1);
+            int len = inv.getArgument(2);
+            int avail = all.length - readOffset[0];
+            if (avail <= 0) return -1;
+            int toCopy = Math.min(len, avail);
+            System.arraycopy(all, readOffset[0], buf, off, toCopy);
+            readOffset[0] += toCopy;
+            return toCopy;
+        }).when(ctx).readFully(any(byte[].class), anyInt(), anyInt(), anyLong());
+        decoder.decode(frame1, 0, frame1Len, ctx);
+        assertEquals(1, capturedFrames.size());
+        assertEquals("hello world", new String(capturedFrames.get(0).getData()));
     }
 }

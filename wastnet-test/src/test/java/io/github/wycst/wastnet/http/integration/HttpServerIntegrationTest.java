@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * Embedded integration test — starts one real HTTP server, sends multiple real HTTP requests.
  */
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class HttpServerIntegrationTest {
 
     private static HTTPServer server;

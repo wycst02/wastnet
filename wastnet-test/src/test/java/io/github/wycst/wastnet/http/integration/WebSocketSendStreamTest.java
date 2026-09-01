@@ -29,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *   <li>10-byte header (payload > 65535)</li>
  * </ul>
  */
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class WebSocketSendStreamTest {
 
     private HTTPServer server;

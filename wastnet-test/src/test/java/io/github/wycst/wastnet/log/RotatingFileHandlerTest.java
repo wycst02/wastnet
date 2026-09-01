@@ -8,7 +8,7 @@ import java.io.File;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Coverage tests for RotatingFileHandler.
+ * tests for RotatingFileHandler.
  */
 public class RotatingFileHandlerTest {
 

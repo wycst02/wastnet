@@ -201,7 +201,7 @@ public class Http2BodyInputStreamTest {
         Assertions.assertEquals("hello", new String(readBuf, 0, n));
     }
 
-    // ==================== branch coverage: validation edge cases ====================
+    // ==================== branch: validation edge cases ====================
 
     @Test
     public void testReadNegativeLength() {
@@ -230,7 +230,7 @@ public class Http2BodyInputStreamTest {
         // Step 2: Feed 6 bytes → overwrites [0..5], newFeed=6, bodyPos=6 → full=true
         is.feed(new byte[]{10, 11, 12, 13, 14, 15}, 0, 6);
 
-        // Step 3: Read 7 bytes with full=true, pos=6, 6+7=13>10 → WRAPPED READ (L120 false)
+        // Step 3: Read 7 bytes with full=true, pos=6, 6+7=13>10 → WRAPPED READ ( false)
         //         firstSeg=10-6=4, copy [6,7,8,9] then [10,11,12]
         //         newPos=6+7=13-10=3
         byte[] out = new byte[7];
@@ -238,8 +238,8 @@ public class Http2BodyInputStreamTest {
         Assertions.assertEquals(7, n);
         Assertions.assertArrayEquals(new byte[]{6, 7, 8, 9, 10, 11, 12}, out);
 
-        // Step 4: Feed 7 bytes at feedPos=6, untilEnd=4, 7>4 → WRAPPED FEED (L198 false)
-        //         copy [6..9] then [0..2], newFeed=6+7=13-10=3, bodyPos=3 → full=true (L211 true)
+        // Step 4: Feed 7 bytes at feedPos=6, untilEnd=4, 7>4 → WRAPPED FEED ( false)
+        //         copy [6..9] then [0..2], newFeed=6+7=13-10=3, bodyPos=3 → full=true ( true)
         is.feed(new byte[]{20, 21, 22, 23, 24, 25, 26}, 0, 7);
 
         // Step 5: Read 10 bytes → full=true, pos=3 → wrapped read
@@ -250,7 +250,7 @@ public class Http2BodyInputStreamTest {
         Assertions.assertArrayEquals(new byte[]{13, 14, 15, 20, 21, 22, 23, 24, 25, 26}, out2);
     }
 
-    // ==================== wait / notify (multi-threaded coverage) ====================
+    // ==================== wait / notify (multi-threaded) ====================
 
     @Test
     public void testReadBlocksThenEnded() throws Exception {

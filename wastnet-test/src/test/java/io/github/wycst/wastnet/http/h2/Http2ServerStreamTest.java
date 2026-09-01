@@ -254,7 +254,7 @@ public class Http2ServerStreamTest {
     // ---------- receiveWindow == 0, non-early (HTTP2_STREAM_EARLY=false) → WU pair refill ----------
 
     /**
-     * Covers Http2Stream.onDataFrame L438-443: when streamEarly is false and the first window
+     * Covers Http2Stream.onDataFrame : when streamEarly is false and the first window
      * exhaustion happens with body below capacity, a WINDOW_UPDATE pair refills receiveWindow.
      * Uses an isolated config (streamEarly=false, small maxStreamCapacitySize) instead of the
      * global HttpConf.HTTP2_STREAM_EARLY final.
@@ -284,7 +284,7 @@ public class Http2ServerStreamTest {
     // ---------- receiveWindow == 0, non-early, body == capacity → switch to streaming ----------
 
     /**
-     * Covers Http2Stream.onDataFrame L444-445: when streamEarly is false and cumulative body
+     * Covers Http2Stream.onDataFrame : when streamEarly is false and cumulative body
      * reaches maxStreamCapacitySize exactly, switch to streaming mode.
      */
     @Test
@@ -311,7 +311,7 @@ public class Http2ServerStreamTest {
     // ---------- receiveWindow == 0, non-early, body > capacity → no refill, no streaming ----------
 
     /**
-     * Covers the remaining false branch of Http2Stream.onDataFrame L444: dataFramesTotalLength
+     * Covers the remaining false branch of Http2Stream.onDataFrame : dataFramesTotalLength
      * exceeds maxStreamCapacitySize (neither refill nor streaming). Reachable only with an
      * isolated small capacity config; cannot happen with the default capacity, so we set it directly.
      */

@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Tests for {@link TCPServer}.
  */
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class TCPServerTest {
 
     private static int findFreePort() {

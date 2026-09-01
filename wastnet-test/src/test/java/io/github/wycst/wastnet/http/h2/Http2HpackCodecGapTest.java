@@ -10,7 +10,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Coverage gap tests for {@link Http2HpackCodec}.
+ * Gap tests for {@link Http2HpackCodec}.
  *
  * @author wangyc
  */

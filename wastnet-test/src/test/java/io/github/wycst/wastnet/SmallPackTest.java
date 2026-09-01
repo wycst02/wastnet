@@ -8,9 +8,9 @@ import org.junit.jupiter.api.Test;
 import java.util.logging.Level;
 
 /**
- * Coverage tests for small packages: socket.conf, log.
+ * tests for small packages: socket.conf, log.
  */
-class SmallPackCoverageTest {
+class SmallPackTest {
 
     // ==================== SocketConf ====================
 
@@ -23,9 +23,9 @@ class SmallPackCoverageTest {
 
     @Test
     void testLogLevels() {
-        Log log = LogFactory.getLog(SmallPackCoverageTest.class);
+        Log log = LogFactory.getLog(SmallPackTest.class);
         java.util.logging.Logger julLogger = java.util.logging.Logger.getLogger(
-                "io.github.wycst.wastnet.SmallPackCoverageTest");
+                "io.github.wycst.wastnet.SmallPackTest");
         julLogger.setLevel(Level.OFF);
         julLogger.setUseParentHandlers(false);
         log.error("test error {}", "arg");
@@ -36,9 +36,9 @@ class SmallPackCoverageTest {
 
     @Test
     void testLogCallerInfoEnabled() {
-        Log log = LogFactory.getLog(SmallPackCoverageTest.class);
+        Log log = LogFactory.getLog(SmallPackTest.class);
         java.util.logging.Logger julLogger = java.util.logging.Logger.getLogger(
-                "io.github.wycst.wastnet.SmallPackCoverageTest");
+                "io.github.wycst.wastnet.SmallPackTest");
         julLogger.setLevel(Level.OFF);
         julLogger.setUseParentHandlers(false);
         log.error("caller test");

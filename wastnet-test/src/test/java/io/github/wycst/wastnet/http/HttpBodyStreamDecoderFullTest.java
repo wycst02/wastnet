@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>
  * Uses payloads &gt; 2MB to trigger these code paths.
  */
-public class HttpBodyStreamDecoderFullCoverageTest {
+public class HttpBodyStreamDecoderFullTest {
 
     private static final byte[] BOUNDARY_LINE = "--boundary\r\n".getBytes();
     private static final byte[] HEADER_F = "Content-Disposition: form-data; name=\"f\"\r\n".getBytes();
@@ -22,7 +22,6 @@ public class HttpBodyStreamDecoderFullCoverageTest {
     private static final byte[] END_BOUNDARY = "--boundary--\r\n".getBytes();
     private static final int BLEN = "--boundary".length();
 
-    // ==================== Compact path (L87-97: pos > COMPACT_THRESHOLD ≈ 1MB) ====================
 
     @Test
     public void testBufferCompact() throws Exception {
@@ -49,7 +48,6 @@ public class HttpBodyStreamDecoderFullCoverageTest {
         assertEquals("content", dec.getMultipartFieldValue("f"));
     }
 
-    // ==================== Expansion path (L65-73: CRLFCRLF not in first BUFFER_SIZE ≈ 2MB) ====================
 
     @Test
     public void testBufferExpansion() throws Exception {
@@ -82,7 +80,6 @@ public class HttpBodyStreamDecoderFullCoverageTest {
         assertTrue(dec.getMultipartFieldNames().isEmpty());
     }
 
-    // ==================== ReadFieldToFile (L122-128: boundary not found in buffer) ====================
 
     @Test
     public void testReadFieldToFileTriggered() throws Exception {
@@ -96,7 +93,6 @@ public class HttpBodyStreamDecoderFullCoverageTest {
 
     @Test
     public void testReadFieldToFileNewlineOnly() throws Exception {
-        // readFieldToFile: content ends with \n only (L218 true, L220 false)
         byte[] data = buildLargeField(2_100_000, "\n--boundary--\r\n");
         HttpBodyStreamDecoder dec = new HttpBodyStreamDecoder(
                 "multipart/form-data; boundary=boundary", new ByteArrayInputStream(data));
@@ -106,7 +102,6 @@ public class HttpBodyStreamDecoderFullCoverageTest {
 
     @Test
     public void testReadFieldToFileRemainingZero() throws Exception {
-        // readFieldToFile: remaining == 0 after boundary found (L230 false)
         byte[] data = buildLargeField(2_100_000, "--boundary");
         HttpBodyStreamDecoder dec = new HttpBodyStreamDecoder(
                 "multipart/form-data; boundary=boundary", new ByteArrayInputStream(data));
@@ -116,7 +111,6 @@ public class HttpBodyStreamDecoderFullCoverageTest {
 
     @Test
     public void testReadFieldToFileBoundaryNotFoundFirst() throws Exception {
-        // readFieldToFile: first read doesn't find boundary → loop continues (L214 false, L237)
         byte[] data = buildLargeField(2_500_000, "\r\n--boundary--\r\n");
         HttpBodyStreamDecoder dec = new HttpBodyStreamDecoder(
                 "multipart/form-data; boundary=boundary", new ByteArrayInputStream(data));
@@ -126,7 +120,6 @@ public class HttpBodyStreamDecoderFullCoverageTest {
 
     @Test
     public void testReadFieldToFileBoundaryPosZero() throws Exception {
-        // readFieldToFile: boundary at position 0 in next read (L216 boundaryPos > 0 → false)
         int contentSize = 2_097_086;
         byte[] data = buildLargeField(contentSize, "\r\n--boundary--\r\n");
         HttpBodyStreamDecoder dec = new HttpBodyStreamDecoder(
@@ -137,7 +130,6 @@ public class HttpBodyStreamDecoderFullCoverageTest {
 
     @Test
     public void testReadFieldToFileNoContent() throws Exception {
-        // readFieldToFile: contentEnd == 0 after CRLF strip (L224 false)
         int contentSize = 2_500_000;
         int totalLen = 55 + contentSize + 11 + 46 + 2 + 5 + 15;
         byte[] data = new byte[totalLen];
@@ -154,7 +146,6 @@ public class HttpBodyStreamDecoderFullCoverageTest {
         assertEquals("val", dec.getMultipartFieldValue("g"));
     }
 
-    // ==================== Content CRLF edge cases – memory path (L108, L110) ====================
 
     @Test
     public void testContentEndsWithNewlineOnlyMemory() throws Exception {
@@ -182,7 +173,6 @@ public class HttpBodyStreamDecoderFullCoverageTest {
         assertEquals("abc", dec.getMultipartFieldValue("f"));
     }
 
-    // ==================== Refill after boundary (L133-136) ====================
 
     @Test
     public void testRefillAfterBoundary() throws Exception {
@@ -206,12 +196,10 @@ public class HttpBodyStreamDecoderFullCoverageTest {
         assertNotNull(dec.getMultipartField("b"));
     }
 
-    // ==================== Compact zero-remaining (L104 false: limit == 0 after compact) ====================
 
     @Test
     public void testCompactLimitZero() throws Exception {
         // Headers push pos > COMPACT_THRESHOLD, CRLFCRLF at exact buffer end, no body
-        // → compact triggers, limit -= pos = 0, limit > 0 is false (L104 false branch)
         int padLen = 1_049_000;
         int totalLen = BOUNDARY_LINE.length + HEADER_F.length + padLen + 2 + 2;
         byte[] data = new byte[totalLen];
@@ -228,7 +216,6 @@ public class HttpBodyStreamDecoderFullCoverageTest {
         assertTrue(dec.getMultipartFieldNames().isEmpty());
     }
 
-    // ==================== Compact refill success (L110 true: n != -1 after compact) ====================
 
     @Test
     public void testCompactRefillSuccess() throws Exception {

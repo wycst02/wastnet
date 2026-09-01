@@ -502,12 +502,12 @@ public class HttpUnsafeTest {
         Assertions.assertEquals(5, pos);
     }
 
-    // ==================== findCRLFCRLF: negative-byte skip loop (L253) ====================
+    // ==================== findCRLFCRLF: negative-byte skip loop  ====================
 
     @Test
     public void testFindCRLFCRLFMultipleNegativeSkip() {
         // Multiple consecutive negative bytes cause SWAR false positive for '\r',
-        // triggering the inner while (data[i] < 0) ++i skip loop (L253).
+        // triggering the inner while (data[i] < 0) ++i skip loop .
         byte[] data = new byte[]{
                 (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80,
                 (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80,
@@ -520,7 +520,7 @@ public class HttpUnsafeTest {
     @Test
     public void testFindCRLFCRLFNegativeBytesToEnd() {
         // Negative bytes run all the way to the buffer end with no CRLFCRLF.
-        // Before the i < end guard on the skip loop (L253), the inner
+        // Before the i < end guard on the skip loop , the inner
         // while (data[i] < 0) ++i walked past end and threw AIOOBE.
         byte[] data = new byte[]{
                 (byte) 0x80, (byte) 0x80, (byte) 0x80, (byte) 0x80,
@@ -531,7 +531,7 @@ public class HttpUnsafeTest {
         Assertions.assertEquals(-1, pos);
     }
 
-    // ==================== findCRLFCRLF fallback: data[i+2] != '\r' (L268) ====================
+    // ==================== findCRLFCRLF fallback: data[i+2] != '\r'  ====================
 
     @Test
     public void testFindCRLFCRLFFallbackSecondCRMissing() {
@@ -544,7 +544,7 @@ public class HttpUnsafeTest {
         Assertions.assertEquals(5, pos);
     }
 
-    // ==================== findCRLFCRLF fallback: data[i+3] != '\n' (L268) ====================
+    // ==================== findCRLFCRLF fallback: data[i+3] != '\n'  ====================
 
     @Test
     public void testFindCRLFCRLFFallbackTrailingNewlineMissing() {

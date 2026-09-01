@@ -7,7 +7,7 @@ import java.util.Properties;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Coverage for Conf.getPropSize / parseSize (KB/MB/GB unit parsing).
+ * for Conf.getPropSize / parseSize (KB/MB/GB unit parsing).
  */
 public class ConfSizeTest {
 

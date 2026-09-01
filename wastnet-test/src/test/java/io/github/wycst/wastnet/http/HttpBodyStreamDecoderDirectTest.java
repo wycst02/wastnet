@@ -63,7 +63,7 @@ public class HttpBodyStreamDecoderDirectTest {
         assertNull(dec.getMultipartField("f"));
     }
 
-    // ==================== Empty field name (L80) ====================
+    // ==================== Empty field name  ====================
 
     @Test
     public void testEmptyFieldName() throws Exception {
@@ -79,7 +79,7 @@ public class HttpBodyStreamDecoderDirectTest {
         assertTrue(dec.getMultipartFieldNames().isEmpty());
     }
 
-    // ==================== Boundary at exact end (L51, L118) ====================
+    // ==================== Boundary at exact end (, ) ====================
 
     @Test
     public void testBoundaryAtExactEnd() throws Exception {
@@ -95,7 +95,7 @@ public class HttpBodyStreamDecoderDirectTest {
         assertNotNull(dec.getMultipartField("f"));
     }
 
-    // ==================== CRLF short-circuit (L53) ====================
+    // ==================== CRLF short-circuit  ====================
 
     @Test
     public void testCarriageReturnWithoutNewline() throws Exception {
@@ -118,7 +118,7 @@ public class HttpBodyStreamDecoderDirectTest {
         assertTrue(dec.getMultipartFieldNames().isEmpty());
     }
 
-    // ==================== Content CRLF stripping (L108, L110) ====================
+    // ==================== Content CRLF stripping (, ) ====================
 
     @Test
     public void testBoundaryImmediatelyAfterCRLF() throws Exception {
@@ -179,7 +179,7 @@ public class HttpBodyStreamDecoderDirectTest {
         assertTrue(dec.getMultipartFieldNames().isEmpty());
     }
 
-    // ==================== Buffer compact (L87-97): BUFFER_SIZE=4096 via system prop ====================
+    // ==================== Buffer compact : BUFFER_SIZE=4096 via system prop ====================
 
     @Test
     public void testBufferCompact() throws Exception {
@@ -205,7 +205,7 @@ public class HttpBodyStreamDecoderDirectTest {
         assertEquals("value", dec.getMultipartFieldValue("g"));
     }
 
-    // ==================== Buffer expansion (L65-73) ====================
+    // ==================== Buffer expansion  ====================
 
     @Test
     public void testBufferExpansion() throws Exception {
@@ -225,7 +225,7 @@ public class HttpBodyStreamDecoderDirectTest {
         assertEquals("data", dec.getMultipartFieldValue("f"));
     }
 
-    // ==================== readFieldToFile skipContent via fieldName=null (L240/L242) ====================
+    // ==================== readFieldToFile skipContent via fieldName=null (/) ====================
 
     @Test
     public void testReadFieldToFileSkipContentNoName() throws Exception {
@@ -241,7 +241,7 @@ public class HttpBodyStreamDecoderDirectTest {
         assertTrue(dec.getMultipartFieldNames().isEmpty());
     }
 
-    // ==================== CRLF stripping: contentEnd just > pos (L108/L110) ====================
+    // ==================== CRLF stripping: contentEnd just > pos (/) ====================
 
     @Test
     public void testContentEndingJustAbovePos() throws Exception {
@@ -258,7 +258,7 @@ public class HttpBodyStreamDecoderDirectTest {
         assertEquals("ab", dec.getMultipartFieldValue("f"));
     }
 
-    // ==================== readFieldToFile contentEnd == 0 (L224 false) ====================
+    // ==================== readFieldToFile contentEnd == 0 ( false) ====================
 
     @Test
     public void testReadFieldToFileContentEndZero() throws Exception {

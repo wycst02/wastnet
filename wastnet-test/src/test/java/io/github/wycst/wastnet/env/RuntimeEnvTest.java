@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 /**
- * Coverage tests for {@link RuntimeEnv} and its subclasses.
+ * tests for {@link RuntimeEnv} and its subclasses.
  */
 public class RuntimeEnvTest {
 

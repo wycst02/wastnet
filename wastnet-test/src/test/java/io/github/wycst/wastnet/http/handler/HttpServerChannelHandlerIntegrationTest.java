@@ -14,6 +14,7 @@ import java.net.Socket;
  * <p>
  * Covers error handling paths: handleBadRequest, handleExceptionHandlerFailure, handleInternalException.
  */
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class HttpServerChannelHandlerIntegrationTest {
 
     private static HTTPServer serverWithExceptionHandler;

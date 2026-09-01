@@ -63,7 +63,7 @@ public class HttpBodyStreamDecoderReadFieldTest {
         assertTrue(dec.getMultipartFieldNames().isEmpty());
     }
 
-    // ==================== Boundary not found first time (L214 false, L237) ====================
+    // ==================== Boundary not found first time ( false, ) ====================
 
     @Test
     public void testReadFieldToFileBoundaryNotFoundFirst() throws Exception {
@@ -80,7 +80,7 @@ public class HttpBodyStreamDecoderReadFieldTest {
         assertEquals("f", dec.getMultipartField("f").getName());
     }
 
-    // ==================== Content ends with \n without \r (L218/220) ====================
+    // ==================== Content ends with \n without \r (/220) ====================
 
     @Test
     public void testReadFieldToFileContentEndsWithNewlineOnly() throws Exception {
@@ -98,7 +98,7 @@ public class HttpBodyStreamDecoderReadFieldTest {
         assertNotNull(dec.getMultipartField("f"));
     }
 
-    // ==================== remaining <= 0 after boundary (L230) ====================
+    // ==================== remaining <= 0 after boundary  ====================
 
     @Test
     public void testReadFieldToFileRemainingZero() throws Exception {
@@ -114,7 +114,7 @@ public class HttpBodyStreamDecoderReadFieldTest {
         assertNotNull(dec.getMultipartField("f"));
     }
 
-    // ==================== Boundary at position 0 after read (L216) ====================
+    // ==================== Boundary at position 0 after read  ====================
 
     @Test
     public void testReadFieldToFileBoundaryPosZero() throws Exception {
@@ -133,7 +133,7 @@ public class HttpBodyStreamDecoderReadFieldTest {
         assertNotNull(dec.getMultipartField("f"));
     }
 
-    // ==================== contentEnd == 0 (L224 false) ====================
+    // ==================== contentEnd == 0 ( false) ====================
 
     @Test
     public void testReadFieldToFileNoContent() throws Exception {
@@ -152,7 +152,7 @@ public class HttpBodyStreamDecoderReadFieldTest {
         assertEquals("val", dec.getMultipartFieldValue("g"));
     }
 
-    // ==================== Form-urlencoded: chunked exceeds maxSize (L316-317) ====================
+    // ==================== Form-urlencoded: chunked exceeds maxSize  ====================
 
     @Test
     public void testFormUrlencodedChunkedExceedsMaxSize() throws Exception {
@@ -186,7 +186,7 @@ public class HttpBodyStreamDecoderReadFieldTest {
         ch.close();
     }
 
-    // ==================== Form-urlencoded: chunked read throws IOException (L323-324) ====================
+    // ==================== Form-urlencoded: chunked read throws IOException  ====================
 
     @Test
     public void testFormUrlencodedChunkedReadThrowsIoException() throws Exception {

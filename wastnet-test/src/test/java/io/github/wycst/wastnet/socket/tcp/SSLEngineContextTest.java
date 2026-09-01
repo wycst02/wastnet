@@ -7,7 +7,7 @@ import javax.net.ssl.SSLContext;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Unit tests for {@link SSLEngineContext} — 100% coverage target.
+ * Unit tests for {@link SSLEngineContext} — 100% target.
  *
  * @author wangyc
  */

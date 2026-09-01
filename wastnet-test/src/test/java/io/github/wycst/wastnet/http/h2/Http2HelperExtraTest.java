@@ -15,7 +15,7 @@ import java.util.Set;
 import static org.mockito.Mockito.*;
 
 /**
- * Supplementary coverage for {@link Http2Helper} branch/streaming paths that the
+ * Supplementary for {@link Http2Helper} branch/streaming paths that the
  * existing {@link Http2HelperTest} does not exercise:
  * <ul>
  *   <li>chunked (streaming) server-&gt;H1 / H1-&gt;H2 / H2-&gt;H2 body forwarding</li>

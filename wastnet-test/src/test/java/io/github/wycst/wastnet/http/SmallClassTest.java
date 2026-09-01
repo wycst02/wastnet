@@ -36,9 +36,9 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Comprehensive coverage for small classes with low branch coverage.
+ * Comprehensive for small classes with low branch.
  */
-public class SmallClassCoverageTest {
+public class SmallClassTest {
 
     // ==================== BadHttpRequest ====================
 

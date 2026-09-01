@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
  * Reverse proxy integration test — starts a backend server and a proxy frontend,
  * verifies request forwarding, path rewrite, header injection, and changeOrigin.
  */
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class HttpProxyIntegrationTest {
 
     private static HTTPServer backendServer;
@@ -135,7 +136,7 @@ public class HttpProxyIntegrationTest {
                         .loopDetection(true)
                         .readTimeout(30000));
 
-        // Proxy with target path (no rewrite rule) → exercises L183 targetPath branch
+        // Proxy with target path (no rewrite rule) → exercises  targetPath branch
         proxyRouter.proxy("/path-proxy",
                 HttpProxyConfig.target("http://localhost:" + backendPort + "/hello")
                         .readTimeout(30000));

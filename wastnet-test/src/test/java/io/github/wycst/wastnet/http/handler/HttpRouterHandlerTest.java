@@ -17,7 +17,7 @@ import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.withSettings;
 
 /**
- * Coverage tests for HttpRouterHandler including RouteEntry.
+ * tests for HttpRouterHandler including RouteEntry.
  */
 public class HttpRouterHandlerTest {
 
@@ -197,7 +197,7 @@ public class HttpRouterHandlerTest {
         assertNotNull(h);
     }
 
-    // ==================== exactRoute with methods (L117) ====================
+    // ==================== exactRoute with methods  ====================
 
     @Test
     public void testExactRouteWithMethods() {
@@ -218,7 +218,7 @@ public class HttpRouterHandlerTest {
         };
         // empty methods → route.self() path
         h.exactRoute("/open", dummy);
-        // Also test the 3-arg overload with empty array (L117 empty-branch)
+        // Also test the 3-arg overload with empty array ( empty-branch)
         h.exactRoute("/open2", dummy, new HttpMethod[0]);
         assertNotNull(h);
     }
@@ -286,7 +286,7 @@ public class HttpRouterHandlerTest {
         verify(route).handle(eq("/hello"), same(req), same(resp));
     }
 
-    /** contextPath non-root, subPath empty → L336-337: subPath = "/" */
+    /** contextPath non-root, subPath empty → : subPath = "/" */
     @Test
     public void testHandleContextPathSubPathEmpty() throws Throwable {
         HttpRouterHandler h = new HttpRouterHandler("/app");
@@ -302,7 +302,7 @@ public class HttpRouterHandlerTest {
         verify(route).handle(eq("/"), same(req), same(resp));
     }
 
-    /** contextPath non-root, path doesn't match → L323 false → 404 */
+    /** contextPath non-root, path doesn't match →  false → 404 */
     @Test
     public void testHandleContextPathMismatch() throws Throwable {
         HttpRouterHandler h = new HttpRouterHandler("/app");
@@ -317,7 +317,7 @@ public class HttpRouterHandlerTest {
         verify(resp).status(HttpStatus.NOT_FOUND);
     }
 
-    /** contextPath non-root with autoRedirect enabled → L325-329 redirect */
+    /** contextPath non-root with autoRedirect enabled →  redirect */
     @Test
     public void testHandleAutoRedirect() throws Throwable {
         HttpRouterHandler h = new HttpRouterHandler("/app");
@@ -335,7 +335,7 @@ public class HttpRouterHandlerTest {
         verify(resp).commit();
     }
 
-    /** contextPath non-root with autoRedirect disabled → L325 false → 404 */
+    /** contextPath non-root with autoRedirect disabled →  false → 404 */
     @Test
     public void testHandleAutoRedirectDisabled() throws Throwable {
         HttpRouterHandler h = new HttpRouterHandler("/app");

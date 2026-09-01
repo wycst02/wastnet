@@ -16,7 +16,7 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Supplementary coverage for {@link Http2Stream} protocol/edge paths:
+ * Supplementary for {@link Http2Stream} protocol/edge paths:
  * <ul>
  *   <li>malformed frame size handling (RST_STREAM / WINDOW_UPDATE / unknown type)</li>
  *   <li>oversized header block -&gt; early 431 response; header decode failure -&gt; RST</li>

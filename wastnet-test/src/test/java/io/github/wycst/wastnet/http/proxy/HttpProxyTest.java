@@ -15,7 +15,7 @@ import java.nio.channels.SocketChannel;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-public class HttpProxyCoverageTest {
+public class HttpProxyTest {
 
     private static final HttpProxyWorkerManager manager = new HttpProxyWorkerManager();
 

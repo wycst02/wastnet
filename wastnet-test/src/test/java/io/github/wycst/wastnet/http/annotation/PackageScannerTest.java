@@ -18,7 +18,7 @@ import java.util.jar.JarOutputStream;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Thorough coverage for PackageScanner.
+ * Thorough for PackageScanner.
  */
 public class PackageScannerTest {
 
@@ -56,7 +56,7 @@ public class PackageScannerTest {
         assertTrue(result.isEmpty());
     }
 
-    // ================ JAR protocol coverage ================
+    // ================ JAR protocol ================
 
     /** Create a JAR from target/test-classes and scan its contents via jar: protocol */
     @Test
@@ -100,7 +100,7 @@ public class PackageScannerTest {
         }
     }
 
-    // ================ Private method coverage via reflection ================
+    // ================ Private method via reflection ================
 
     /** Test scanDirectory with null listFiles (file not a directory) */
     @Test

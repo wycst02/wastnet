@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Coverage tests for HttpInternalRequest edge cases, HttpConf config branches, and RuntimeEnv.
+ * tests for HttpInternalRequest edge cases, HttpConf config branches, and RuntimeEnv.
  */
 class BaseHttpAndConfigTest {
 

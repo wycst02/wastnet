@@ -11,7 +11,7 @@ import java.nio.channels.SocketChannel;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Coverage tests for Http2ClientStream (client-side H2 response stream context).
+ * tests for Http2ClientStream (client-side H2 response stream context).
  */
 public class Http2ClientStreamTest {
 

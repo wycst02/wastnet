@@ -19,9 +19,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Coverage tests for DefaultUpgradeHandler.
+ * tests for DefaultUpgradeHandler.
  */
-class DefaultUpgradeHandlerCoverageTest {
+class DefaultUpgradeHandlerTest {
 
     // Suppress production log output during tests (JUL-based Log framework)
     static {
@@ -174,7 +174,6 @@ class DefaultUpgradeHandlerCoverageTest {
         ChannelContext mockCtx = mock(ChannelContext.class);
         when(mockCtx.binding()).thenReturn(null);
         handler.handle(mockCtx, wsFrame(WebSocketFrame.FrameType.TEXT, "x".getBytes(), true));
-        // No exception = success (early return at handleWebSocket L65)
     }
 
     @Test
@@ -195,7 +194,6 @@ class DefaultUpgradeHandlerCoverageTest {
         handler.onClosed(mock(ChannelContext.class));
     }
 
-    // ==================== upgrade: beforeHandshake sets binding (L198-200) ====================
 
     @Test
     void testUpgradeBeforeHandshakeSetsBinding() throws Exception {
@@ -228,7 +226,6 @@ class DefaultUpgradeHandlerCoverageTest {
 
     @Test
     void testUpgradeBeforeHandshakeReturnsFalse() throws Exception {
-        // L196 false branch: beforeHandshake returns false
         ChannelContext mockCtx = mock(ChannelContext.class);
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getRequestUri()).thenReturn("/ws/reject");
@@ -249,13 +246,11 @@ class DefaultUpgradeHandlerCoverageTest {
 
     @Test
     void testIsH2cUpgradeRequestMissingUpgradeInConnection() {
-        // L170 true (contains HTTP2-Settings), L171 false (doesn't contain Upgrade)
         HttpRequest req = mock(HttpRequest.class);
         when(req.getHeader(anyString(), anyBoolean())).thenReturn("h2c", "HTTP2-Settings");
         assertFalse(DefaultUpgradeHandler.isH2cUpgradeRequest(req));
     }
 
-    // ==================== handleWebSocket: onError throws (inner catch L98-99) ====================
 
     @Test
     void testHandleThrowsAndOnErrorAlsoThrows() throws Throwable {
@@ -273,15 +268,11 @@ class DefaultUpgradeHandlerCoverageTest {
         verify(mockConn, atLeastOnce()).close(anyInt(), anyString());
     }
 
-    // ==================== upgrade: WebSocket success full path (L217-241) ====================
 
     @Test
     void testUpgradeWebSocketSuccess() throws Exception {
-        // Full valid ws upgrade headers -> handshake succeeds, covers L217-241
         ChannelContext mockCtx = mock(ChannelContext.class);
         when(mockCtx.contextId()).thenReturn("test-ws-id");
-        // reader().upgrade(holder) is the protocol switch at L240; stub to no-op via spy
-        // reader().upgrade(holder) is the protocol switch at L240; inject a mock inner reader via reflection
         // (HttpChannelProtocolReader is final, so it cannot be spied directly)
         HttpChannelProtocolReader reader = new HttpChannelProtocolReader();
         java.lang.reflect.Field readerField = HttpChannelProtocolReader.class.getDeclaredField("reader");
@@ -310,7 +301,6 @@ class DefaultUpgradeHandlerCoverageTest {
         verify(mockCtx, atLeastOnce()).addClearListener(any(Runnable.class));
     }
 
-    // ==================== upgrade: origin rejected (L207-211) ====================
 
     @Test
     void testUpgradeOriginRejected() throws Exception {
@@ -330,7 +320,6 @@ class DefaultUpgradeHandlerCoverageTest {
         assertTrue(handler.upgrade(mockReq, mockCtx));
     }
 
-    // ==================== upgrade: handshake returns null (L216 false branch) ====================
 
     @Test
     void testUpgradeHandshakeReturnsNull() throws Exception {
@@ -338,7 +327,6 @@ class DefaultUpgradeHandlerCoverageTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getRequestUri()).thenReturn("/ws/nokey");
         when(mockReq.getHttpVersion()).thenReturn(io.github.wycst.wastnet.http.HttpVersion.HTTP_1_1);
-        // Connection not "Upgrade" -> isWebSocketUpgradeRequest false -> handshake returns null (L216 false)
         when(mockReq.getHeader(HttpHeaderNormalized.getUpgrade(), true)).thenReturn("websocket");
         when(mockReq.getHeader(HttpHeaderNormalized.getConnection(), true)).thenReturn("keep-alive");
         when(mockReq.getHeader(HttpHeaderNormalized.getSecWebSocketKey(), true)).thenReturn("dGhlIHNhbXBsZSBub25jZQ==");
@@ -351,7 +339,6 @@ class DefaultUpgradeHandlerCoverageTest {
         assertFalse(handler.upgrade(mockReq, mockCtx));
     }
 
-    // ==================== onClosed with non-null binding (L259-260) ====================
 
     @Test
     void testOnClosedWithBinding() throws Exception {
@@ -363,7 +350,6 @@ class DefaultUpgradeHandlerCoverageTest {
         verify(resource, atLeastOnce()).handleOnClose(mockCtx);
     }
 
-    // ==================== upgrade: h2c resource but not an h2c request (L203 false, L246 false, L183 false) ====================
 
     @Test
     void testUpgradeH2cResourceNotH2cRequest() throws Exception {
@@ -371,19 +357,15 @@ class DefaultUpgradeHandlerCoverageTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getRequestUri()).thenReturn("/h2c/x");
         when(mockReq.getHttpVersion()).thenReturn(io.github.wycst.wastnet.http.HttpVersion.HTTP_1_1);
-        // Upgrade: h2c but Connection lacks HTTP2-Settings -> isH2cUpgradeRequest false -> L246 false
         when(mockReq.getHeader(HttpHeaderNormalized.getUpgrade(), true)).thenReturn("h2c");
         when(mockReq.getHeader(HttpHeaderNormalized.getConnection(), true)).thenReturn("Upgrade");
         when(mockReq.getHeader("HTTP2-Settings", true)).thenReturn(null);
 
-        // h2c("/h2c") registers a non-websocket (h2c) resource, triggering the else branch at L244
         handler.h2c("/h2c");
         assertFalse(handler.upgrade(mockReq, mockCtx));
     }
 
-    // ==================== upgrade: beforeHandshake sets ctx.binding (L218 true -> L219) ====================
 
-    // ==================== handleCloseFrame: empty close payload (L130 false branch) ====================
 
     @Test
     void testHandleCloseEmptyPayload() throws Throwable {
@@ -391,8 +373,6 @@ class DefaultUpgradeHandlerCoverageTest {
         WebSocketConnection mockConn = mock(WebSocketConnection.class);
         WebSocketResource resource = mock(WebSocketResource.class);
         when(mockCtx.binding()).thenReturn(new UpgradeWebSocketHolder(resource, mockConn));
-        // close frame with 1-byte payload (data.length >= 2 is false -> L130 false branch),
-        // empty-frame path still closes the context (L144)
         handler.handle(mockCtx, wsFrame(WebSocketFrame.FrameType.CLOSE, new byte[]{0x03}, true));
         verify(mockCtx, atLeastOnce()).close();
     }

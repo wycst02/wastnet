@@ -103,7 +103,7 @@ public class HttpDecodedRequestTest {
         Assertions.assertEquals(HttpVersion.HTTP_1_1, req.getHttpVersion());
     }
 
-    // ==================== Additional coverage ====================
+    // ==================== Additional ====================
 
     @Test
     public void testGetSchemeSSL() {

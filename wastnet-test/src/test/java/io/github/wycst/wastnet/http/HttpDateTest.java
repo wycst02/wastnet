@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.util.TimeZone;
 
 /**
- * Targeted coverage tests for {@link HttpDate}.
+ * Targeted tests for {@link HttpDate}.
  * Fills remaining branch gaps not covered by HttpCoreUtilTest.
  *
  * @author wangyc

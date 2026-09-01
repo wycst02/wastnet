@@ -24,7 +24,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Coverage tests for {@link H1H2ProxyAdapter} (HTTP/1.1 -> HTTP/2 direction).
+ * tests for {@link H1H2ProxyAdapter} (HTTP/1.1 -> HTTP/2 direction).
  * The real H2 handshake is bypassed by mocking ChannelContext and swapping the
  * final parent-field {@code clientReader} with a mock via Unsafe.
  * Decoded requests are real (HttpDecodedRequest) because their parent-class
@@ -96,9 +96,9 @@ public class H1H2ProxyAdapterTest {
         return captured.get();
     }
 
-    // ==================== Constructor (L45-47) ====================
+    // ==================== Constructor  ====================
 
-    // ==================== sendRequest success (L51-74, no body) ====================
+    // ==================== sendRequest success (, no body) ====================
 
     @Test
     public void testSendRequestSuccess() throws Throwable {
@@ -119,7 +119,7 @@ public class H1H2ProxyAdapterTest {
         Assertions.assertTrue(adapter.tryAcquire());
     }
 
-    // ==================== sendRequest error -> 502 (L59-68) ====================
+    // ==================== sendRequest error -> 502  ====================
 
     @Test
     public void testSendRequestErrorWrites502() throws Throwable {
@@ -138,7 +138,7 @@ public class H1H2ProxyAdapterTest {
         Assertions.assertTrue(adapter.tryAcquire());
     }
 
-    // ==================== sendRequest error + target closed -> conn.close() (L64-65) ====================
+    // ==================== sendRequest error + target closed -> conn.close()  ====================
 
     @Test
     public void testSendRequestErrorTargetClosedCloses() throws Throwable {
@@ -156,7 +156,7 @@ public class H1H2ProxyAdapterTest {
         Assertions.assertTrue(conn.closed);
     }
 
-    // ==================== sendRequest with body -> sendH1RequestBody (L72) ====================
+    // ==================== sendRequest with body -> sendH1RequestBody  ====================
 
     @Test
     public void testSendRequestWithBody() throws Throwable {
@@ -171,7 +171,7 @@ public class H1H2ProxyAdapterTest {
         Assertions.assertTrue(adapter.tryAcquire());
     }
 
-    // ==================== onHandle unknown stream -> early return (L80-85) ====================
+    // ==================== onHandle unknown stream -> early return  ====================
 
     @Test
     public void testOnHandleUnknownStream() throws Throwable {
@@ -185,7 +185,7 @@ public class H1H2ProxyAdapterTest {
         adapter.onHandle(clientCtx, msg);
     }
 
-    // ==================== onHandle protocol error -> 502 (L86-90) ====================
+    // ==================== onHandle protocol error -> 502  ====================
 
     @Test
     public void testOnHandleProtocolError() throws Throwable {
@@ -209,7 +209,7 @@ public class H1H2ProxyAdapterTest {
         adapter.onHandle(clientCtx, msg);
     }
 
-    // ==================== onHandle success with in-memory body (L91-124) ====================
+    // ==================== onHandle success with in-memory body  ====================
 
     @Test
     public void testOnHandleSuccessWithBody() throws Throwable {
@@ -231,7 +231,7 @@ public class H1H2ProxyAdapterTest {
         Map<String, Object> headers = new LinkedHashMap<String, Object>();
         headers.put("x-test", "v");
         headers.put("content-length", "5");
-        // List-valued header exercises the multi-value addHeader branch (L101-104)
+        // List-valued header exercises the multi-value addHeader branch 
         headers.put("x-list", java.util.Arrays.asList("a", "b"));
         when(response.getHeaders()).thenReturn(headers);
         when(response.getStatusCode()).thenReturn(200);
@@ -245,7 +245,7 @@ public class H1H2ProxyAdapterTest {
         adapter.onHandle(clientCtx, msg);
     }
 
-    // ==================== onHandle success with streaming body (L110-116) ====================
+    // ==================== onHandle success with streaming body  ====================
 
     @Test
     public void testOnHandleSuccessStreamBody() throws Throwable {
@@ -264,7 +264,7 @@ public class H1H2ProxyAdapterTest {
         adapter.sendRequest(request, targetCtx);
 
         // Use a real HttpDecodedResponse: getBodyStream() is final, so a mock stub returns null
-        // and the while-loop body (L115) would never execute.
+        // and the while-loop body  would never execute.
         Map<String, Object> headers = new LinkedHashMap<String, Object>();
         headers.put("x-test", "v");
         HttpDecodedResponse response = new HttpDecodedResponse(HttpVersion.HTTP_2, 200, "host",
@@ -277,7 +277,7 @@ public class H1H2ProxyAdapterTest {
         adapter.onHandle(clientCtx, msg);
     }
 
-    // ==================== onHandle buildResponse throws -> 502 (L125-128) ====================
+    // ==================== onHandle buildResponse throws -> 502  ====================
 
     @Test
     public void testOnHandleBuildResponseThrows() throws Throwable {

@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Pure in-memory coverage tests for WebSocketFrame and WebSocketSimpleMessage.
+ * Pure in-memory tests for WebSocketFrame and WebSocketSimpleMessage.
  */
 class WebSocketFrameTest {
 

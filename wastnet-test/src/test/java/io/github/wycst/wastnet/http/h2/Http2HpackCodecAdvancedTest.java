@@ -303,7 +303,7 @@ public class Http2HpackCodecAdvancedTest {
         return Arrays.copyOf(buf, off);
     }
 
-    // ==================== Remaining branch coverage ====================
+    // ==================== Remaining branch ====================
 
     @Test
     void testDecodeExceptionWrapping() {

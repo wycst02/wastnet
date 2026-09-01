@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * @author wangyc
  */
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class WebSocketIntegrationTest {
 
     private static HTTPServer server;

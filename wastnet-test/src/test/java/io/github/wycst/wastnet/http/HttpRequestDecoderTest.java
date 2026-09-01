@@ -131,7 +131,7 @@ public class HttpRequestDecoderTest {
         HttpRequestDecoder d = new HttpRequestDecoder(ctx);
         d.decode("GET / HTTP/1.1\r\nHost: localhost\r\n".getBytes(), 0, 31, ctx);
         d.decode("\n".getBytes(), 0, 1, ctx);
-        // Coverage: expectLF path in readBoundary
+        // expectLF path in readBoundary
     }
 
     @Test
@@ -218,7 +218,7 @@ public class HttpRequestDecoderTest {
         HttpRequestDecoder d = new HttpRequestDecoder(ctx);
         // Non-numeric content-length → NumberFormatException → BAD_REQUEST
         decodeAll(d, "GET / HTTP/1.1\r\nContent-Length: abc\r\n\r\n", ctx);
-        // Coverage: NumberFormatException catch in addHeader
+        // NumberFormatException catch in addHeader
     }
 
     @Test
@@ -242,7 +242,7 @@ public class HttpRequestDecoderTest {
         System.arraycopy(prefix, 0, req, 0, prefix.length);
         System.arraycopy(suffix, 0, req, prefix.length, suffix.length);
         d.decode(req, 0, req.length, ctx);
-        // Coverage: negative byte in readStartLine SWAR path
+        // negative byte in readStartLine SWAR path
     }
 
     // ===== readHeaderValue negative bytes =====
@@ -261,7 +261,7 @@ public class HttpRequestDecoderTest {
         System.arraycopy(mid, 0, req, prefix.length, mid.length);
         System.arraycopy(suffix, 0, req, prefix.length + mid.length, suffix.length);
         d.decode(req, 0, req.length, ctx);
-        // Coverage: negative bytes in readHeaderValue
+        // negative bytes in readHeaderValue
     }
 
     // ===== readBoundary error paths (byte-by-byte) =====
@@ -274,7 +274,7 @@ public class HttpRequestDecoderTest {
         d.decode("GET / HTTP/1.1\r\nHost: a\r\n".getBytes(), 0, 24, ctx);
         // Then send \r instead of \n → BAD_REQUEST
         d.decode("\r".getBytes(), 0, 1, ctx);
-        // Coverage: expectLF true but next byte is not \n
+        // expectLF true but next byte is not \n
     }
 
     @Test
@@ -301,7 +301,7 @@ public class HttpRequestDecoderTest {
         }
         // Last expected byte is \n, but instead feed \r
         d.decode(new byte[]{'\r'}, 0, 1, ctx);
-        // Coverage: boundary error with byte-by-byte feeding
+        // boundary error with byte-by-byte feeding
     }
 
     // ===== readBody content-length > MAX_BODY_IN_MEMORY → stream mode =====
@@ -322,7 +322,7 @@ public class HttpRequestDecoderTest {
         assertNotNull(captured.get());
     }
 
-    // ===== addHeader branch coverage =====
+    // ===== addHeader branch =====
 
     @Test
     public void testContentEncodingHeader() throws Exception {
@@ -356,7 +356,7 @@ public class HttpRequestDecoderTest {
         assertTrue(captured.get().isStream());
     }
 
-    // ===== Remaining decoder branch coverage =====
+    // ===== Remaining decoder branch =====
 
     @Test
     public void testZeroHeaders() throws Exception {
@@ -372,7 +372,7 @@ public class HttpRequestDecoderTest {
         ChannelContext ctx = createCtx();
         HttpRequestDecoder d = new HttpRequestDecoder(ctx);
         d.decode("\n".getBytes(), 0, 1, ctx);
-        // Coverage: L222-L225
+        // 
     }
 
     @Test
@@ -380,9 +380,9 @@ public class HttpRequestDecoderTest {
         captured.set(null);
         ChannelContext ctx = createCtx();
         HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-        // Start line ends with \n (no \r), next data is \n → readHeaders entry b=='\n' (L275)
+        // Start line ends with \n (no \r), next data is \n → readHeaders entry b=='\n' 
         d.decode("GET / HTTP/1.1\n\n".getBytes(), 0, 16, ctx);
-        // Coverage: L275 b == '\n' at readHeaders entry
+        // b == '\n' at readHeaders entry
     }
 
     @Test
@@ -447,7 +447,7 @@ public class HttpRequestDecoderTest {
         assertNotNull(captured.get());
     }
 
-    // ===== onDecoded chunked branch (L504) =====
+    // ===== onDecoded chunked branch  =====
 
     @Test
     public void testChunkedRequestDispatched() throws Exception {
@@ -465,7 +465,7 @@ public class HttpRequestDecoderTest {
         ChannelContext ctx = createCtx();
         HttpRequestDecoder d = new HttpRequestDecoder(ctx);
         // CL + TE: chunked both present (RFC 7230 §3.3.3 ambiguous case): decoder prefers chunked
-        // and must drop Content-Length before dispatch (L504-506) so the sender never emits both.
+        // and must drop Content-Length before dispatch  so the sender never emits both.
         decodeAll(d, "GET / HTTP/1.1\r\nHost: localhost\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n0\r\n\r\n", ctx);
         HttpRequest req = captured.get();
         assertNotNull(req);
@@ -473,7 +473,7 @@ public class HttpRequestDecoderTest {
         assertFalse(req.containsHeader("content-length"));
     }
 
-    // ===== handleSpecialHeader duplicate Content-Length → BAD_REQUEST (L549-550) =====
+    // ===== handleSpecialHeader duplicate Content-Length → BAD_REQUEST  =====
 
     @Test
     public void testDuplicateContentLengthRejected() throws Exception {
@@ -487,7 +487,7 @@ public class HttpRequestDecoderTest {
         assertTrue(req.isBad());
     }
 
-    // ===== handleSpecialHeader L567-569: Host header branches =====
+    // ===== handleSpecialHeader : Host header branches =====
 
     @Test
     public void testDuplicateHostRejected() throws Exception {
@@ -513,7 +513,7 @@ public class HttpRequestDecoderTest {
         assertTrue(req.isBad());
     }
 
-    // ===== onDecoded L495: !hasHost && version == HTTP_1_1 — cover (no Host, HTTP/1.0) skip combo =====
+    // ===== onDecoded : !hasHost && version == HTTP_1_1 — cover (no Host, HTTP/1.0) skip combo =====
 
     @Test
     public void testNoHostHttp10SkipsHostCheck() throws Exception {
@@ -566,7 +566,7 @@ public class HttpRequestDecoderTest {
         captured.set(null);
         ChannelContext ctx = createCtx();
         HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-        // "x-test" last 2 chars = "st" → K_HOST case, but equals("host") is false → L567 false branch
+        // "x-test" last 2 chars = "st" → K_HOST case, but equals("host") is false →  false branch
         decodeAll(d, "GET / HTTP/1.1\r\nHost: a\r\nX-Test: localhost\r\n\r\n", ctx);
         assertNotNull(captured.get());
         assertFalse(captured.get().isBad());
@@ -606,7 +606,7 @@ public class HttpRequestDecoderTest {
         assertFalse(captured.get() instanceof HttpChunkedRequest);
     }
 
-    // ===== handleSpecialHeader L540: name.length() < 2 → early return =====
+    // ===== handleSpecialHeader : name.length() < 2 → early return =====
 
     @Test
     public void testSingleCharHeaderNameSkipped() throws Exception {
@@ -654,7 +654,7 @@ public class HttpRequestDecoderTest {
     // ===== expectContinue true branch (needs connected channel so writeFlush succeeds) =====
 
     @Test
-    public void testExpectContinueBranchCoverage() throws Exception {
+    public void testExpectContinueBranch() throws Exception {
         captured.set(null);
         ServerSocketChannel ssc = ServerSocketChannel.open();
         ssc.bind(new InetSocketAddress(0));
@@ -674,7 +674,7 @@ public class HttpRequestDecoderTest {
         try {
             HttpRequestDecoder d = new HttpRequestDecoder(ctx);
             decodeAll(d, "GET / HTTP/1.1\r\nExpect: 100-continue\r\n\r\n", ctx);
-            // Coverage: L314 expectContinue && status == null && ctx != null → true
+            // expectContinue && status == null && ctx != null → true
         } finally {
             accepted.close();
             ch.close();
@@ -697,7 +697,7 @@ public class HttpRequestDecoderTest {
         captured.set(null);
         ChannelContext ctx = createCtx();
         HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-        // Extra space after version before \r\n → while loop hits \r in whitespace (L247)
+        // Extra space after version before \r\n → while loop hits \r in whitespace 
         decodeAll(d, "GET /x HTTP/1.1 \r\nHost: a\r\n\r\n", ctx);
         assertNotNull(captured.get());
     }
@@ -707,12 +707,12 @@ public class HttpRequestDecoderTest {
         captured.set(null);
         ChannelContext ctx = createCtx();
         HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-        // Tab before \n in version separator → L247 b == '\n' in whitespace
+        // Tab before \n in version separator →  b == '\n' in whitespace
         decodeAll(d, "GET /x HTTP/1.1\t\n\r\n", ctx);
         assertNotNull(captured.get());
     }
 
-    // ===== readHeaderKey quick colon mismatch (L334) via negative byte =====
+    // ===== readHeaderKey quick colon mismatch  via negative byte =====
 
     @Test
     public void testHeaderKeyNegativeBytes() throws Exception {
@@ -729,7 +729,7 @@ public class HttpRequestDecoderTest {
         System.arraycopy(mid, 0, req, prefix.length, mid.length);
         System.arraycopy(suffix, 0, req, prefix.length + mid.length, suffix.length);
         d.decode(req, 0, req.length, ctx);
-        // Coverage: L334 buf[tarOff] == ':' check → false → break quick
+        // buf[tarOff] == ':' check → false → break quick
     }
 
     // ===== onDecoded version/method protocol close =====
@@ -755,7 +755,7 @@ public class HttpRequestDecoderTest {
         assertTrue(req.isBad());
     }
 
-    // ===== readBody multi-chunk accumulation (L439-440 bodySize + len < contentLength) =====
+    // ===== readBody multi-chunk accumulation ( bodySize + len < contentLength) =====
 
     @Test
     public void testBodyMultiChunkAccumulation() throws Exception {
@@ -765,7 +765,7 @@ public class HttpRequestDecoderTest {
         // First: headers + incomplete body "abc" (3 of 10 bytes)
         byte[] chunk1 = "POST / HTTP/1.1\r\nContent-Length: 10\r\n\r\nabc".getBytes("ISO-8859-1");
         d.decode(chunk1, 0, chunk1.length, ctx);
-        // Second: "defg" (4 more bytes, total 7, still < 10) → hits L439-440
+        // Second: "defg" (4 more bytes, total 7, still < 10) → hits 
         d.decode("defg".getBytes("ISO-8859-1"), 0, 4, ctx);
         // Third: complete "hij" → bodySize+len >= contentLength → completedBody → onDecoded
         decodeAll(d, "hij", ctx);
@@ -773,7 +773,7 @@ public class HttpRequestDecoderTest {
         assertEquals("abcdefghij", new String(captured.get().getBodyData(), "ISO-8859-1"));
     }
 
-    // ===== readBody LENGTH_REQUIRED (L430) with PIPELINE_ENABLED = false =====
+    // ===== readBody LENGTH_REQUIRED  with PIPELINE_ENABLED = false =====
 
     @Test
     public void testLengthRequired() throws Exception {
@@ -787,14 +787,14 @@ public class HttpRequestDecoderTest {
         assertTrue(req.isBad());
     }
 
-    // ===== readHeaderKey SWAR loop exhaust (L342 offset += 24) =====
+    // ===== readHeaderKey SWAR loop exhaust ( offset += 24) =====
 
     @Test
     public void testHeaderKeySWARExhaust() throws Exception {
         captured.set(null);
         ChannelContext ctx = createCtx();
         HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-        // Header key > 24 bytes without colon, SWAR processes 3×8 = 24 bytes, finds nothing → L342
+        // Header key > 24 bytes without colon, SWAR processes 3×8 = 24 bytes, finds nothing → 
         StringBuilder sb = new StringBuilder();
         sb.append("GET / HTTP/1.1\r\nHost: localhost\r\n");
         for (int i = 0; i < 25; ++i) sb.append('A');
@@ -820,7 +820,7 @@ public class HttpRequestDecoderTest {
         assertEquals("value", req.getHeader("x-custom"));
     }
 
-    // ===== prepareRequestContent IOException branch (L317 status = INTERNAL_SERVER_ERROR) =====
+    // ===== prepareRequestContent IOException branch ( status = INTERNAL_SERVER_ERROR) =====
 
     @Test
     public void testPrepareRequestContentIOException() throws Exception {
@@ -846,7 +846,7 @@ public class HttpRequestDecoderTest {
         }
     }
 
-    // ===== L313 branch: expectContinue=true AND status!=null (skip if body) =====
+    // =====  branch: expectContinue=true AND status!=null (skip if body) =====
 
     @Test
     public void testExpectContinueWithExistingStatus() throws Exception {
@@ -861,7 +861,7 @@ public class HttpRequestDecoderTest {
         assertTrue(req.isBad());
     }
 
-    // ===== L313 branch: expectContinue=true AND ctx==null (3-arg decode) =====
+    // =====  branch: expectContinue=true AND ctx==null (3-arg decode) =====
 
     @Test
     public void testExpectContinueWithoutCtx() throws Exception {
@@ -874,7 +874,7 @@ public class HttpRequestDecoderTest {
         assertFalse(((HttpRequest) msg).isBad());
     }
 
-    // ===== L485 branch: onBadDecoded with bodyMode=STREAM (.stream(true)) =====
+    // =====  branch: onBadDecoded with bodyMode=STREAM (.stream(true)) =====
 
     @Test
     public void testOnBadDecodedWithStreamMode() throws Exception {
@@ -890,7 +890,7 @@ public class HttpRequestDecoderTest {
         assertTrue(req.isBad());
     }
 
-    // ===== L485 branch: onBadDecoded with bodyMode=CHUNKED (.chunked(true)) =====
+    // =====  branch: onBadDecoded with bodyMode=CHUNKED (.chunked(true)) =====
 
     @Test
     public void testOnBadDecodedWithChunkedMode() throws Exception {
@@ -954,7 +954,7 @@ public class HttpRequestDecoderTest {
         assertNull(captured.get());
     }
 
-    // ===== L142/L145 branch: getResult with non-null status =====
+    // ===== / branch: getResult with non-null status =====
 
     @Test
     public void testGetResultWithStatus() throws Exception {

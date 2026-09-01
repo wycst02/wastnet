@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Covers disabled (plaintext fallback) paths for all SSL methods,
  * constructor variants, and static factory methods.
  */
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class ChannelSSLContextTest {
 
     private ServerSocket serverSocket;
@@ -92,7 +93,7 @@ public class ChannelSSLContextTest {
         Assertions.assertFalse(ctx.isSSL());
     }
 
-    // ==================== Disabled path coverage ====================
+    // ==================== Disabled path ====================
 
     @Test
     public void testGetWriteBufferSizeWhenDisabled() throws Exception {
@@ -293,7 +294,7 @@ public class ChannelSSLContextTest {
             String response = new String(readBuf.array(), readBuf.position(), readBuf.remaining());
             Assertions.assertTrue(response.contains("Hello SSL"), "Response should contain body data");
 
-            // Close SSL context to cover close_notify path (L401-415)
+            // Close SSL context to cover close_notify path 
             sslCtx.close();
             sslChannel.close();
         } finally {
@@ -348,7 +349,7 @@ public class ChannelSSLContextTest {
         }
     }
 
-    // ==================== SSL close path (L401-415) ====================
+    // ==================== SSL close path  ====================
 
     @Test
     public void testSslCloseAfterHandshake() throws Exception {
@@ -371,7 +372,7 @@ public class ChannelSSLContextTest {
         }
     }
 
-    // ==================== Read after handshake without writing (L240) ====================
+    // ==================== Read after handshake without writing  ====================
 
     @Test
     public void testSslReadNoDataReturnsZero() throws Exception {
@@ -397,7 +398,7 @@ public class ChannelSSLContextTest {
         }
     }
 
-    // ==================== Write large data to trigger flush path (L179) ====================
+    // ==================== Write large data to trigger flush path  ====================
 
     @Test
     public void testSslWriteLargePayload() throws Exception {
@@ -434,7 +435,7 @@ public class ChannelSSLContextTest {
         }
     }
 
-    // ==================== readFully SSL path (L300-367) ====================
+    // ==================== readFully SSL path  ====================
 
     @Test
     public void testSslReadFullyWithResponse() throws Exception {
@@ -540,9 +541,9 @@ public class ChannelSSLContextTest {
                 ChannelSSLContext.getTrustAllManagers());
     }
 
-    // ==================== fillTlsDiagnostic (monitoring snapshot, L78-86) ====================
+    // ==================== fillTlsDiagnostic (monitoring snapshot, ) ====================
 
-    /** disabled=false branch (L79): ssl = true and TLS buffer stats are populated. */
+    /** disabled=false branch : ssl = true and TLS buffer stats are populated. */
     @Test
     public void testFillTlsDiagnosticEnabled() throws Exception {
         SSLContext ssl = SSLContext.getInstance("TLS");
@@ -560,7 +561,7 @@ public class ChannelSSLContextTest {
         ctx.close();
     }
 
-    /** disabled=true branch (L79): ssl = false. */
+    /** disabled=true branch : ssl = false. */
     @Test
     public void testFillTlsDiagnosticDisabled() throws Exception {
         ChannelSSLContext ctx = new ChannelSSLContext(SocketChannel.open(), createDisabledEngineCtx());

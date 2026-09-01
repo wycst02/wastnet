@@ -21,6 +21,7 @@ import java.util.logging.Level;
  * Part 1: Unit tests for setters and configuration (no server needed).
  * Part 2: Integration tests with a real TCP server for connect/send/close.
  */
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class TCPClientTest {
 
     // ==================== Part 1: Setters & Configuration ====================

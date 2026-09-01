@@ -7,7 +7,7 @@ import java.nio.channels.SocketChannel;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Coverage for {@link ChannelContext#fireAbuse}: dispatch to an AbuseHandler-aware
+ * for {@link ChannelContext#fireAbuse}: dispatch to an AbuseHandler-aware
  * {@link ConnectionFilter} and silent ignore otherwise.
  */
 public class ChannelContextFireAbuseTest {

@@ -217,7 +217,7 @@ public class HttpResourceRouteTest {
         }
     }
 
-    // ==================== expires rules (resolveCacheControl coverage) ====================
+    // ==================== expires rules (resolveCacheControl) ====================
 
     @Test
     public void testCacheControlExactMatch() throws Throwable {

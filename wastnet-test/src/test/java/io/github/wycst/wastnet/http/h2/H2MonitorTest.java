@@ -18,6 +18,7 @@ import static org.mockito.Mockito.when;
  *
  * @author wangyc
  */
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class H2MonitorTest {
 
     @BeforeAll

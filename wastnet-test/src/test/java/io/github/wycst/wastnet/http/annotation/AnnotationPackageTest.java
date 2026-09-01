@@ -17,9 +17,10 @@ import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Comprehensive coverage for annotation package core classes.
+ * Comprehensive for annotation package core classes.
  */
-public class AnnotationPackageCoverageTest {
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
+public class AnnotationPackageTest {
 
     // ==================== Annotated test model classes ====================
 
@@ -92,7 +93,6 @@ public class AnnotationPackageCoverageTest {
     }
 
     // Class-level value itself contains a duplicate ("dup" twice) -> the class-level loop's
-    // !names.contains(name)==false branch (L68) is exercised directly.
     @WithInterceptor({"dup", "dup"})
     public static class InterceptorClassDupController {
         @Endpoint("/cd")
@@ -101,7 +101,6 @@ public class AnnotationPackageCoverageTest {
 
     // Class-level absent and method-level value is only the empty string -> every entry is
     // filtered out, names stays empty, and resolveInterceptorNames returns null
-    // (the names.isEmpty() arm of the ternary at L76).
     public static class InterceptorAllEmptyController {
         @Endpoint("/z")
         @WithInterceptor({""})
@@ -636,7 +635,7 @@ public class AnnotationPackageCoverageTest {
         h.clear();
     }
 
-    // Controllers for real request branch coverage
+    // Controllers for real request branch
     @Controller("/fastbody")
     public static class FastBodyController {
         @Endpoint("/get")
@@ -678,7 +677,6 @@ public class AnnotationPackageCoverageTest {
         public void hello(@Deprecated String name) {}
     }
 
-    // Controller with single HttpResponse param -> L302 false branch
     @Controller("/responly")
     public static class RespOnlyController {
         @Endpoint("/handle")
@@ -1008,13 +1006,11 @@ public class AnnotationPackageCoverageTest {
             assertEquals(200, r3.code());
             r3.close();
 
-            // Fast path with @ResponseBody: FastBodyController.handle(req,resp) -> L288-289
             Response r4 = client.newCall(new Request.Builder()
                     .url("http://127.0.0.1:51008/fastbody/get").get().build()).execute();
             assertEquals(200, r4.code());
             r4.close();
 
-            // Mixed params: HttpRequest + @RequestBody -> L308-310 switch cases
             Response r5 = client.newCall(new Request.Builder()
                     .url("http://127.0.0.1:51008/mixed/echo")
                     .post(okhttp3.RequestBody.create(mt, "body"))
@@ -1022,7 +1018,6 @@ public class AnnotationPackageCoverageTest {
             assertEquals(200, r5.code());
             r5.close();
 
-            // SSE endpoint -> L339-345 (uses SseOnlyController with SseEmitter param)
             Response r7 = client.newCall(new Request.Builder()
                     .url("http://127.0.0.1:51008/sse-only/stream").get().build()).execute();
             assertEquals(200, r7.code());
@@ -1034,13 +1029,11 @@ public class AnnotationPackageCoverageTest {
             assertEquals(200, r8.code());
             r8.close();
 
-            // Empty base + path without / -> L398 false branch
             Response r8b = client.newCall(new Request.Builder()
                     .url("http://127.0.0.1:51008/noslash").get().build()).execute();
             assertEquals(200, r8b.code());
             r8b.close();
 
-            // Single HttpResponse param -> L302 false branch
             Response r9 = client.newCall(new Request.Builder()
                     .url("http://127.0.0.1:51008/responly/handle").get().build()).execute();
             assertEquals(200, r9.code());

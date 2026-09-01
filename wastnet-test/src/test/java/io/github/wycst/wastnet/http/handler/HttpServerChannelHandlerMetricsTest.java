@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Coverage tests for the interceptor / observer instrumentation inside
+ * tests for the interceptor / observer instrumentation inside
  * {@link HttpServerChannelHandler}, dispatched through the internal
  * {@code HttpRequestLifecycleDelegate}, and the {@code HTTPServer#interceptor} /
  * {@code HTTPServer#observer} entry points.

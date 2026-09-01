@@ -15,9 +15,9 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Coverage tests for WebSocketResponse.
+ * tests for WebSocketResponse.
  */
-class WebSocketResponseCoverageTest {
+class WebSocketResponseTest {
 
     // ==================== Null checks (no real channel needed) ====================
 
@@ -182,7 +182,6 @@ class WebSocketResponseCoverageTest {
 
     @Test
     void testCloseAlreadyClosed() throws Exception {
-        // close() first time → close() second time sees isChannelClosed → return early (L116)
         ChannelPair pair = new ChannelPair();
         try {
             HttpRequest mockReq = mock(HttpRequest.class);
@@ -194,7 +193,6 @@ class WebSocketResponseCoverageTest {
         }
     }
 
-    // ==================== L34 subprotocol() ====================
 
     @Test
     void testSubprotocol() {
@@ -205,7 +203,6 @@ class WebSocketResponseCoverageTest {
         assertEquals("chat", resp.subprotocol());
     }
 
-    // ==================== L116 close with channel already closed ====================
 
     @Test
     void testCloseOnClosedChannel() throws Exception {

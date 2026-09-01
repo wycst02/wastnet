@@ -480,7 +480,7 @@ public class HttpResponseDecoderTest {
         // Should complete without throwing
     }
 
-    // ===== parseStatusCode with byte < '0' (L68 branch) =====
+    // ===== parseStatusCode with byte < '0' ( branch) =====
 
     @Test
     public void testParseStatusCodeWithLowByte() throws Exception {
@@ -509,7 +509,7 @@ public class HttpResponseDecoderTest {
         decoder.decode(data, 0, data.length, ctx);
     }
 
-    // ===== onBadDecoded null branches (L101-L103) =====
+    // ===== onBadDecoded null branches  =====
 
     @SuppressWarnings("unchecked")
     @Test

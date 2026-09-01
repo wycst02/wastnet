@@ -99,9 +99,9 @@ public class HttpProxyRouteTest {
         verify(response).setStatusAndText(HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
-    // ==================== handle: targetPath (L183) + changeOrigin (L190) ====================
+    // ==================== handle: targetPath  + changeOrigin  ====================
 
-    // ==================== handle: rewrite returns non-standard URI (L173) ====================
+    // ==================== handle: rewrite returns non-standard URI  ====================
 
     @Test
     public void testHandleRewritePrependsSlash() throws Throwable {
@@ -119,7 +119,7 @@ public class HttpProxyRouteTest {
         TestBaseRequest request = new TestBaseRequest(ctx);
         HttpResponse response = mock(HttpResponse.class);
 
-        // Connection refused, but L173 (rewrite prepend) already executed
+        // Connection refused, but  (rewrite prepend) already executed
         route.handle("/test", request, response);
     }
 
@@ -135,8 +135,8 @@ public class HttpProxyRouteTest {
         HttpResponse response = mock(HttpResponse.class);
 
         route.handle("/test", request, response);
-        // Connection to localhost:1 will be refused → IOException caught at L132,
-        // but L183 (targetPath) and L190 (changeOrigin) were already executed
+        // Connection to localhost:1 will be refused → IOException caught at ,
+        // but  (targetPath) and  (changeOrigin) were already executed
     }
 
 

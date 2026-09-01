@@ -546,7 +546,7 @@ public class HttpInternalResponseTest {
         Assertions.assertFalse(resp.isGzipSupported());
     }
 
-    // ==================== complete coverage ====================
+    // ==================== complete ====================
 
     @Test
     public void testCompleteWithAutoCommitFalse() throws Exception {
@@ -580,7 +580,7 @@ public class HttpInternalResponseTest {
         Assertions.assertEquals(0, resp.bodyBuf.size());
     }
 
-    // ==================== SSE full coverage ====================
+    // ==================== SSE full ====================
 
     @Test
     public void testSseWithFullParams() throws Exception {
@@ -663,7 +663,7 @@ public class HttpInternalResponseTest {
         Assertions.assertTrue(result, "Should return true when If-Modified-Since matches");
     }
 
-    // ==================== sendFile coverage ====================
+    // ==================== sendFile ====================
 
     @Test
     public void testSendFileReturnsEarlyWhenHeadersSent() throws Exception {
@@ -734,7 +734,7 @@ public class HttpInternalResponseTest {
         }
     }
 
-    // ── 4-arg sendFile cacheControl coverage ──
+    // ── 4-arg sendFile cacheControl ──
 
     @Test
     public void testSendFileWithNullCacheControl() throws Exception {
@@ -1120,7 +1120,7 @@ public class HttpInternalResponseTest {
 
     /**
      * Build a real {@link ChannelContext} (spy) bound to a {@link NioConfig} that mirrors the
-     * live HttpConf defaults and applies the given overrides, so config-branch coverage does
+     * live HttpConf defaults and applies the given overrides, so config-branch does
      * not require reflective/Unsafe mutation of HttpConf static fields.
      */
     private static ChannelContext mockChannelContext(NioConfig overrides) {

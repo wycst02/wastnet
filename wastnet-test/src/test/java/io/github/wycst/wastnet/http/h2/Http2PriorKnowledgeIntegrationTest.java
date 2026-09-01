@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit;
  *
  * @author wangyc
  */
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class Http2PriorKnowledgeIntegrationTest {
 
     private static HTTPServer server;

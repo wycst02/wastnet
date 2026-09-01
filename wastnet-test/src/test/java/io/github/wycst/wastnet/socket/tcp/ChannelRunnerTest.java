@@ -20,8 +20,9 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Coverage tests for {@link ChannelRunner} and {@link ChannelSSLRunner}.
+ * tests for {@link ChannelRunner} and {@link ChannelSSLRunner}.
  */
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class ChannelRunnerTest {
 
     private ServerSocket serverSocket;

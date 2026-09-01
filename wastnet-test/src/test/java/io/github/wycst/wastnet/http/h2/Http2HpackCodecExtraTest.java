@@ -10,7 +10,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Coverage gap tests for {@link Http2HpackCodec}: header-block validation, client (response)
+ * Gap tests for {@link Http2HpackCodec}: header-block validation, client (response)
  * decoding mode, dynamic table size update errors, trailer mode and large-name handling.
  *
  * <p>All cases are pure byte-level encode/decode assertions with no JDK-version-specific behavior.</p>

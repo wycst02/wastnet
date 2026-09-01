@@ -35,7 +35,7 @@ public class Http2ServerReaderTest {
         verify(ctx).writeFlush(Http2ServerReader.SERVER_REPLY_FRAMES);
     }
 
-    /** True branch (L136): configured initialReceiveWindowSize OR maxConcurrentStreams differ from defaults
+    /** True branch : configured initialReceiveWindowSize OR maxConcurrentStreams differ from defaults
      *  -> replyServerSettings builds a custom SERVER_REPLY_FRAMES via buildServerReplyFrames.
      *  Isolation is achieved via a per-instance NioConfig (no global change). */
     @Test

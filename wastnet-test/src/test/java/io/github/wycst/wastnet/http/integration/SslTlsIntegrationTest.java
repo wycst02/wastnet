@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit;
  * SSL/TLS integration test — starts an HTTPS server using PEM certificates,
  * verifies TLS handshake, encrypted request/response, and certificate validation.
  */
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class SslTlsIntegrationTest {
 
     private static HTTPServer server;

@@ -684,7 +684,7 @@ public class Http2MessageReaderTest {
     @Test
     public void testOnInboundRstStreamHookDefault() throws Exception {
         TestHttp2MessageReader reader = new TestHttp2MessageReader();
-        reader.onInboundRstStream(ctx()); // base-class no-op (L355)
+        reader.onInboundRstStream(ctx()); // base-class no-op 
         assertTrue(reader.valid);
     }
 
@@ -696,7 +696,7 @@ public class Http2MessageReaderTest {
         SocketChannel closed = SocketChannel.open();
         closed.close(); // write on a closed channel throws ClosedChannelException (IOException)
         ChannelContext ctx = new ChannelContext(closed, 4096);
-        reader.closeConnection(ctx, 1); // exercises catch(IOException) in closeConnection (L577)
+        reader.closeConnection(ctx, 1); // exercises catch(IOException) in closeConnection 
         assertFalse(reader.valid);
     }
 
@@ -759,7 +759,7 @@ public class Http2MessageReaderTest {
 
     // ==================== closeConnection branches in readNextMessageFrame / handleSettingsFrame ====================
 
-    /** l221: streamId < 0 (high bit set at buf[5]) inside readNextMessageFrame -> closeConnection(ctx, 6). */
+    /** : streamId < 0 (high bit set at buf[5]) inside readNextMessageFrame -> closeConnection(ctx, 6). */
     @Test
     public void testReadNextMessageFrameNegativeStreamIdCloses() throws Exception {
         TestHttp2MessageReader reader = new TestHttp2MessageReader();
@@ -770,7 +770,7 @@ public class Http2MessageReaderTest {
         assertFalse(reader.valid);
     }
 
-    /** l432: SETTINGS ACK (flags=0x1) with non-empty payload -> closeConnection(ctx, 6). */
+    /** : SETTINGS ACK (flags=0x1) with non-empty payload -> closeConnection(ctx, 6). */
     @Test
     public void testHandleSettingsAckWithPayloadCloses() throws Exception {
         TestHttp2MessageReader reader = new TestHttp2MessageReader();
@@ -783,7 +783,7 @@ public class Http2MessageReaderTest {
         assertFalse(reader.valid);
     }
 
-    /** l443: SETTINGS payload length not a multiple of 6 -> closeConnection(ctx, 6). */
+    /** : SETTINGS payload length not a multiple of 6 -> closeConnection(ctx, 6). */
     @Test
     public void testHandleSettingsWrongPayloadLengthCloses() throws Exception {
         TestHttp2MessageReader reader = new TestHttp2MessageReader();
@@ -792,7 +792,7 @@ public class Http2MessageReaderTest {
         assertFalse(reader.valid);
     }
 
-    /** l460: ENABLE_PUSH value=2 (neither 0 nor 1) -> closeConnection(ctx, 1). */
+    /** : ENABLE_PUSH value=2 (neither 0 nor 1) -> closeConnection(ctx, 1). */
     @Test
     public void testHandleSettingsEnablePushInvalidCloses() throws Exception {
         TestHttp2MessageReader reader = new TestHttp2MessageReader();
@@ -800,7 +800,7 @@ public class Http2MessageReaderTest {
         assertFalse(reader.valid);
     }
 
-    /** l469: INITIAL_WINDOW_SIZE value < 0 -> closeConnection(ctx, 1). */
+    /** : INITIAL_WINDOW_SIZE value < 0 -> closeConnection(ctx, 1). */
     @Test
     public void testHandleSettingsInitialWindowNegativeCloses() throws Exception {
         TestHttp2MessageReader reader = new TestHttp2MessageReader();
@@ -808,7 +808,7 @@ public class Http2MessageReaderTest {
         assertFalse(reader.valid);
     }
 
-    /** l492: MAX_FRAME_SIZE below lower bound (1024 < 16384) -> closeConnection(ctx, 1). */
+    /** : MAX_FRAME_SIZE below lower bound (1024 < 16384) -> closeConnection(ctx, 1). */
     @Test
     public void testHandleSettingsMaxFrameSizeTooSmallCloses() throws Exception {
         TestHttp2MessageReader reader = new TestHttp2MessageReader();
@@ -913,7 +913,7 @@ public class Http2MessageReaderTest {
 
     // ==================== fillDiagnostic (monitoring snapshot) ====================
 
-    /** L745 false branch: non-SSL ctx -> fillTlsDiagnostic is NOT called. */
+    /**  false branch: non-SSL ctx -> fillTlsDiagnostic is NOT called. */
     @Test
     public void testFillDiagnosticNonSsl() throws Exception {
         TestHttp2MessageReader reader = new TestHttp2MessageReader(ctx());
@@ -926,7 +926,7 @@ public class Http2MessageReaderTest {
         assertFalse(m.containsKey("ssl"));
     }
 
-    /** L745-746 true branch: SSL ctx -> fillTlsDiagnostic contributes TLS-layer keys. */
+    /**  true branch: SSL ctx -> fillTlsDiagnostic contributes TLS-layer keys. */
     @Test
     public void testFillDiagnosticSsl() throws Exception {
         SSLContext ssl = SSLContext.getInstance("TLS");

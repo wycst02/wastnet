@@ -15,9 +15,9 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Coverage tests for WebSocketConnectionImpl.
+ * tests for WebSocketConnectionImpl.
  */
-class WebSocketConnectionImplCoverageTest {
+class WebSocketConnectionImplTest {
 
     @Test
     void testRequestGetter() {
@@ -91,8 +91,8 @@ class WebSocketConnectionImplCoverageTest {
     }
 
     @Test
-    void testCloseCoverage() throws Exception {
-        // Coverage: close() twice (already closed guard) 
+    void testClose() throws Exception {
+        // close() twice (already closed guard) 
         ChannelContext mockCtx = mock(ChannelContext.class);
         WebSocketConnectionImpl conn = new WebSocketConnectionImpl(
                 mock(HttpRequest.class), mock(WebSocketResponse.class), mockCtx);
@@ -109,7 +109,7 @@ class WebSocketConnectionImplCoverageTest {
         verify(mockCtx, atLeastOnce()).writeFlush(any(ByteBuffer.class));
     }
 
-    // ==================== Simple branch coverage for sendText/sendBinary/pong etc. ====================
+    // ==================== Simple branch for sendText/sendBinary/pong etc. ====================
 
     @Test
     void testSendTextNull() {
@@ -269,7 +269,6 @@ class WebSocketConnectionImplCoverageTest {
     @Test
     void testDisconnectCatchIOException() {
         // disconnect() calls close(1000, "Disconnected"), which calls response.close()
-        // mock response.close to throw IOException → catches at L240
         ChannelContext mockCtx = mock(ChannelContext.class);
         WebSocketResponse mockResp = mock(WebSocketResponse.class);
         WebSocketConnectionImpl conn = new WebSocketConnectionImpl(
@@ -285,7 +284,6 @@ class WebSocketConnectionImplCoverageTest {
 
     @Test
     void testCloseCtxCloseException() throws Exception {
-        // close() finally calls ctx.close() which throws → catches at L189
         ChannelContext mockCtx = mock(ChannelContext.class);
         doThrow(new RuntimeException("ctx close error")).when(mockCtx).close();
         WebSocketConnectionImpl conn = new WebSocketConnectionImpl(
@@ -296,7 +294,6 @@ class WebSocketConnectionImplCoverageTest {
         } finally {
             restoreWsErrorLog();
         }
-        // ctx.close() throws, caught by catch(Exception) at L189, logged and swallowed
     }
 
     // ==================== Timeout detection (via reflection) ====================
@@ -346,7 +343,6 @@ class WebSocketConnectionImplCoverageTest {
 
     @Test
     void testTimeoutDetectionClosed() throws Exception {
-        // L305: closed == true → return
         // Must extract detectionTask BEFORE close() clears it via stopTimeoutDetection()
         WebSocketConnectionImpl conn = createWithTimeout("PING");
         Runnable task = getDetectionTask(conn);
@@ -356,7 +352,6 @@ class WebSocketConnectionImplCoverageTest {
 
     @Test
     void testTimeoutNotElapsed() throws Exception {
-        // L309 false: elapsed < timeoutDelay
         WebSocketConnectionImpl conn = createWithTimeout("PING");
         conn.updateActiveTime();
         try { getDetectionTask(conn).run(); } catch (Exception ignored) { }
@@ -364,7 +359,6 @@ class WebSocketConnectionImplCoverageTest {
 
     @Test
     void testTimeoutDoubleElapsed() throws Exception {
-        // L310 true: elapsed >= timeoutDelay << 1 → disconnect()
         WebSocketConnectionImpl conn = createWithTimeout("PING");
         setLastActiveTime(conn, System.currentTimeMillis() - 3000);
         try { getDetectionTask(conn).run(); } catch (Exception ignored) { }
@@ -372,7 +366,6 @@ class WebSocketConnectionImplCoverageTest {
 
     @Test
     void testTimeoutPingStrategy() throws Exception {
-        // L309 true, L310 false, L317 PING → ping()
         WebSocketConnectionImpl conn = createWithTimeout("PING");
         setLastActiveTime(conn, System.currentTimeMillis() - 1500);
         try { getDetectionTask(conn).run(); } catch (Exception ignored) { }
@@ -380,13 +373,12 @@ class WebSocketConnectionImplCoverageTest {
 
     @Test
     void testTimeoutDisconnectStrategy() throws Exception {
-        // L309 true, L310 false, L317 else → disconnect()
         WebSocketConnectionImpl conn = createWithTimeout("DISCONNECT");
         setLastActiveTime(conn, System.currentTimeMillis() - 1500);
         try { getDetectionTask(conn).run(); } catch (Exception ignored) { }
     }
 
-    /** Second call: detectionTask != null → skip initDetectionTask (L301 false branch). */
+    /** Second call: detectionTask != null → skip initDetectionTask ( false branch). */
     @Test
     void testTimeoutDetectionTwice() throws Exception {
         WebSocketConnectionImpl conn = new WebSocketConnectionImpl(
@@ -471,7 +463,6 @@ class WebSocketConnectionImplCoverageTest {
         ChannelContext mockCtx = mock(ChannelContext.class);
         WebSocketResponse mockResp = mock(WebSocketResponse.class);
         WebSocketConnectionImpl conn = new WebSocketConnectionImpl(mock(HttpRequest.class), mockResp, mockCtx);
-        // push() calls writeFlush which may throw → caught by catch(Throwable) at L172
         try {
             conn.push(new WebSocketFrame(WebSocketFrame.FrameType.TEXT, "msg".getBytes(), true));
         } catch (IllegalStateException e) {
@@ -491,7 +482,6 @@ class WebSocketConnectionImplCoverageTest {
         try { conn.sendText("hi"); } catch (Exception ignored) {}
     }
 
-    // ==================== Real-network PING timeout path (L319-320, L330) ====================
 
     private static class RealChannelPair {
         final java.nio.channels.ServerSocketChannel ssc;
@@ -549,7 +539,6 @@ class WebSocketConnectionImplCoverageTest {
             WebSocketConnectionImpl conn = new WebSocketConnectionImpl(mockReq, realResp, pair.ctx);
             try { conn.timeoutDetection(60, WebSocketResource.TimeoutStrategy.PING); } catch (Exception ignored) {}
             conn.updateActiveTime();
-            // scheduleDetectionTask at L330 will NPE (no worker), but code path is reached
             try { getDetectionTask(conn).run(); } catch (Exception ignored) {}
         } finally {
             pair.close();

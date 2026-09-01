@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.nio.ByteBuffer;
 
 /**
- * Additional tests for {@link Http2Frame} — coverage for frame parsing edge cases,
+ * Additional tests for {@link Http2Frame} — for frame parsing edge cases,
  * hex dump formatting, and payload handling.
  *
  * @author wangyc

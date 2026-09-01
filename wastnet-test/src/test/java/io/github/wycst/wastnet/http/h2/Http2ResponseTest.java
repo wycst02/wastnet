@@ -224,11 +224,11 @@ public class Http2ResponseTest {
         Http2Response resp = createMockFixture().response;
         // first add: String stored directly (doAddHeader null branch)
         resp.addHeader("x-multi", "v1");
-        // second add: String -> List merge branch (doAddHeader l84-88)
+        // second add: String -> List merge branch (doAddHeader )
         resp.addHeader("x-multi", "v2");
-        // getHeader returns the first value when multiple values exist (List branch l97-98)
+        // getHeader returns the first value when multiple values exist (List branch )
         assertEquals("v1", resp.getHeader("x-multi"));
-        // third add: List append branch (doAddHeader l89-90)
+        // third add: List append branch (doAddHeader )
         resp.addHeader("x-multi", "v3");
         assertEquals("v1", resp.getHeader("x-multi"));
     }
@@ -661,8 +661,8 @@ public class Http2ResponseTest {
     void testBuildStaticHeaderBlockEncodesMultiValueHeader() throws Exception {
         MockFixture f = createMockFixture();
         // Adding the same header twice converts the value from String to List<String>
-        // (doAddHeader L81-85), which drives buildStaticHeaderBlock into its multi-value
-        // branch (L452-456) instead of the plain String branch.
+        // (doAddHeader ), which drives buildStaticHeaderBlock into its multi-value
+        // branch  instead of the plain String branch.
         // Short name/values stay under the 5-byte Huffman threshold, so both entries are
         // written verbatim into the HPACK block and can be asserted on.
         f.response.addHeader("xmv", "p");
@@ -686,7 +686,7 @@ public class Http2ResponseTest {
     @Test
     void testBuildStaticHeaderBlockKeepsCustomServerHeader() throws Exception {
         // EXPOSE_SERVER_HEADER=true combined with an application-supplied Server header makes the
-        // second half of the L439 condition short-circuit -- the last uncovered branch of
+        // second half of the  condition short-circuit -- the last uncovered branch of
         // buildStaticHeaderBlock (the framework default must then NOT be appended).
         // "zsrv" is <= 5 bytes so it is written verbatim (Huffman only kicks in above 5 bytes).
         MockFixture f = createMockFixture(mockChannelContext(true));

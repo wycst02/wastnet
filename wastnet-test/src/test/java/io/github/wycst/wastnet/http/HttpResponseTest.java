@@ -13,9 +13,9 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Coverage tests for HttpDefaultResponse, HttpBodyStreamDecoder, HttpChunkedStream.
+ * tests for HttpDefaultResponse, HttpBodyStreamDecoder, HttpChunkedStream.
  */
-public class HttpResponseCoverageTest {
+public class HttpResponseTest {
 
     private ChannelContext createCtx() throws Exception {
         SocketChannel ch = SocketChannel.open();

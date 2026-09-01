@@ -210,7 +210,7 @@ public class H2H2ProxyAdapterTest {
         Http2Request request = mockRequest(serverStream);
 
         adapter.sendRequest(request, targetCtx);
-        // body branch (L101) exercised
+        // body branch  exercised
     }
 
     // ==================== sendRequest error -> sendGatewayError (502) ====================

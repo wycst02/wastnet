@@ -15,7 +15,7 @@ import java.util.HashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class WebSocketCoverageTest {
+public class WebSocketTest {
 
     static ChannelContext createCtx() throws IOException {
         SocketChannel ch = SocketChannel.open();
@@ -133,7 +133,6 @@ public class WebSocketCoverageTest {
 
     @Test
     public void testWriteServerFrameHeader16BitLength() {
-        // Cover writeServerFrameHeader's len <= 65535 (len > 125) branch at L77-80
         byte[] payload = new byte[200];
         byte[] frame = WebSocketUtils.encodeServerFrame(WebSocketFrame.FrameType.BINARY, payload, true);
         assertEquals(4 + 200, frame.length); // headerLen=4 + payload

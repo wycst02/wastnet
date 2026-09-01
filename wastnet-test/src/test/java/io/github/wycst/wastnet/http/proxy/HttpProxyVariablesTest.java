@@ -170,7 +170,7 @@ public class HttpProxyVariablesTest {
         Assertions.assertFalse(HttpProxyVariables.containsVariable(null));
     }
 
-    // ==================== Char range coverage (L154) ====================
+    // ==================== Char range  ====================
 
     @Test
     void testResolveVariableWithDigitsInName() {
@@ -191,7 +191,7 @@ public class HttpProxyVariablesTest {
         Assertions.assertEquals("prefix.$Host.suffix", resolved);
     }
 
-    // ==================== Null resolver branch (L165) ====================
+    // ==================== Null resolver branch  ====================
 
     @Test
     void testResolveProviderReturnsNull() throws Exception {
@@ -207,7 +207,7 @@ public class HttpProxyVariablesTest {
         map.put("$nullvar", nullResolver);
         try {
             HttpRequest req = mock(HttpRequest.class);
-            // Slow path with $nullvar returning null → appends "" (L165 else branch)
+            // Slow path with $nullvar returning null → appends "" ( else branch)
             String resolved = HttpProxyVariables.resolve("x$nullvar", req);
             Assertions.assertEquals("x", resolved);
         } finally {

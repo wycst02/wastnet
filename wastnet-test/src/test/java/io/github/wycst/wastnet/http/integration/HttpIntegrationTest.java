@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class HttpIntegrationTest {
 
     static {
@@ -441,7 +442,7 @@ public class HttpIntegrationTest {
         }
     }
 
-    // ==================== New coverage tests ====================
+    // ==================== New tests ====================
 
     @Test
     public void testMultiValueHeaders() throws Exception {

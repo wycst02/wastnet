@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Pure memory coverage tests for HttpChunkedStream and HttpBodyStreamDecoder.
+ * Pure memory tests for HttpChunkedStream and HttpBodyStreamDecoder.
  */
 class HttpChunkedAndBodyStreamTest {
 

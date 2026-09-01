@@ -7,7 +7,7 @@ import io.github.wycst.wastnet.http.annotation.Inject;
 import io.github.wycst.wastnet.http.annotation.Value;
 
 /**
- * Test configuration classes for deferred @Bean method retry coverage.
+ * Test configuration classes for deferred @Bean method retry.
  * Placed under a completely separate package so full-scans of
  * "io.github.wycst.wastnet.http.annotation" do NOT pick them up.
  */

@@ -249,7 +249,7 @@ public class HttpChunkedStreamTest {
         Assertions.assertThrows(UnsupportedOperationException.class, () -> stream.read());
     }
 
-    // ==================== readCRLF channel closure (L40-L41) ====================
+    // ==================== readCRLF channel closure  ====================
 
     @Test
     public void testReadCRLFChannelClosure() {
@@ -261,7 +261,7 @@ public class HttpChunkedStreamTest {
                 () -> stream.read(buf, 0, 1024));
     }
 
-    // ==================== readChunkSize > Integer.MAX_VALUE (L81-L83) ====================
+    // ==================== readChunkSize > Integer.MAX_VALUE  ====================
 
     @Test
     public void testReadChunkSizeTooLarge() {
@@ -273,7 +273,7 @@ public class HttpChunkedStreamTest {
                 () -> stream.read(buf, 0, 1024));
     }
 
-    // ==================== readEndChunked IOException (L61) ====================
+    // ==================== readEndChunked IOException  ====================
 
     @Test
     public void testReadEndChunkedIOException() throws IOException {
@@ -286,12 +286,12 @@ public class HttpChunkedStreamTest {
         Assertions.assertTrue(stream.completed);
     }
 
-    // ==================== read() body size exceeds limit (L133-L135) ====================
+    // ==================== read() body size exceeds limit  ====================
     // Note: BODY_MAX_SIZE now defaults to 536870912 (512MB). This path is only reachable when
     // a single chunked read exceeds BODY_MAX_SIZE; the value is a runtime constant loaded from
-    // config (not inlined), so it can be overridden via Unsafe for isolated coverage.
+    // config (not inlined), so it can be overridden via Unsafe for isolated.
 
-    // ==================== complete0() discard from channel (L215-L222) ====================
+    // ==================== complete0() discard from channel  ====================
 
     @Test
     public void testComplete0DiscardFromChannel() throws Exception {

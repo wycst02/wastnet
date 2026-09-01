@@ -188,7 +188,7 @@ public class HttpCoreUtilTest {
         HttpUnsafe.copyOfRange(src, 0, tgt1, 0, 20);
         assertEquals("ABCDEFGHIJKLMNOPQRST", new String(tgt1, 0, 20));
 
-        // len 10 (>8, <=15, <=8 after L110)
+        // len 10 (>8, <=15, <=8 after )
         byte[] tgt2 = new byte[10];
         HttpUnsafe.copyOfRange(src, 0, tgt2, 0, 10);
         assertEquals("ABCDEFGHIJ", new String(tgt2, 0, 10));

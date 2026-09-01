@@ -11,9 +11,9 @@ import static org.mockito.Mockito.*;
 import static org.mockito.Mockito.withSettings;
 
 /**
- * Coverage tests for HttpRouterHandler and HttpResourceRoute.
+ * tests for HttpRouterHandler and HttpResourceRoute.
  */
-class HttpHandlerCoverageTest {
+class HttpHandlerTest {
 
     private HttpRouterHandler router;
     private HttpRequest mockReq;

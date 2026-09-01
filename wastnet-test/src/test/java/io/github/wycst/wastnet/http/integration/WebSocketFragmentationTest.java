@@ -23,6 +23,7 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * Tests for WebSocket fragmentation and control frame interleaving (RFC 6455 §5.4).
  */
+@org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class WebSocketFragmentationTest {
 
     private static HTTPServer server;

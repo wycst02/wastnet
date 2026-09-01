@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
- * Coverage for the HTTP/2 Rapid Reset (CVE-2023-44487) defense:
+ * for the HTTP/2 Rapid Reset (CVE-2023-44487) defense:
  * {@link Http2ServerReader#onInboundRstStream} per-connection client RST rate limit.
  *
  * <p>The counting logic runs on the I/O thread and is pure (no real I/O); a mocked

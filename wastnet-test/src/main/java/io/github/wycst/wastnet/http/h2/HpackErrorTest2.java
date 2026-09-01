@@ -48,7 +48,7 @@ public class HpackErrorTest2 {
                 check(("" + a + b).getBytes(StandardCharsets.US_ASCII));
             }
         }
-        // 5) brute-force 3-len over a reduced set (long-code + digits) to widen coverage
+        // 5) brute-force 3-len over a reduced set (long-code + digits) to widen
         String reduced = "0123456789~|{[^`}\\";
         char[] rc = reduced.toCharArray();
         for (char a : rc) {

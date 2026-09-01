@@ -13,7 +13,7 @@ import java.nio.channels.SocketChannel;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Coverage tests for Http2ClientReader (client-side H2 frame decoder).
+ * tests for Http2ClientReader (client-side H2 frame decoder).
  */
 public class Http2ClientReaderTest {
 
@@ -60,7 +60,7 @@ public class Http2ClientReaderTest {
         reader.init(noopCtx());
     }
 
-    /** True branch (L101): configured initialReceiveWindowSize differs from default -> init builds custom client SETTINGS.
+    /** True branch : configured initialReceiveWindowSize differs from default -> init builds custom client SETTINGS.
      *  Isolation is achieved via a per-instance NioConfig (no global change). */
     @Test
     void testInitCustomWindowTriggersBuildInitClientSettings() throws Exception {

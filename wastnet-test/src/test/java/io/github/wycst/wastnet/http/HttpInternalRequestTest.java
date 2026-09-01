@@ -393,7 +393,7 @@ public class HttpInternalRequestTest {
     public void testGetMultipartDelegatesToBodyDecoder() {
         TestBaseRequest req = new TestBaseRequest(mock(ChannelContext.class));
         req.headers.put("content-type", "multipart/form-data; boundary=x");
-        // Just call for coverage — these delegate to the lazily-created body decoder
+        // Just call for — these delegate to the lazily-created body decoder
         req.getMultipartField("f");
         req.getMultipartFields("f");
         req.getMultipartFieldValues("f");
@@ -403,7 +403,7 @@ public class HttpInternalRequestTest {
         Assertions.assertTrue(all.isEmpty());
     }
 
-    // ==================== getParameterNames with null uriNames (L248 false) ====================
+    // ==================== getParameterNames with null uriNames ( false) ====================
 
     @Test
     public void testGetParameterNamesWithNullUriNames() {
@@ -413,7 +413,7 @@ public class HttpInternalRequestTest {
         Assertions.assertNotNull(names);
     }
 
-    // ==================== getParameterNames multipart / form-urlencoded (L252 L254) ====================
+    // ==================== getParameterNames multipart / form-urlencoded ( ) ====================
 
     @Test
     public void testGetParameterNamesMultipartBody() {

@@ -299,7 +299,7 @@ public class WebSocketResourceTest {
         // No exception = success
     }
 
-    // ===== Empty callback body coverage =====
+    // ===== Empty callback body =====
 
     @Test
     void testOnMessageEmptyBody() throws IOException {
