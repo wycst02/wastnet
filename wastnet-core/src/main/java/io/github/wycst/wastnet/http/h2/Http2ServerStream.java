@@ -15,8 +15,8 @@
  */
 package io.github.wycst.wastnet.http.h2;
 
-import io.github.wycst.wastnet.http.HttpConf;
 import io.github.wycst.wastnet.http.HttpMethod;
+import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.http.HttpStatus;
 import io.github.wycst.wastnet.http.HttpUriDecoder;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
@@ -87,7 +87,7 @@ public class Http2ServerStream extends Http2Stream {
         if (contentLengthString != null) {
             declaredContentLength = Long.parseLong(contentLengthString);
             // Body too large, exceeds hard limit
-            if (declaredContentLength > HttpConf.BODY_MAX_SIZE) {
+            if (declaredContentLength > ctx.option(HttpOptions.BODY_MAX_SIZE)) {
                 errorStatus = HttpStatus.REQUEST_ENTITY_TOO_LARGE;
             }
         }

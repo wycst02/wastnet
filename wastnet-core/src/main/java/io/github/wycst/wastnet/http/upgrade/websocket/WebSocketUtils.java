@@ -76,18 +76,18 @@ public class WebSocketUtils {
         int pos = destOff;
         dest[pos++] = (byte) ((fin ? 0x80 : 0x00) | (type.opcode & 0x0F));
         if (len <= 125) {
-            dest[pos++] = (byte) len;
+            dest[pos] = (byte) len;
         } else if (len <= 65535) {
             dest[pos++] = (byte) 126;
             dest[pos++] = (byte) ((len >> 8) & 0xFF);
-            dest[pos++] = (byte) (len & 0xFF);
+            dest[pos] = (byte) (len & 0xFF);
         } else {
             dest[pos++] = (byte) 127;
             pos += 4; // high 32 bits always zero (int max < 2^31), skip 4 bytes
             dest[pos++] = (byte) ((len >> 24) & 0xFF);
             dest[pos++] = (byte) ((len >> 16) & 0xFF);
             dest[pos++] = (byte) ((len >> 8) & 0xFF);
-            dest[pos++] = (byte) (len & 0xFF);
+            dest[pos] = (byte) (len & 0xFF);
         }
     }
 

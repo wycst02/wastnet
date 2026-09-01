@@ -1,7 +1,9 @@
 package io.github.wycst.wastnet.http.h2;
 
-import io.github.wycst.wastnet.http.*;
-import io.github.wycst.wastnet.http.h2.TrailersListener;
+import io.github.wycst.wastnet.http.HttpMethod;
+import io.github.wycst.wastnet.http.HttpRequest;
+import io.github.wycst.wastnet.http.HttpStatus;
+import io.github.wycst.wastnet.http.HttpVersion;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Test;
 

@@ -1,6 +1,6 @@
 package io.github.wycst.wastnet.socket.channel;
 
-import io.github.wycst.wastnet.socket.conf.SocketConf;
+import io.github.wycst.wastnet.socket.conf.SocketOptions;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 
 import java.io.IOException;
@@ -23,7 +23,7 @@ public abstract class ChannelDecoder<T> implements ChannelReader<T> {
      * @throws IOException if read operation fails
      */
     public final byte[] read(ChannelContext ctx, byte[] buf, int offset, int len) throws IOException {
-        return read(ctx, buf, offset, len, SocketConf.READ_TIMEOUT_MS);
+        return read(ctx, buf, offset, len, ctx.option(SocketOptions.READ_TIMEOUT_MS));
     }
 
     /**
@@ -56,7 +56,7 @@ public abstract class ChannelDecoder<T> implements ChannelReader<T> {
      * @throws IOException if read operation fails
      */
     protected final byte[] readInternal(ChannelContext ctx, byte[] buf, int offset, int len) throws IOException {
-        return readInternal(ctx, buf, offset, len, SocketConf.READ_TIMEOUT_MS);
+        return readInternal(ctx, buf, offset, len, ctx.option(SocketOptions.READ_TIMEOUT_MS));
     }
 
     /**

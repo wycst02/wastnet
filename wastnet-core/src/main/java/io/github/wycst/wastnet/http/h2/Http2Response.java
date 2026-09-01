@@ -79,7 +79,7 @@ public class Http2Response extends HttpInternalResponse {
         if (existing == null) {
             h2Headers.put(normalizedKey, value);
         } else if (existing.getClass() == String.class) {
-            List<String> list = new ArrayList<String>();
+            List<String> list = new ArrayList<>();
             list.add((String) existing);
             list.add(value);
             h2Headers.put(normalizedKey, list);
@@ -118,7 +118,7 @@ public class Http2Response extends HttpInternalResponse {
     public void write(byte[] buf, int offset, int count) throws IOException {
         if (committed || count <= 0) return;
         if (!headersSent) writeHeaders(false);
-        if (bodyBuf.size() + count > HttpConf.BODY_MEMORY_THRESHOLD) {
+        if (bodyBuf.size() + count > bodyMemoryThreshold()) {
             sendChunkedData(bodyBuf.getBuf(), bodyBuf.getBegin(), bodyBuf.size(), false);
             bodyBuf.clear();
             sendChunkedData(buf, offset, count, false);
@@ -278,7 +278,7 @@ public class Http2Response extends HttpInternalResponse {
         addHeader(HttpHeaderNames.CONTENT_ENCODING, HttpHeaderValues.GZIP);
 
         // For small files, use in-memory compression (same as Http1)
-        if (fileSize <= HttpConf.BODY_MEMORY_THRESHOLD) {
+        if (fileSize <= bodyMemoryThreshold()) {
             bodyBuf.replace(gzipCompress(readFileContent(file, (int) fileSize)));
             commit();
             return;
@@ -290,8 +290,7 @@ public class Http2Response extends HttpInternalResponse {
         int chunkSize = stream.sendChunkSize();
         final ByteBuffer gzipFrame = ByteBuffer.allocate(9 + chunkSize);
         gzipFrame.putInt(5, stream.streamId);
-        FileInputStream fis = new FileInputStream(file);
-        GZIPOutputStream gzip = new GZIPOutputStream(
+        try (FileInputStream fis = new FileInputStream(file); GZIPOutputStream gzip = new GZIPOutputStream(
                 new OutputStream() {
                     public void write(int b) throws IOException {
                         throw new IOException("single-byte write not supported");
@@ -299,24 +298,20 @@ public class Http2Response extends HttpInternalResponse {
 
                     public void write(byte[] b, int off, int len) throws IOException {
                         gzipFrame.put(0, (byte) (len >> 16))
-                                 .put(1, (byte) (len >> 8))
-                                 .put(2, (byte) len)
+                                .put(1, (byte) (len >> 8))
+                                .put(2, (byte) len)
                                 .clear().position(9);
                         gzipFrame.put(b, off, len);
                         gzipFrame.flip();
                         stream.writeDataFrame(gzipFrame, len);
                     }
-                }, chunkSize);
-        try {
+                }, chunkSize)) {
             byte[] buffer = new byte[chunkSize];
             int bytesRead;
             while ((bytesRead = fis.read(buffer)) > 0) {
                 gzip.write(buffer, 0, bytesRead);
             }
             gzip.finish();
-        } finally {
-            gzip.close();
-            fis.close();
         }
         committed = true;
         stream.flushCtx();
@@ -436,7 +431,7 @@ public class Http2Response extends HttpInternalResponse {
         }
         buf.write(_H2_DATE_PREFIX);
         Http2Helper.writeHpackString(buf, HttpHeaderUtils.getDateHeaderValue(System.currentTimeMillis()));
-        if (HttpConf.EXPOSE_SERVER_HEADER && !h2Headers.containsKey(HttpHeaderNames.SERVER)) {
+        if (exposeServerHeader() && !h2Headers.containsKey(HttpHeaderNames.SERVER)) {
             buf.write(_H2_SERVER_PREFIX);
             Http2Helper.writeHpackString(buf, SERVER_VALUE);
         }
@@ -465,7 +460,7 @@ public class Http2Response extends HttpInternalResponse {
     private void writeDynamicHeaders(HttpBuf buf, boolean writeIndex) {
         // peer-disabled dynamic-table indexing is handled inside indexOfValue
         if (contentType != null) {
-            int k = -1;
+            int k;
             if (writeIndex && (k = stream.reader.indexOfValue(contentType)) > -1) {
                 int idx = stream.reader.headerIndex.get(k);
                 if (idx > 0) {

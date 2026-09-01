@@ -2,7 +2,7 @@ package io.github.wycst.wastnet.socket.tcp;
 
 import io.github.wycst.wastnet.log.Log;
 import io.github.wycst.wastnet.log.LogFactory;
-import io.github.wycst.wastnet.socket.conf.SocketConf;
+import io.github.wycst.wastnet.socket.conf.SocketOptions;
 import io.github.wycst.wastnet.socket.handler.IdleStateHandler;
 import io.github.wycst.wastnet.util.Utils;
 
@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 final class ChannelWorker extends Thread {
     static final Log LOG = LogFactory.getLog(ChannelWorker.class);
-    static ThreadLocal<Thread> workerThreadTl = new ThreadLocal<Thread>();
+    static ThreadLocal<Thread> workerThreadTl = new ThreadLocal<>();
 
     final String workId;
     final Selector selector;
@@ -110,8 +110,7 @@ final class ChannelWorker extends Thread {
      * Called during server shutdown to release all client resources.
      */
     void closeAllConnections() {
-        Set<SelectionKey> keys = selector.keys();
-        for (SelectionKey key : keys) {
+        for (SelectionKey key : new ArrayList<>(selector.keys())) {
             if (key.isValid()) {
                 ChannelRunner runner = (ChannelRunner) key.attachment();
                 if (runner != null) {
@@ -131,8 +130,7 @@ final class ChannelWorker extends Thread {
      * @return true if at least one runner has in-flight (runFlag == true)
      */
     boolean hasInflightRequests() {
-        Set<SelectionKey> keys = selector.keys();
-        for (SelectionKey key : keys) {
+        for (SelectionKey key : new ArrayList<>(selector.keys())) {
             if (key.isValid()) {
                 ChannelRunner runner = (ChannelRunner) key.attachment();
                 if (runner != null && runner.isRunFlag()) {
@@ -196,12 +194,14 @@ final class ChannelWorker extends Thread {
                     .scheduleWithFixedDelay(new IdleScanTask(), 0, 1000, TimeUnit.MILLISECONDS);
         }
 
+        final long selectTimeoutMs = engine.nioConfig.option(SocketOptions.SELECT_TIMEOUT_MS);
+        final int selectEmptyCount = engine.nioConfig.option(SocketOptions.SELECT_EMPTY_COUNT);
         int selectZeroCount = 0;
         final Set<SelectionKey> selectedKeys = selector.selectedKeys();
         while (engine.engineRunFlag) {
-            int num = selector.select(SocketConf.SELECT_TIMEOUT_MS);
+            int num = selector.select(selectTimeoutMs);
             if (num == 0) {
-                if (++selectZeroCount < SocketConf.SELECT_EMPTY_COUNT) {
+                if (++selectZeroCount < selectEmptyCount) {
                     continue;
                 }
                 selectZeroCount = 0;
@@ -252,7 +252,7 @@ final class ChannelWorker extends Thread {
         public void run() {
             try {
                 long now = System.nanoTime();
-                List<SelectionKey> keys = new ArrayList<SelectionKey>(selector.keys());
+                List<SelectionKey> keys = new ArrayList<>(selector.keys());
                 for (SelectionKey key : keys) {
                     if (!key.isValid()) continue;
                     ChannelRunner runner = (ChannelRunner) key.attachment();

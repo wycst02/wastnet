@@ -22,12 +22,6 @@ public class SocketConfTest {
     }
 
     @Test
-    public void testUseLoadBalanceLeastConnectionsReturnsBoolean() {
-        // Default environment uses ROUND_ROBIN unless overridden by wastnet-socket.properties
-        Assertions.assertFalse(SocketConf.useLoadBalanceLeastConnections());
-    }
-
-    @Test
     public void testGetPropertyReturnsNullForUnknownKey() {
         Assertions.assertNull(SocketConf.getProperty("wastnet.socket.unknown.test.key"));
     }

@@ -3,6 +3,7 @@ package io.github.wycst.wastnet.socket.tcp;
 import io.github.wycst.wastnet.socket.channel.ChannelWriter;
 import io.github.wycst.wastnet.socket.handler.IdleStateHandler;
 import io.github.wycst.wastnet.socket.handler.IdleStateHandlerTrigger;
+import io.github.wycst.wastnet.socket.tcp.ChannelWorker;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,7 +12,9 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.net.SocketAddress;
 import java.nio.ByteBuffer;
+import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -237,6 +240,39 @@ public class ChannelContextCoverageTest {
         }
     }
 
+    /**
+     * Cover the 2-arg schedule(Runnable, long delayMs) delegate (ChannelContext L741-743),
+     * which forwards to schedule(runnable, delayMs, TimeUnit.MILLISECONDS).
+     */
+    @Test
+    public void testScheduleMillisDelegate() throws Exception {
+        NioEngine<?> engine = new NioEngine<>(1);
+        try {
+            ChannelWorker realWorker = new ChannelWorker(engine);
+            ctx.setWorker(realWorker);
+
+            final boolean[] ran = {false};
+            java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+            ScheduledFuture<?> future = ctx.schedule(new Runnable() {
+                public void run() {
+                    ran[0] = true;
+                    latch.countDown();
+                }
+            }, 10);
+            Assertions.assertNotNull(future);
+            // wait for the delayed task to actually execute via the worker's scheduled executor
+            Assertions.assertTrue(latch.await(3, TimeUnit.SECONDS), "scheduled task should run");
+            Assertions.assertTrue(ran[0]);
+            Assertions.assertFalse(future.isDone() == false && future.isCancelled());
+
+            if (realWorker.scheduledExecutorService != null) {
+                realWorker.scheduledExecutorService.shutdownNow();
+            }
+        } finally {
+            engine.shutdown();
+        }
+    }
+
     private void invokeScheduleTaskRun(String innerClassName) throws Exception {
         Class<?> taskClass = Class.forName(
                 "io.github.wycst.wastnet.socket.handler.IdleStateHandlerTrigger$" + innerClassName);
@@ -344,6 +380,113 @@ public class ChannelContextCoverageTest {
         ctx.wakeupWrite();
     }
 
+    // ==================== waitForWrite thread-pool path (doRegisterWrite / doAwaitWritable / doRemoveWriteInterest) ====================
+
+    /** Build a real (non-worker) ChannelWorker so worker.wakeup() can be invoked without mocking the final class. */
+    private ChannelWorker newRealWorker() throws Exception {
+        TCPServer server = new TCPServer(1, new NioConfig());
+        return new ChannelWorker(server);
+    }
+
+    /** Thread-pool path: worker != null and current thread is NOT a worker thread.
+     *  Wakeup from another thread so waitForWrite returns true normally. */
+    @Test
+    public void testWaitForWriteThreadPoolPath() throws Exception {
+        ChannelWorker worker = newRealWorker();
+        SelectionKey key = mock(SelectionKey.class);
+        when(key.isValid()).thenReturn(true);
+        when(key.interestOps()).thenReturn(0);
+        when(key.interestOps(anyInt())).thenReturn(key);
+
+        ChannelContext poolCtx = new ChannelContext(11L, realChannel, 1024);
+        poolCtx.setWorker(worker);
+        poolCtx.setReadKey(key);
+
+        AtomicBoolean ok = new AtomicBoolean(false);
+        Thread writer = new Thread(() -> {
+            try {
+                ok.set(poolCtx.waitForWrite(500));
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        writer.start();
+        // Give the writer thread time to enter wait()
+        Thread.sleep(100);
+        // Wake it up from the main thread (calls doRemoveWriteInterest + notifyAll)
+        poolCtx.wakeupWrite();
+        writer.join(3000);
+        Assertions.assertTrue(ok.get(), "waitForWrite should return true after wakeup");
+    }
+
+    /** InterruptedException branch (L193-196): pass timeoutMs <= 0 so wait(30000), then interrupt. */
+    @Test
+    public void testWaitForWriteInterruptedException() throws Exception {
+        ChannelWorker worker = newRealWorker();
+        SelectionKey key = mock(SelectionKey.class);
+        when(key.isValid()).thenReturn(true);
+        when(key.interestOps()).thenReturn(0);
+        when(key.interestOps(anyInt())).thenReturn(key);
+
+        ChannelContext poolCtx = new ChannelContext(12L, realChannel, 1024);
+        poolCtx.setWorker(worker);
+        poolCtx.setReadKey(key);
+
+        AtomicBoolean result = new AtomicBoolean(true);
+        Thread writer = new Thread(() -> {
+            try {
+                // timeoutMs <= 0 -> wait(30000); interrupt triggers InterruptedException branch
+                result.set(poolCtx.waitForWrite(-1));
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        writer.start();
+        Thread.sleep(100);
+        writer.interrupt();   // wake from wait() via InterruptedException
+        writer.join(3000);
+        Assertions.assertFalse(result.get(), "waitForWrite should return false on interrupt");
+    }
+
+    /** doRemoveWriteInterest false branch (L184): readKey != null but invalid -> interestOps not called. */
+    @Test
+    public void testDoRemoveWriteInterestWhenKeyInvalid() throws Exception {
+        ChannelWorker worker = newRealWorker();
+        SelectionKey key = mock(SelectionKey.class);
+        when(key.isValid()).thenReturn(false);
+
+        ChannelContext poolCtx = new ChannelContext(13L, realChannel, 1024);
+        poolCtx.setWorker(worker);
+        poolCtx.setReadKey(key);
+
+        // wakeupWrite() -> doRemoveWriteInterest(): readKey!=null && !valid -> skip interestOps
+        poolCtx.wakeupWrite();
+        verify(key, never()).interestOps(anyInt());
+    }
+
+    /** doRegisterWrite false branch (L177): worker != null but readKey == null -> interestOps skipped. */
+    @Test
+    public void testWaitForWriteThreadPoolPathNoReadKey() throws Exception {
+        ChannelWorker worker = newRealWorker();   // no readKey set -> readKey == null
+
+        ChannelContext poolCtx = new ChannelContext(14L, realChannel, 1024);
+        poolCtx.setWorker(worker);
+
+        AtomicBoolean ok = new AtomicBoolean(false);
+        Thread writer = new Thread(() -> {
+            try {
+                ok.set(poolCtx.waitForWrite(500));   // doRegisterWrite() takes the readKey==null false branch
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        });
+        writer.start();
+        Thread.sleep(100);
+        poolCtx.wakeupWrite();
+        writer.join(3000);
+        Assertions.assertTrue(ok.get());
+    }
+
     // ==================== write bypass (remaining >= capacity) ====================
 
     @Test
@@ -393,7 +536,7 @@ public class ChannelContextCoverageTest {
         ChannelContext noKeyCtx;
         try {
             noKeyCtx = new ChannelContext(99L, realChannel, 0);
-        } catch (IOException e) {
+        } catch (RuntimeException e) {
             throw new RuntimeException(e);
         }
         noKeyCtx.close();
@@ -643,5 +786,50 @@ public class ChannelContextCoverageTest {
         byte[] buf = new byte[10];
         int n = readCtx.readFully(buf, 0, buf.length, 1000);
         Assertions.assertEquals(-1, n);
+    }
+
+    // ==================== attribute map (set/get/remove/names) ====================
+
+    @Test
+    public void testAttributesSetGetRemoveNames() {
+        // setAttribute + getAttribute
+        ctx.setAttribute("foo", "bar");
+        Assertions.assertEquals("bar", ctx.getAttribute("foo"));
+        Assertions.assertNull(ctx.getAttribute("missing"));
+
+        // getAttributeNames contains the set key
+        java.util.Enumeration<String> names = ctx.getAttributeNames();
+        boolean found = false;
+        while (names.hasMoreElements()) {
+            if ("foo".equals(names.nextElement())) {
+                found = true;
+                break;
+            }
+        }
+        Assertions.assertTrue(found, "getAttributeNames should include the key 'foo'");
+
+        // removeAttribute then name should be gone and value null
+        ctx.removeAttribute("foo");
+        Assertions.assertNull(ctx.getAttribute("foo"));
+        java.util.Enumeration<String> namesAfter = ctx.getAttributeNames();
+        boolean stillThere = false;
+        while (namesAfter.hasMoreElements()) {
+            if ("foo".equals(namesAfter.nextElement())) {
+                stillThere = true;
+                break;
+            }
+        }
+        Assertions.assertFalse(stillThere, "getAttributeNames should not include removed key 'foo'");
+    }
+
+    /** close() must enter the 'attributes != null' branch (L233) and clear the lazy map. */
+    @Test
+    public void testCloseClearsAttributes() {
+        // setAttribute makes the lazy 'attributes' map non-null so close() reaches attributes.clear()
+        ctx.setAttribute("k", "v");
+        Assertions.assertEquals("v", ctx.getAttribute("k"));
+        ctx.close();
+        // after close, attributes map has been cleared (and reset to null)
+        Assertions.assertNull(ctx.getAttribute("k"));
     }
 }

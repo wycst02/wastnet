@@ -38,7 +38,7 @@ public class HttpDecodedResponse implements HttpMessage {
         this.version = version;
         this.statusCode = statusCode;
         this.reasonPhrase = reasonPhrase;
-        this.headers = new LinkedHashMap<String, Object>(headers);
+        this.headers = new LinkedHashMap<>(headers);
         this.body = body;
         this.contentLength = contentLength;
         this.contentType = contentType;

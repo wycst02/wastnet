@@ -505,16 +505,14 @@ public class WebSocketResource extends UpgradeResource {
      * Requests without an Origin header (non-browser clients) are governed by
      * {@link #allowMissingOrigin(boolean)}.
      *
-     * @param origins allowed origins, e.g. "https://example.com"
+     * @param origins allowed origins, e.g. "<a href="">https://example.com</a>"
      * @return this instance for chaining
      */
     public WebSocketResource allowedOrigins(String... origins) {
-        Set<String> set = new HashSet<String>();
-        if (origins != null) {
-            for (String origin : origins) {
-                if (origin != null && origin.length() > 0) {
-                    set.add(origin);
-                }
+        Set<String> set = new HashSet<>();
+        for (String origin : origins) {
+            if (origin != null && !origin.isEmpty()) {
+                set.add(origin);
             }
         }
         this.allowedOrigins = set;

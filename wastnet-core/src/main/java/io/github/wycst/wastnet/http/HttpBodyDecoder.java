@@ -17,6 +17,7 @@ package io.github.wycst.wastnet.http;
 
 import io.github.wycst.wastnet.log.Log;
 import io.github.wycst.wastnet.log.LogFactory;
+import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import io.github.wycst.wastnet.util.Utils;
 
 import java.nio.charset.Charset;
@@ -59,12 +60,15 @@ public abstract class HttpBodyDecoder {
      * Create a new HttpBodyDecoder instance for a request.
      *
      * @param request the HttpRequest object
+     * @param ctx     the channel context, used solely to resolve per-connection/endpoint
+     *                isolated configuration (e.g. body size limits, temp-file settings); it is
+     *                not used for I/O or any other side effects.
      * @return a new HttpBodyDecoder instance
      */
-    public static HttpBodyDecoder of(HttpRequest request) {
+    public static HttpBodyDecoder of(HttpRequest request, ChannelContext ctx) {
         String contentType = request.getContentType();
         if (request.isStream()) {
-            return new HttpBodyStreamDecoder(contentType, request.bodyStream());
+            return new HttpBodyStreamDecoder(contentType, request.bodyStream(), ctx);
         }
         return new HttpBodyDefaultDecoder(contentType, request.getBodyData());
     }
@@ -173,7 +177,7 @@ public abstract class HttpBodyDecoder {
     /**
      * Decode multipart/form-data body and populate cache.
      * Subclasses should store parsed results in multipartFields.
-     * If content type is not multipart or parsing fails, cache should be set to empty Map.
+     * Non-multipart sets empty Map; on parse failure, already-decoded fields (and their temp files) stay cached and are released by release().
      */
     public final void decodeMultipartFields() {
         byte[] boundaryBytes;
@@ -185,8 +189,7 @@ public abstract class HttpBodyDecoder {
             doDecodeMultipartFields(boundaryBytes);
         } catch (Exception e) {
             log.error("decodeMultipartFields error: {}", e.getMessage());
-            // e.printStackTrace();
-            multipartFields = Collections.emptyMap();
+            // multipartFields = Collections.emptyMap();
         }
     }
 
@@ -272,7 +275,7 @@ public abstract class HttpBodyDecoder {
         if (fields == null) {
             return Collections.emptyList();
         }
-        List<String> values = new ArrayList<String>(fields.size());
+        List<String> values = new ArrayList<>(fields.size());
         for (MultipartField field : fields) {
             if (!field.isFile()) {
                 values.add(field.getDataAsString(charset));
@@ -358,12 +361,12 @@ public abstract class HttpBodyDecoder {
         if (multipartFields == null) {
             decodeMultipartFields();
         }
-        List<MultipartField> all = new ArrayList<MultipartField>();
+        List<MultipartField> all = new ArrayList<>();
         for (List<MultipartField> list : multipartFields.values()) {
             all.addAll(list);
         }
         if (all.size() > 1) {
-            Collections.sort(all, (a, b) -> a.getIndex() - b.getIndex());
+            all.sort(Comparator.comparingInt(MultipartField::getIndex));
         }
         return all;
     }

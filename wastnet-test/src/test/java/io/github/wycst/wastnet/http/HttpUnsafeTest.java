@@ -223,14 +223,6 @@ public class HttpUnsafeTest {
     }
 
     @Test
-    public void testPutLong() {
-        byte[] data = new byte[8];
-        HttpUnsafe.putLong(data, 0, 0x0102030405060708L);
-        long value = HttpUnsafe.getLong(data, 0);
-        Assertions.assertEquals(0x0102030405060708L, value);
-    }
-
-    @Test
     public void testGetStringValue() {
         String str = "test";
         Object internal = HttpUnsafe.getStringValue(str);

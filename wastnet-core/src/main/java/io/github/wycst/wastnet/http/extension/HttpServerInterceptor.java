@@ -29,8 +29,9 @@ public interface HttpServerInterceptor {
      * @return {@code true} to proceed to the business handler, or {@code false}
      *         if the response has already been written and the business handler
      *         should be skipped
-     * @throws Exception if the interceptor itself fails; the framework's exception
-     *                   handling will take over
+     * @throws Exception if the interceptor itself fails; the framework treats it as a
+     *                   short-circuit and responds with {@code 500 Internal Server Error}
+     *                   (body: "Interceptor execution error"), then skips the business handler
      */
     boolean beforeHandle(HttpRequest request, HttpResponse response, ChannelContext ctx) throws Exception;
 }

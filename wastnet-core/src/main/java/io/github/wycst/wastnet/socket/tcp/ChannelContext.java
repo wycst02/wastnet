@@ -2,7 +2,8 @@ package io.github.wycst.wastnet.socket.tcp;
 
 import io.github.wycst.wastnet.socket.channel.ChannelReader;
 import io.github.wycst.wastnet.socket.channel.ChannelWriter;
-import io.github.wycst.wastnet.socket.conf.SocketConf;
+import io.github.wycst.wastnet.socket.conf.Option;
+import io.github.wycst.wastnet.socket.conf.SocketOptions;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import io.github.wycst.wastnet.socket.handler.IdleStateHandler;
 import io.github.wycst.wastnet.socket.handler.IdleStateHandlerTrigger;
@@ -73,10 +74,19 @@ public class ChannelContext {
     // static final long SHORT_SLEEP_MILLIS = 1;
     private ChannelWorker worker;
     NioConfig nioConfig;
+    /** Connection-level read timeout in milliseconds, resolved from NioConfig (SocketOptions.READ_TIMEOUT_MS). */
+    protected long readTimeoutMs = SocketOptions.READ_TIMEOUT_MS.value;
+    /** Connection-level write timeout in milliseconds, resolved from NioConfig (SocketOptions.WRITE_TIMEOUT_MS). */
+    protected long writeTimeoutMs = SocketOptions.WRITE_TIMEOUT_MS.value;
     final AtomicBoolean closeResolved = new AtomicBoolean(false);
     /** Fired after readKey.cancel() but before channel.close() — TCP is still writable. */
     private Runnable clearListener;
     private List<Runnable> closeListeners;
+    /** empty context **/
+    public final static ChannelContext EMPTY_CONTEXT = new ChannelContext(0, null, 0);
+    static {
+        EMPTY_CONTEXT.closeResolved.set(true); // mark closed so close() short-circuits and never touches the null channel
+    }
 
     /**
      * Create ChannelContext with specified id.
@@ -106,9 +116,8 @@ public class ChannelContext {
      * @param id the context id
      * @param channel the socket channel
      * @param bufferSize the write buffer size
-     * @throws IOException if channel operation fails
      */
-    public ChannelContext(long id, SocketChannel channel, int bufferSize) throws IOException {
+    public ChannelContext(long id, SocketChannel channel, int bufferSize) {
         this.id = id;
         this.channel = channel;
         if (bufferSize <= 0) {
@@ -116,6 +125,12 @@ public class ChannelContext {
         } else {
             this.byteBuffer = ByteBuffer.allocate(bufferSize);
         }
+    }
+
+    /** Refreshes the cached timeout values from the currently bound NioConfig (must be called after nioConfig is set). */
+    private void refreshTimeoutOptions() {
+        this.readTimeoutMs = option(SocketOptions.READ_TIMEOUT_MS);
+        this.writeTimeoutMs = option(SocketOptions.WRITE_TIMEOUT_MS);
     }
 
     public int getWriteBufferSize() {
@@ -171,7 +186,7 @@ public class ChannelContext {
         }
     }
 
-    private boolean doAwaitWritable(long timeoutMs) throws IOException {
+    private boolean doAwaitWritable(long timeoutMs) {
         synchronized (writeLock) {
             try {
                 writeLock.wait(timeoutMs > 0 ? timeoutMs : 30000);
@@ -242,7 +257,7 @@ public class ChannelContext {
      */
     public void addCloseListener(Runnable listener) {
         if (closeListeners == null) {
-            closeListeners = new ArrayList<Runnable>();
+            closeListeners = new ArrayList<>();
         }
         closeListeners.add(listener);
     }
@@ -398,17 +413,14 @@ public class ChannelContext {
      * Write application data and flush without throwing.
      *
      * @param buf the bytes to write
-     * @return the number of bytes written, or -1 if an exception occurred
      */
-    public final int writeFlushWithoutThrow(byte[] buf) {
+    public final void writeFlushWithoutThrow(byte[] buf) {
+        if (channel == null) return;
         synchronized(this) {
             try {
-                int n = write(buf);
+                write(buf);
                 flush();
-                return n;
-            } catch (Exception e) {
-                return -1;
-            }
+            } catch (Exception ignored) {}
         }
     }
 
@@ -505,8 +517,8 @@ public class ChannelContext {
         int len = buf.remaining();
         if (len == 0) return 0;
         try {
-            final long deadline = SocketConf.WRITE_TIMEOUT_MS > 0
-                    ? System.currentTimeMillis() + SocketConf.WRITE_TIMEOUT_MS : Long.MAX_VALUE;
+            final long deadline = writeTimeoutMs > 0
+                    ? System.currentTimeMillis() + writeTimeoutMs : Long.MAX_VALUE;
             while (buf.hasRemaining()) {
                 if(isChannelClosed()) {
                     close();
@@ -521,7 +533,7 @@ public class ChannelContext {
                 }
                 if (System.currentTimeMillis() > deadline) {
                     close();
-                    throw new SocketTimeoutException("Write timeout after " + SocketConf.WRITE_TIMEOUT_MS + "ms");
+                    throw new SocketTimeoutException("Write timeout after " + writeTimeoutMs + "ms");
                 }
             }
             return len;
@@ -596,7 +608,7 @@ public class ChannelContext {
      * @throws IndexOutOfBoundsException if off or len parameters do not meet preconditions
      */
     public final int readFully(byte[] b, int off, final int len) throws IOException {
-        return readFully(b, off, len, SocketConf.READ_TIMEOUT_MS);
+        return readFully(b, off, len, readTimeoutMs);
     }
 
     /**
@@ -767,6 +779,7 @@ public class ChannelContext {
      *
      * @param channelHandler the channel handler
      */
+    @SuppressWarnings("unchecked")
     public void setChannelHandler(ChannelHandler<?> channelHandler) {
         this.channelHandler = (ChannelHandler<Object>) channelHandler;
     }
@@ -806,7 +819,7 @@ public class ChannelContext {
      */
     public void send(Object message) throws IOException {
         if (channelWriter == null) throw new IOException("codec not configured, use write(byte[]) for raw bytes");
-        java.nio.ByteBuffer buf = ((ChannelWriter<Object>) channelWriter).write(this, message);
+        ByteBuffer buf = ((ChannelWriter<Object>) channelWriter).write(this, message);
         if (buf != null) {
             writeFlush(buf);
         }
@@ -917,7 +930,7 @@ public class ChannelContext {
      */
     Map<String, Object> getAttributes() {
         if (attributes == null) {
-            attributes = new ConcurrentHashMap<String, Object>();
+            attributes = new ConcurrentHashMap<>();
         }
         return attributes;
     }
@@ -1015,6 +1028,29 @@ public class ChannelContext {
 
     void setNioConfig(NioConfig nioConfig) {
         this.nioConfig = nioConfig;
+        refreshTimeoutOptions();
+    }
+
+    /** Binds the NioConfig only when none is set yet; later calls are ignored so a context's config stays immutable. */
+    public void attachNioConfig(NioConfig nioConfig) {
+        if (this.nioConfig == null) {
+            this.nioConfig = nioConfig;
+            refreshTimeoutOptions();
+        }
+    }
+
+    /**
+     * Resolves a per-server configuration option via the {@link NioConfig} bound to this context.
+     *
+     * @param option the option to read (e.g. {@code HttpOptions.GZIP})
+     * @param <T>    value type
+     * @return the instance override if present, otherwise {@code option.defaultValue}
+     */
+    public final <T> T option(Option<T> option) {
+        if (nioConfig == null) {
+            return option.value;
+        }
+        return nioConfig.option(option);
     }
 
     /**

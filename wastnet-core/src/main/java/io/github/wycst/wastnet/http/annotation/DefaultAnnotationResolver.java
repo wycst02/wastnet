@@ -42,7 +42,7 @@ final class DefaultAnnotationResolver implements AnnotationResolver {
 
     @Override
     public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> clazz) {
-        List<MethodRouteInfo> routes = new ArrayList<MethodRouteInfo>();
+        List<MethodRouteInfo> routes = new ArrayList<>();
         for (Method method : clazz.getMethods()) {
             if (Modifier.isStatic(method.getModifiers())) continue;
             Endpoint ann = method.getAnnotation(Endpoint.class);
@@ -62,7 +62,7 @@ final class DefaultAnnotationResolver implements AnnotationResolver {
         WithInterceptor classAnn = clazz.getAnnotation(WithInterceptor.class);
         WithInterceptor methodAnn = method.getAnnotation(WithInterceptor.class);
         if (classAnn == null && methodAnn == null) return null;
-        List<String> names = new ArrayList<String>();
+        List<String> names = new ArrayList<>();
         if (classAnn != null) {
             for (String name : classAnn.value()) {
                 if (!name.isEmpty() && !names.contains(name)) names.add(name);
@@ -73,12 +73,12 @@ final class DefaultAnnotationResolver implements AnnotationResolver {
                 if (!name.isEmpty() && !names.contains(name)) names.add(name);
             }
         }
-        return names.isEmpty() ? null : names.toArray(new String[names.size()]);
+        return names.isEmpty() ? null : names.toArray(new String[0]);
     }
 
     @Override
     public List<MethodRouteInfo> resolveSseEndpoints(Class<?> clazz) {
-        List<MethodRouteInfo> endpoints = new ArrayList<MethodRouteInfo>();
+        List<MethodRouteInfo> endpoints = new ArrayList<>();
         for (Method method : clazz.getMethods()) {
             if (Modifier.isStatic(method.getModifiers())) continue;
             Sse ann = method.getAnnotation(Sse.class);

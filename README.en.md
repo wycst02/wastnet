@@ -779,6 +779,7 @@ For the complete configuration reference (all properties, loading priorities, an
 
 - [HTTP Configuration Reference](docs/03-reference/http-conf-reference.md)
 - [Socket Configuration Reference](docs/03-reference/socket-conf-reference.md)
+- [Configuration Option Guide](docs/03-reference/option-guide.md) (runtime per-instance configuration isolation, multi-server scenarios)
 
 ### NioConfig
 
@@ -1056,6 +1057,7 @@ wastnet/                               ← Parent project (pom)
 │   ├── 03-reference/                   # Configuration/protocol references
 │   │   ├── http-conf-reference.md
 │   │   ├── socket-conf-reference.md
+│   │   ├── option-guide.md
 │   │   ├── HTTP2_PROTOCOL.md
 │   │   ├── huffman-table-design.md
 │   │   ├── websocket-*.md
@@ -1082,6 +1084,7 @@ wastnet/                               ← Parent project (pom)
 | `docs/02-guide/http-interceptor-guide.md` | Server interceptor (HttpServerInterceptor): auth, CORS, rate limiting |
 | `docs/03-reference/http-conf-reference.md` | HTTP configuration reference (with tuning tips) |
 | `docs/03-reference/socket-conf-reference.md` | Socket configuration reference |
+| `docs/03-reference/option-guide.md` | Configuration Option guide: runtime per-instance isolation, isolatable option list |
 | `docs/03-reference/HTTP2_PROTOCOL.md` | H2 connection setup, frame structure, HPACK, flow control |
 | `docs/03-reference/websocket-cheatsheet.md` | WebSocket frame type quick reference |
 | `docs/03-reference/websocket-implementation-guide.md` | WebSocket implementation details |

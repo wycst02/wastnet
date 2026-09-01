@@ -39,15 +39,15 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class LogFactory {
 
-    private static final Map<Class<?>, Log> LOGS = new ConcurrentHashMap<Class<?>, Log>();
+    private static final Map<Class<?>, Log> LOGS = new ConcurrentHashMap<>();
     private static final String LOG_DIR;
 
     private static final RotatingFileHandler ACCESS_HANDLER;
     private static final RotatingFileHandler ERROR_HANDLER;
 
-    private static volatile boolean enabled = true;
+    private static volatile boolean enabled;
 
-    private static volatile LogLevel globalLevel = LogLevel.INFO;
+    private static volatile LogLevel globalLevel;
 
     static {
         // log directory

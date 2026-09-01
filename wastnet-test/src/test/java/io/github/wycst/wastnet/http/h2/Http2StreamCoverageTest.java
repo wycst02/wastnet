@@ -1,15 +1,20 @@
 package io.github.wycst.wastnet.http.h2;
 
-import io.github.wycst.wastnet.http.*;
+import io.github.wycst.wastnet.http.HttpBuf;
+import io.github.wycst.wastnet.http.HttpConf;
+import io.github.wycst.wastnet.http.HttpDecodedResponse;
+import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Test;
 
-import java.util.*;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
-
-import java.io.InputStream;
 
 /** Coverage tests for Http2Stream. */
 class Http2StreamCoverageTest {
@@ -35,7 +40,7 @@ class Http2StreamCoverageTest {
         setField(reader, "streamInitSendWindowSize", 65535);
         setField(reader, "maxSendPayloadSize", 16384);
         setField(reader, "connectSendWindow", 65535);
-        reader.connectRecvWindow = new java.util.concurrent.atomic.AtomicLong(Http2MessageReader.CONNECT_RECEIVE_WINDOW_SIZE);
+        H2TestHelper.setConnectRecvWindow(reader, HttpConf.HTTP2_INITIAL_SEND_WINDOW_SIZE << 4);
         ChannelContext ctx = mock(ChannelContext.class);
         when(ctx.getWriteBufferSize()).thenReturn(65536);
         TestStream stream = new TestStream(reader, 1, ctx);
@@ -255,7 +260,7 @@ class Http2StreamCoverageTest {
         Fixture f = createFixture();
         f.stream.endHeaders();
         setField(f.stream, "receiveWindow", 1);
-        int capacity = Http2Stream.MAX_STREAM_CAPACITY_SIZE;
+        int capacity = Math.max(HttpOptions.HTTP2_INITIAL_SEND_WINDOW_SIZE.value << 1, HttpConf.MAX_BODY_IN_MEMORY);
         setField(f.stream, "dataFramesTotalLength", capacity - 1);
 
         Http2Frame frame = new Http2Frame(new byte[]{0}, 0, 0, 1, 1, null, 0, 1);

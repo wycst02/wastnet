@@ -116,6 +116,40 @@ public abstract class HttpInternalResponse implements HttpResponse {
         this.bodyBuf = HttpBuf.of(128);
     }
 
+    /**
+     * Returns whether the "Server" response header should be exposed,
+     * resolved from the connection-level configuration (see {@link HttpOptions#EXPOSE_SERVER_HEADER}).
+     */
+    protected final boolean exposeServerHeader() {
+        return ctx.option(HttpOptions.EXPOSE_SERVER_HEADER);
+    }
+
+    /**
+     * Returns the body memory threshold in bytes, resolved from the connection-level
+     * configuration (see {@link HttpOptions#BODY_MEMORY_THRESHOLD}).
+     * <p>When buffered body data would exceed this threshold, the data is flushed to the channel
+     * instead of being held in memory.</p>
+     */
+    protected final int bodyMemoryThreshold() {
+        return ctx.option(HttpOptions.BODY_MEMORY_THRESHOLD);
+    }
+
+    /**
+     * Returns whether GZIP auto-compression is enabled globally,
+     * resolved from the connection-level configuration (see {@link HttpOptions#GZIP}).
+     */
+    protected final boolean gzipEnabled() {
+        return ctx.option(HttpOptions.GZIP);
+    }
+
+    /**
+     * Returns the minimum body size in bytes required before GZIP auto-compression is applied,
+     * resolved from the connection-level configuration (see {@link HttpOptions#GZIP_MIN_SIZE}).
+     */
+    protected final int gzipMinSize() {
+        return ctx.option(HttpOptions.GZIP_MIN_SIZE);
+    }
+
     // ==================== Status ====================
 
     @Override
@@ -428,7 +462,7 @@ public abstract class HttpInternalResponse implements HttpResponse {
             return null;
         }
         if (value.getClass() == String.class) {
-            List<String> single = new ArrayList<String>(1);
+            List<String> single = new ArrayList<>(1);
             single.add((String) value);
             return single;
         }
@@ -596,7 +630,7 @@ public abstract class HttpInternalResponse implements HttpResponse {
         return new SseEmitter(this, ctx);
     }
 
-    private void initSSE() throws IOException {
+    private void initSSE() {
         if (!sseHeadersSet) {
             contentType(HttpHeaderValues.TEXT_EVENT_STREAM_UTF8);
             setHeader(HttpHeaderNormalized.getCacheControl(), HttpHeaderValues.NO_CACHE);
@@ -628,14 +662,11 @@ public abstract class HttpInternalResponse implements HttpResponse {
      * @throws IOException if compression fails
      */
     protected final byte[] gzipCompress(byte[] data, int offset, int len) throws IOException {
-        if (data == null || len == 0) return len == 0 ? new byte[0] : data;
+        if (len == 0) return new byte[0];
         ByteArrayOutputStream bos = new ByteArrayOutputStream((len >> 2) + 32);
-        GZIPOutputStream gzip = new GZIPOutputStream(bos, 8192);
-        try {
+        try (GZIPOutputStream gzip = new GZIPOutputStream(bos, 8192)) {
             gzip.write(data, offset, len);
             gzip.finish();
-        } finally {
-            gzip.close();
         }
         return bos.toByteArray();
     }
@@ -686,7 +717,7 @@ public abstract class HttpInternalResponse implements HttpResponse {
      * @return true if auto-compress is applicable
      */
     protected final boolean shouldApplyAutoGzip() {
-        return HttpConf.GZIP && isGzipSupported() && !headersSent && bodyBuf.size() >= HttpConf.GZIP_MIN_SIZE;
+        return gzipEnabled() && isGzipSupported() && !headersSent && bodyBuf.size() >= gzipMinSize();
     }
 
     // ==================== sendFile skeleton ====================
@@ -765,12 +796,9 @@ public abstract class HttpInternalResponse implements HttpResponse {
      */
     protected byte[] readFileContent(File file, int fileSize) throws IOException {
         byte[] content = new byte[fileSize];
-        FileInputStream fis = new FileInputStream(file);
-        try {
+        try (FileInputStream fis = new FileInputStream(file)) {
             int off = 0, read;
             while ((read = fis.read(content, off, fileSize - off)) > 0) off += read;
-        } finally {
-            fis.close();
         }
         return content;
     }
@@ -833,9 +861,9 @@ public abstract class HttpInternalResponse implements HttpResponse {
         }
 
         // Check if we should apply GZIP compression for this file
-        boolean shouldCompress = HttpConf.GZIP &&
+        boolean shouldCompress = gzipEnabled() &&
                 isGzipSupported() &&
-                fileSize >= HttpConf.GZIP_MIN_SIZE &&
+                fileSize >= gzipMinSize() &&
                 shouldCompressMimeType(mimeType);
 
         // Send file

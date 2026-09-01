@@ -43,7 +43,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *
  * @author wangyc
  */
-public class H2H1ProxyAdapter extends ChannelHandler<Object> implements HttpProxyAdapter {
+public class H2H1ProxyAdapter implements ChannelHandler<Object>, HttpProxyAdapter {
 
     static final Log log = LogFactory.getLog(H2H1ProxyAdapter.class);
 

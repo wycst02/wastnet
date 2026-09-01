@@ -18,8 +18,8 @@ public class HttpHeaderUtils {
     private static final byte[] SERVER_HEADER_LINE_BYTES;
 
 
-    private static final Map<String, String> STANDARD_HEADERS_MAP = new HashMap<String, String>();
-    private static final Map<String, String> MIME_TYPES = new HashMap<String, String>();
+    private static final Map<String, String> STANDARD_HEADERS_MAP = new HashMap<>();
+    private static final Map<String, String> MIME_TYPES = new HashMap<>();
 
     static {
         // Initialize all configurations from environment
@@ -318,17 +318,6 @@ public class HttpHeaderUtils {
             if (mime != null) return mime;
         }
         return defaultType;
-    }
-
-    /**
-     * Estimate HTTP response header size
-     *
-     * @param mimeTypeLength MIME type string length
-     * @return estimated header size in bytes
-     */
-    public static int estimateHeaderSize(int mimeTypeLength) {
-        int baseHeaderSize = HttpConf.WRITE_DEFAULT_HEADERS ? 141 : 56;
-        return baseHeaderSize + mimeTypeLength;
     }
 
     /**

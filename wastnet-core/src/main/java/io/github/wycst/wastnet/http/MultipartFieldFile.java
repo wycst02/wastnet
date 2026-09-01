@@ -3,6 +3,7 @@ package io.github.wycst.wastnet.http;
 import java.io.*;
 import java.nio.channels.FileChannel;
 import java.nio.charset.Charset;
+import java.nio.file.Files;
 
 /**
  * Multipart field backed by temporary file.
@@ -27,30 +28,16 @@ class MultipartFieldFile extends MultipartField {
 
     @Override
     public InputStream getInputStream() throws IOException {
-        return new FileInputStream(tempFile);
+        return Files.newInputStream(tempFile.toPath());
     }
 
     @Override
     public void transferTo(File file, boolean append) throws IOException {
-        FileChannel inputChannel = null;
-        FileChannel outputChannel = null;
-        try {
-            inputChannel = new FileInputStream(tempFile).getChannel();
-            outputChannel = new FileOutputStream(file, append).getChannel();
+        try (FileInputStream fis = new FileInputStream(tempFile);
+             FileChannel inputChannel = fis.getChannel();
+             FileOutputStream fos = new FileOutputStream(file, append);
+             FileChannel outputChannel = fos.getChannel()) {
             inputChannel.transferTo(0, inputChannel.size(), outputChannel);
-        } finally {
-            if (inputChannel != null) {
-                try {
-                    inputChannel.close();
-                } catch (IOException ignored) {
-                }
-            }
-            if (outputChannel != null) {
-                try {
-                    outputChannel.close();
-                } catch (IOException ignored) {
-                }
-            }
         }
     }
 

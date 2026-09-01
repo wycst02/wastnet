@@ -137,11 +137,6 @@ public class HttpCoreUtilTest {
     }
 
     @Test
-    public void testEstimateHeaderSize() {
-        assertTrue(HttpHeaderUtils.estimateHeaderSize(10) > 0);
-    }
-
-    @Test
     public void testGetDateHeaderBytes() {
         byte[] dateBytes = HttpHeaderUtils.getDateHeaderBytes(System.currentTimeMillis());
         assertEquals(29, dateBytes.length);
@@ -233,12 +228,6 @@ public class HttpCoreUtilTest {
         assertNotEquals(0, HttpUnsafe.getInt(data, 0));
     }
 
-    @Test
-    public void testPutLong() {
-        byte[] data = new byte[8];
-        HttpUnsafe.putLong(data, 0, 0x0102030405060708L);
-        assertNotEquals(0, data[0]);
-    }
 
     @Test
     public void testWriteTwoDigitChar() {

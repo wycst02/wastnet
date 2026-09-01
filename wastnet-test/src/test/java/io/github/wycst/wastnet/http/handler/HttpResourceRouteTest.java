@@ -3,10 +3,14 @@ package io.github.wycst.wastnet.http.handler;
 import io.github.wycst.wastnet.http.HttpMethod;
 import io.github.wycst.wastnet.http.HttpStatus;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 /**
  * Unit tests for {@link HttpResourceRoute}.
@@ -345,5 +349,263 @@ public class HttpResourceRouteTest {
         } finally {
             deleteDir(tempDir);
         }
+    }
+
+    // ==================== constructor docBase validation ====================
+
+    @Test
+    public void testConstructorRejectsNullDocBase() {
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new HttpResourceRoute("/", null, null));
+    }
+
+    @Test
+    public void testConstructorRejectsEmptyDocBase() {
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new HttpResourceRoute("/", "", null));
+    }
+
+    @Test
+    public void testConstructorWithNonDirectoryDocBaseSkipsSymlinkScan() throws Exception {
+        File tempDir = createTempDir("res-");
+        try {
+            File notADir = new File(tempDir, "afile.txt");
+            Files.write(notADir.toPath(), "x".getBytes());
+            // docBase is a regular file -> isDirectory() is false, so the scan is short-circuited
+            HttpResourceRoute handler = new HttpResourceRoute("/", notADir.getAbsolutePath(), null);
+            Assertions.assertFalse(getCheckSymlinks(handler));
+        } finally {
+            deleteDir(tempDir);
+        }
+    }
+
+    // ==================== forbiddenBody / allowSymlinks / defaultCacheControl ====================
+
+    @Test
+    public void testForbiddenBodyCustomized() throws Exception {
+        HttpResourceRoute handler = new HttpResourceRoute("/", ".");
+        Assertions.assertSame(handler, handler.forbiddenBody("CUSTOM 403"));
+        Assertions.assertEquals("CUSTOM 403", new String(getForbiddenBytes(handler)));
+    }
+
+    @Test
+    public void testAllowSymlinksTogglesCheckSymlinks() throws Exception {
+        HttpResourceRoute handler = new HttpResourceRoute("/", ".");
+        handler.allowSymlinks(true);
+        Assertions.assertFalse(getCheckSymlinks(handler), "allow=true must skip the runtime check");
+        handler.allowSymlinks(false);
+        Assertions.assertTrue(getCheckSymlinks(handler), "allow=false must enable the runtime check");
+    }
+
+    @Test
+    public void testDefaultCacheControlCustomized() throws Exception {
+        HttpResourceRoute handler = new HttpResourceRoute("/", ".");
+        Assertions.assertSame(handler, handler.defaultCacheControl("public, max-age=3600"));
+        Assertions.assertEquals("public, max-age=3600", getDefaultCacheControl(handler));
+    }
+
+    // ==================== hasSymlinkInPath ====================
+    // handle() only calls hasSymlinkInPath when checkSymlinks is true. A clean docBase makes the
+    // constructor compute false, so allowSymlinks(false) is used to force the check on.
+
+    @Test
+    public void testHasSymlinkInPathCleanFileIsServed() throws Throwable {
+        File tempDir = createTempDir("res-");
+        try {
+            Files.write(new File(tempDir, "a.txt").toPath(), "hi".getBytes());
+            HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
+            handler.allowSymlinks(false);
+            final HttpStatus[] capturedStatus = {null};
+            handler.handle("/a.txt", MockHttpTestBase.mockRequest(HttpMethod.GET),
+                    MockHttpTestBase.mockResponse(capturedStatus, (String[]) null, null));
+            Assertions.assertEquals(HttpStatus.OK, capturedStatus[0]);
+        } finally {
+            deleteRecursively(tempDir);
+        }
+    }
+
+    @Test
+    public void testHasSymlinkInPathWalksIntermediateDirs() throws Throwable {
+        File tempDir = createTempDir("res-");
+        try {
+            File sub = new File(tempDir, "sub");
+            sub.mkdirs();
+            Files.write(new File(sub, "a.txt").toPath(), "hi".getBytes());
+            HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
+            handler.allowSymlinks(false);
+            final HttpStatus[] capturedStatus = {null};
+            handler.handle("/sub/a.txt", MockHttpTestBase.mockRequest(HttpMethod.GET),
+                    MockHttpTestBase.mockResponse(capturedStatus, (String[]) null, null));
+            Assertions.assertEquals(HttpStatus.OK, capturedStatus[0]);
+        } finally {
+            deleteRecursively(tempDir);
+        }
+    }
+
+    @Test
+    public void testHasSymlinkInPathOutsideDocBaseIsForbidden() throws Throwable {
+        File tempDir = createTempDir("res-");
+        File outside = createTempDir("out-");
+        try {
+            File index = new File(outside, "index.html");
+            Files.write(index.toPath(), "home".getBytes());
+            // defaultFile lives outside docBase: walking up never reaches docBaseDir, so the
+            // loop ends without a match and the path is rejected as 403.
+            HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath(), index);
+            handler.allowSymlinks(false);
+            handler.forbiddenBody("CUSTOM 403");
+            final HttpStatus[] capturedStatus = {null};
+            final byte[][] capturedBody = {null};
+            handler.handle("/", MockHttpTestBase.mockRequest(HttpMethod.GET),
+                    MockHttpTestBase.mockResponse(capturedStatus, (String[]) null, capturedBody));
+            Assertions.assertEquals(HttpStatus.FORBIDDEN, capturedStatus[0]);
+            Assertions.assertEquals("CUSTOM 403", new String(capturedBody[0]));
+        } finally {
+            deleteRecursively(tempDir);
+            deleteRecursively(outside);
+        }
+    }
+
+    // ==================== scanHasSymlink ====================
+    // Reached reflectively: the constructor always passes now+3000, which can never exercise the
+    // deadline branch, and a real symlink is needed for the "found" branches.
+
+    @Test
+    public void testScanHasSymlinkDeadlineExceeded() throws Exception {
+        File tempDir = createTempDir("res-");
+        try {
+            // expired deadline -> conservative "assume symlink" to avoid an unbounded scan
+            Assertions.assertTrue(invokeScanHasSymlink(tempDir, System.currentTimeMillis() - 1));
+        } finally {
+            deleteRecursively(tempDir);
+        }
+    }
+
+    @Test
+    public void testScanHasSymlinkUnreadableDirIsNotSymlink() throws Exception {
+        File notADir = new File(System.getProperty("java.io.tmpdir"), "notadir-" + System.nanoTime());
+        Files.write(notADir.toPath(), "x".getBytes());
+        try {
+            // listFiles() returns null for a non-directory -> treated as "no symlink"
+            Assertions.assertFalse(invokeScanHasSymlink(notADir, System.currentTimeMillis() + 3000));
+        } finally {
+            notADir.delete();
+        }
+    }
+
+    @Test
+    public void testScanHasSymlinkRecursesIntoSubDirs() throws Exception {
+        File tempDir = createTempDir("res-");
+        try {
+            File sub = new File(tempDir, "sub");
+            sub.mkdirs();
+            Files.write(new File(sub, "a.txt").toPath(), "x".getBytes());
+            Assertions.assertFalse(invokeScanHasSymlink(tempDir, System.currentTimeMillis() + 3000));
+        } finally {
+            deleteRecursively(tempDir);
+        }
+    }
+
+    // ==================== real symlink (needs OS privilege) ====================
+
+    @Test
+    public void testSymlinkIsRejectedWhenPresent() throws Throwable {
+        File tempDir = createTempDir("res-");
+        try {
+            File target = new File(tempDir, "real.txt");
+            Files.write(target.toPath(), "hi".getBytes());
+            Path link = tempDir.toPath().resolve("link.txt");
+            try {
+                Files.createSymbolicLink(link, target.toPath());
+            } catch (Exception e) {
+                // Creating symlinks requires SeCreateSymbolicLinkPrivilege (admin / Developer Mode).
+                Assumptions.abort("symlink creation not permitted on this host: " + e.getMessage());
+            }
+            HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
+            handler.allowSymlinks(false);
+            final HttpStatus[] capturedStatus = {null};
+            handler.handle("/link.txt", MockHttpTestBase.mockRequest(HttpMethod.GET),
+                    MockHttpTestBase.mockResponse(capturedStatus, (String[]) null, null));
+            Assertions.assertEquals(HttpStatus.FORBIDDEN, capturedStatus[0]);
+        } finally {
+            deleteRecursively(tempDir);
+        }
+    }
+
+    @Test
+    public void testScanHasSymlinkDetectsSymlinks() throws Exception {
+        File tempDir = createTempDir("res-");
+        File clean = createTempDir("clean-");
+        try {
+            File target = new File(tempDir, "real.txt");
+            Files.write(target.toPath(), "x".getBytes());
+            File sub = new File(tempDir, "sub");
+            sub.mkdirs();
+            File subTarget = new File(sub, "inner.txt");
+            Files.write(subTarget.toPath(), "y".getBytes());
+
+            Path fileLink = tempDir.toPath().resolve("flink.txt");
+            Path dirLink = tempDir.toPath().resolve("dlink");
+            try {
+                Files.createSymbolicLink(fileLink, target.toPath());   // file symlink
+                Files.createSymbolicLink(dirLink, sub.toPath());       // directory symlink
+            } catch (Exception e) {
+                Assumptions.abort("symlink creation not permitted on this host: " + e.getMessage());
+            }
+            // file symlink -> symlink=true && !isDirectory -> return true
+            Assertions.assertTrue(invokeScanHasSymlink(tempDir, System.currentTimeMillis() + 3000));
+
+            // symlink nested in a sub directory -> recursion reports true
+            File csub = new File(clean, "sub");
+            csub.mkdirs();
+            try {
+                Files.createSymbolicLink(csub.toPath().resolve("n.txt"), subTarget.toPath());
+            } catch (Exception e) {
+                Assumptions.abort("symlink creation not permitted on this host: " + e.getMessage());
+            }
+            Assertions.assertTrue(invokeScanHasSymlink(clean, System.currentTimeMillis() + 3000));
+        } finally {
+            deleteRecursively(tempDir);
+            deleteRecursively(clean);
+        }
+    }
+
+    // ==================== reflection helpers ====================
+
+    private static boolean getCheckSymlinks(HttpResourceRoute handler) throws Exception {
+        Field f = HttpResourceRoute.class.getDeclaredField("checkSymlinks");
+        f.setAccessible(true);
+        return (Boolean) f.get(handler);
+    }
+
+    private static byte[] getForbiddenBytes(HttpResourceRoute handler) throws Exception {
+        Field f = HttpResourceRoute.class.getDeclaredField("forbiddenBytes");
+        f.setAccessible(true);
+        return (byte[]) f.get(handler);
+    }
+
+    private static String getDefaultCacheControl(HttpResourceRoute handler) throws Exception {
+        Field f = HttpResourceRoute.class.getDeclaredField("defaultCacheControl");
+        f.setAccessible(true);
+        return (String) f.get(handler);
+    }
+
+    private static boolean invokeScanHasSymlink(File dir, long deadline) throws Exception {
+        Method m = HttpResourceRoute.class.getDeclaredMethod("scanHasSymlink", File.class, long.class);
+        m.setAccessible(true);
+        return (Boolean) m.invoke(null, dir, deadline);
+    }
+
+    private static void deleteRecursively(File file) {
+        if (file == null || !file.exists()) {
+            return;
+        }
+        File[] children = file.listFiles();
+        if (children != null) {
+            for (File c : children) {
+                deleteRecursively(c);
+            }
+        }
+        file.delete();
     }
 }

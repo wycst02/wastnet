@@ -82,4 +82,29 @@ public class SSLEngineContextTest {
         assertNotNull(ctx.getSSLEngine());
         assertSame(ctx.sslEngine, ctx.getSSLEngine());
     }
+
+    @Test
+    public void testConstructorWithEmptyCipherSuitesArray() throws Exception {
+        // non-null but empty -> "length > 0" is false -> setEnabledCipherSuites is skipped
+        SSLEngineContext ctx = new SSLEngineContext(createCtx(), new String[0], null, false);
+        assertNotNull(ctx.sslEngine);
+    }
+
+    @Test
+    public void testConstructorWithSslProtocols() throws Exception {
+        SSLContext sslCtx = createCtx();
+        // sslProtocols is only reachable through the 5-arg constructor. Reuse the protocols the
+        // engine already enables, otherwise setEnabledProtocols rejects them.
+        String[] protocols = sslCtx.createSSLEngine().getEnabledProtocols();
+        assertTrue(protocols.length > 0);
+        SSLEngineContext ctx = new SSLEngineContext(sslCtx, null, null, protocols, false);
+        assertArrayEquals(protocols, ctx.sslEngine.getEnabledProtocols());
+    }
+
+    @Test
+    public void testConstructorWithEmptySslProtocolsArray() throws Exception {
+        // non-null but empty -> "length > 0" is false -> setEnabledProtocols is skipped
+        SSLEngineContext ctx = new SSLEngineContext(createCtx(), null, null, new String[0], false);
+        assertNotNull(ctx.sslEngine);
+    }
 }

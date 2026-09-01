@@ -106,7 +106,7 @@ wastnet.socket.graceful-shutdown-timeout-ms=10000
 String value = SocketConf.getProperty("wastnet.socket.max-concurrent");
 
 // 检测当前负载均衡策略是否为 LEAST_CONN
-boolean useLeastConn = SocketConf.useLoadBalanceLeastConnections();
+boolean useLeastConn = "LEAST_CONN".equals(SocketConf.LOAD_BALANCE_TYPE);
 
 // Windows 平台检测（内部使用，修复 Selector 空轮询 bug）
 boolean isWindows = SocketConf.WINDOWS_PLATFORM;

@@ -48,18 +48,18 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * @author wangyc
  */
-public class H2H2ProxyAdapter extends ChannelHandler<Object> implements HttpProxyAdapter {
+public class H2H2ProxyAdapter implements ChannelHandler<Object>, HttpProxyAdapter {
 
     static final Log log = LogFactory.getLog(H2H2ProxyAdapter.class);
 
     final HttpProxyConnection connection;
     final Http2ClientReader clientReader;
     final ConcurrentHashMap<Integer, Http2ServerStream> serverStreamMap =
-            new ConcurrentHashMap<Integer, Http2ServerStream>();
+            new ConcurrentHashMap<>();
 
     public H2H2ProxyAdapter(HttpProxyConnection connection) {
         this.connection = connection;
-        this.clientReader = new Http2ClientReader();
+        this.clientReader = new Http2ClientReader(connection.targetCtx);
         connection.targetCtx.setChannelHandler(this);
         try {
             clientReader.init(connection.targetCtx);

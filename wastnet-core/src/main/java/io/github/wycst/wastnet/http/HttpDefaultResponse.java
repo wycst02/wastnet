@@ -2,14 +2,11 @@ package io.github.wycst.wastnet.http;
 
 import io.github.wycst.wastnet.log.Log;
 import io.github.wycst.wastnet.log.LogFactory;
-import io.github.wycst.wastnet.socket.conf.SocketConf;
+import io.github.wycst.wastnet.socket.conf.SocketOptions;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import io.github.wycst.wastnet.util.DirectBufferPool;
 
-import java.io.File;
-import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.io.Serializable;
+import java.io.*;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
@@ -114,11 +111,11 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
     protected void doAddHeader(String key, String value) {
         String normalizedKey = HttpHeaderUtils.normalizeHeaderKey(key);
         boolean overwriteMode = updateContentFlags(normalizedKey, value, true);
-        Object existingValue = null;
+        Object existingValue;
         if (overwriteMode || ((existingValue = headers.get(normalizedKey)) == null)) {
             headers.put(normalizedKey, value);
         } else if (existingValue.getClass() == String.class) {
-            List<String> valueList = new ArrayList<String>();
+            List<String> valueList = new ArrayList<>();
             valueList.add((String) existingValue);
             valueList.add(value);
             headers.put(normalizedKey, valueList);
@@ -127,6 +124,7 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
         }
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public String getHeader(String key) {
         Object value = headers.get(HttpHeaderUtils.normalizeHeaderKey(String.valueOf(key)));
@@ -159,6 +157,7 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
      * @param key   the header key
      * @param value the header value to remove
      */
+    @SuppressWarnings("unchecked")
     public void removeHeader(String key, Serializable value) {
         String normalizedKey = HttpHeaderUtils.normalizeHeaderKey(String.valueOf(key));
         String stringValue = String.valueOf(value);
@@ -253,7 +252,7 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
     }
 
     @Override
-    protected void addCacheHeaders(long fileSize, long lastModified) throws IOException {
+    protected void addCacheHeaders(long fileSize, long lastModified) {
         // Set Last-Modified header for caching
         directlyPutHeader(HttpHeaderNormalized.getLastModified(), HttpHeaderUtils.getDateHeaderValue(lastModified));
         // Set ETag header for caching
@@ -274,9 +273,8 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
             // Original logic for non-compressed file sending
             setContentLength(fileSize);
 
-            RandomAccessFile raf = new RandomAccessFile(file, "r");
-            try {
-                long estimatedTotalSize = fileSize + HttpHeaderUtils.estimateHeaderSize(mimeType.length());
+            try (RandomAccessFile raf = new RandomAccessFile(file, "r")) {
+                long estimatedTotalSize = fileSize + (ctx.option(HttpOptions.WRITE_DEFAULT_HEADERS) ? 141 : 56) + mimeType.length();
                 if (ctx.isSSL() || estimatedTotalSize < ctx.getWriteBufferSize()) {
                     // SSL or small file: use buffered write, single flush at end
                     ensureHeadersSent();
@@ -290,8 +288,6 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
                 log.warn("Failed to send file {}: {}", file, e.getMessage());
                 responseState = STATE_CORRUPTED;
                 throw e;
-            } finally {
-                raf.close();
             }
         }
 
@@ -314,7 +310,7 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
         directlyPutHeader(HttpHeaderNormalized.getContentEncoding(), HttpHeaderValues.GZIP);
 
         // For small files, use in-memory compression
-        if (fileSize <= HttpConf.BODY_MEMORY_THRESHOLD) {
+        if (fileSize <= bodyMemoryThreshold()) {
             byte[] fileContent = readFileContent(file, (int) fileSize);
             byte[] compressedContent = gzipCompress(fileContent);
             setContentLength(compressedContent.length);
@@ -327,11 +323,8 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
         setChunkedEncoding();
         ensureHeadersSent();
 
-        java.io.FileInputStream fis = new java.io.FileInputStream(file);
-        try {
+        try (FileInputStream fis = new FileInputStream(file)) {
             streamingGzipCompress(fis);
-        } finally {
-            fis.close();
         }
 
         // Send chunked end marker
@@ -352,7 +345,8 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
         FileChannel fileChannel = raf.getChannel();
         long position = 0;
         final long maxTransfer = (1L << 30) - 8;  // ~1GB, avoid platform transferTo limit
-        final long writeTimeoutMs = SocketConf.WRITE_TIMEOUT_MS > 0 ? SocketConf.WRITE_TIMEOUT_MS : 30000;
+        final long writeTimeMs = ctx.option(SocketOptions.WRITE_TIMEOUT_MS);
+        final long writeTimeoutMs = writeTimeMs > 0 ? writeTimeMs : 30000;
         int zeroTransferredCount = 0;
         while (position < fileSize) {
             long transferLength = Math.min(maxTransfer, fileSize - position);
@@ -490,11 +484,11 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
 
     /**
      * Write bytes to the response body buffer.
-     * When the data size would exceed BODY_MEMORY_THRESHOLD, data is flushed first
-     * and then written directly to the channel to prevent OOM.
+     * When the data size would exceed the body memory threshold (see {@link HttpOptions#BODY_MEMORY_THRESHOLD}),
+     * data is flushed first and then written directly to the channel to prevent OOM.
      * For chunked encoding, large data is sent as a separate chunk immediately.
      * <p>
-     * Note: The actual bodyBuf size will not exceed {@code HttpConf.BODY_MEMORY_THRESHOLD << 1}.
+     * Note: The actual bodyBuf size will not exceed {@code bodyMemoryThreshold() << 1}.
      *
      * @param bytes  the byte array to write
      * @param offset the starting offset in the byte array
@@ -507,7 +501,7 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
             return;
 
         // If either buffer size or incoming data exceeds threshold, flush and write directly
-        if (Math.max(bodyBuf.size(), count) > HttpConf.BODY_MEMORY_THRESHOLD) {
+        if (Math.max(bodyBuf.size(), count) > bodyMemoryThreshold()) {
             flush();
 
             if (chunked) {

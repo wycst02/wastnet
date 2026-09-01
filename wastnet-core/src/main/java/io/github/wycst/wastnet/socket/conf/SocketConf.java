@@ -39,17 +39,6 @@ public final class SocketConf extends Conf {
     public static final boolean DEFAULT_SYNC_RUNNER;
 
     private static final Properties APP_PROPS;
-    public static final boolean WINDOWS_PLATFORM;
-
-    static {
-        boolean isWindows = false;
-        try {
-            String osName = System.getProperty("os.name").toLowerCase();
-            isWindows = osName.contains("win");
-        } catch (Throwable ignored) {
-        }
-        WINDOWS_PLATFORM = isWindows;
-    }
 
     /**
      * Maximum concurrent requests (runner thread pool max size).
@@ -119,8 +108,6 @@ public final class SocketConf extends Conf {
      */
     public static final long GRACEFUL_SHUTDOWN_TIMEOUT_MS;
 
-    private static final boolean USE_LEAST_CONNECTIONS;
-
     static {
         APP_PROPS = createFileProps("wastnet-socket.properties");
 
@@ -137,8 +124,7 @@ public final class SocketConf extends Conf {
         MAX_CONCURRENT = maxConcurrent == -1 ? -1 : Math.max(maxConcurrent, cpuCores);
         // Load balance strategy
         String lbType = APP_PROPS.getProperty("wastnet.socket.load-balance-strategy");
-        LOAD_BALANCE_TYPE = lbType != null ? lbType : "ROUND_ROBIN";
-        USE_LEAST_CONNECTIONS = "LEAST_CONN".equals(LOAD_BALANCE_TYPE);
+        LOAD_BALANCE_TYPE = "LEAST_CONN".equals(lbType) ? "LEAST_CONN" : "ROUND_ROBIN";
         // SSL handshake timeout (5 seconds)
         SSL_HANDSHAKE_TIMEOUT_MS = getPropLong(APP_PROPS, "wastnet.socket.ssl.handshake-timeout-ms", 5000L);
         // Read timeout (10 seconds; 0 = unlimited)
@@ -147,10 +133,6 @@ public final class SocketConf extends Conf {
         WRITE_TIMEOUT_MS = Math.max(0, getPropLong(APP_PROPS, "wastnet.socket.write-timeout-ms", 30000L));
         // Graceful shutdown timeout (10 seconds)
         GRACEFUL_SHUTDOWN_TIMEOUT_MS = Math.max(0, getPropLong(APP_PROPS, "wastnet.socket.graceful-shutdown-timeout-ms", 10000L));
-    }
-
-    public static boolean useLoadBalanceLeastConnections() {
-        return USE_LEAST_CONNECTIONS;
     }
 
     public static String getProperty(String key) {

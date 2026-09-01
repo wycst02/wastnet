@@ -5,6 +5,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import io.github.wycst.wastnet.util.Utils;
+
 /**
  * HTTP/2 frame structure.
  * <p>
@@ -37,6 +39,7 @@ public final class Http2Frame {
      * Indicates that the frame is the last in the stream.
      */
     public static final int END_STREAM = 0x01;
+
     /**
      * END_HEADERS (bit 2), {@code 0x04}.
      * <p>
@@ -44,6 +47,7 @@ public final class Http2Frame {
      * Indicates that the header block fragment is the last.
      */
     public static final int END_HEADERS = 0x04;
+
     /**
      * PADDED (bit 3), {@code 0x08}.
      * <p>
@@ -59,6 +63,7 @@ public final class Http2Frame {
      * Indicates the presence of the stream dependency / weight field.
      */
     public static final int PRIORITY = 0x20;
+
     /**
      * PING ACK (bit 0), {@code 0x01}.
      * <p>
@@ -67,6 +72,7 @@ public final class Http2Frame {
      * Note: the h2 ACK flag is always bit 0 (0x01), shared by PING and SETTINGS.
      */
     public static final int PING_ACK = 0x01;
+
     /**
      * SETTINGS ACK (bit 0), {@code 0x01}.
      * <p>
@@ -104,23 +110,23 @@ public final class Http2Frame {
     /**
      * Frame flags, 8 bits
      */
-    public final int flags;
+    public int flags;
 
     /**
      * Stream identifier, 31-bit unsigned integer
      */
     public final int streamId;
 
-    
     /**
-     * Offset of the payload within {@link #frameData} (after PADDED/PRIORITY overhead).
+     * Offset of the payload within {@link #frameData} (frame origin + 9-byte header).
      */
     public final int payloadOffset;
 
     /**
-     * Actual payload offset within {@code frameData} (frame origin + 9-byte header)
+     * Actual payload offset within {@code frameData} (after PADDED/PRIORITY overhead)
      */
     public final int payloadActualOffset;
+
     /**
      * Actual payload length (excluding trailing padding)
      */
@@ -153,38 +159,7 @@ public final class Http2Frame {
     }
 
     /**
-     * Convert byte array to hex string.
-     */
-    private static String toHexString(byte[] data) {
-        return toHexString(data, 0, data.length);
-    }
-
-    private static String toHexString(byte[] data, int off, int len) {
-        StringBuilder sb = new StringBuilder(len * 2);
-        for (int i = off; i < off + len; ++i) {
-            sb.append(String.format("%02x", data[i]));
-        }
-        return sb.toString();
-    }
-
-    /**
      * Dump frame data in a human-readable hex format.
-     * <p>
-     * Example output:
-     * <pre>
-     * +-----------------------------------------------------------------------------------+
-     * | [HEADERS] streamId=1 length=12 flags=0x05                                        |
-     * +-----------------------------------------------------------------------------------+
-     * | Frame:   00000c0105000000018362617369632f68746d6c                                  |
-     * | Head:    00000c010500000001                                                       |
-     * | Payload: 8362617369632f68746d6c                                                   |
-     * |                                                                                   |
-     * | Offset  | 00 01 02 03 04 05 06 07  08 09 0a 0b 0c 0d 0e 0f | ASCII            |
-     * | --------+----------------------------------------------------------------+---------+
-     * | 0x0000  | 00 00 0c 01 05 00 00 00  01 83 62 61 73 69 63 2f | .....basic/|    |
-     * | 0x0010  | 68 74 6d 6c                                     | html     |    |
-     * +---------+----------------------------------------------------------------+---------+
-     * </pre>
      *
      * @return hex dump string
      */
@@ -200,15 +175,12 @@ public final class Http2Frame {
 
         // Build hex dump rows
         int bytesPerLine = 16;
-        int frameLen = frameLength;
-        int totalLength = frameOffset + frameLen;
+        int totalLength = frameOffset + frameLength;
 
         // Calculate hex dump header and row widths
         // Format: " Offset  | 00 01 02 03 04 05 06 07  08 09 0a 0b 0c 0d 0e 0f | ASCII"
         // Data row: offset(8) + " | "(3) + hex bytes(49) + "| "(2) + ascii(16) = 78
         String hexDumpHeader = " Offset  | 00 01 02 03 04 05 06 07  08 09 0a 0b 0c 0d 0e 0f | ASCII";
-        // Separator will be calculated after contentWidth is determined
-        String hexDumpSep = null;
 
         // Determine box width based on Frame length
         // Calculate hex dump row width: offset(8) + " | "(3) + hex(16*3+1=49) + "| "(2) + ascii(16) = 78
@@ -218,8 +190,8 @@ public final class Http2Frame {
         width = Math.max(width, hexDumpRowWidth);
         width = width + 4; // "| " + " |" = 4
 
-        // Calculate hexDumpSep now that contentWidth is known
-        hexDumpSep = repeat("-", width - 4);
+        // Separator: contentWidth = width - 4
+        String hexDumpSep = repeat("-", width - 4);
 
         // Build output
         String border = "+" + repeat("-", width - 2) + "+";
@@ -238,27 +210,20 @@ public final class Http2Frame {
 
         // Frame hex
         sb.append(innerPrefix);
-        String frameHex = "Frame:   " + toHexString(data, frameOffset, frameLength);
+        String frameHex = "Frame:   " + Utils.toHexStringLower(data, frameOffset, frameLength);
         sb.append(String.format("%-" + contentWidth + "s", frameHex));
         sb.append(innerSuffix).append("\n");
 
         // Head hex
         sb.append(innerPrefix);
-        String headHex = "Head:    ";
-        for (int i = 0; i < 9; ++i) {
-            headHex += String.format("%02x", data[frameOffset + i]);
-        }
+        String headHex = "Head:    " + Utils.toHexStringLower(data, frameOffset, 9);
         sb.append(String.format("%-" + contentWidth + "s", headHex));
         sb.append(innerSuffix).append("\n");
 
         // Payload hex
         if (payloadLength > 0) {
             sb.append(innerPrefix);
-            StringBuilder payloadHex = new StringBuilder("Payload: ");
-            for (int i = frameOffset + 9; i < totalLength; ++i) {
-                payloadHex.append(String.format("%02x", data[i]));
-            }
-            sb.append(String.format("%-" + contentWidth + "s", payloadHex.toString()));
+            sb.append(String.format("%-" + contentWidth + "s", "Payload: " + Utils.toHexStringLower(data, frameOffset + 9, payloadLength)));
             sb.append(innerSuffix).append("\n");
         }
 
@@ -269,22 +234,12 @@ public final class Http2Frame {
         sb.append(innerPrefix);
         // Pad or truncate to contentWidth
         String hdHeader = hexDumpHeader;
-        if (hdHeader.length() < contentWidth) {
-            hdHeader = hdHeader + repeat(" ", contentWidth - hdHeader.length());
-        } else if (hdHeader.length() > contentWidth) {
-            hdHeader = hdHeader.substring(0, contentWidth);
-        }
+        hdHeader = hdHeader + repeat(" ", contentWidth - hdHeader.length());
         sb.append(hdHeader);
         sb.append(innerSuffix).append("\n");
 
         sb.append(innerPrefix);
-        String hdSep = hexDumpSep;
-        if (hdSep.length() < contentWidth) {
-            hdSep = hdSep + repeat(" ", contentWidth - hdSep.length());
-        } else if (hdSep.length() > contentWidth) {
-            hdSep = hdSep.substring(0, contentWidth);
-        }
-        sb.append(hdSep);
+        sb.append(hexDumpSep);
         sb.append(innerSuffix).append("\n");
 
         // Data rows
@@ -434,16 +389,17 @@ public final class Http2Frame {
 
 
     /**
-     * Write a single byte into the frame header at the given relative index.
+     * Set the frame's 8-bit flags byte (frame-header offset 4).
      * <p>
-     * Only mutates the backing {@code frameData} array element; the final fields
-     * themselves stay unchanged, so the frame object remains effectively immutable.
+     * Mutates the backing {@code frameData} array and keeps the {@link #flags}
+     * field in sync, so {@link #hasFlags(int)} and {@link #toHexDump()} reflect
+     * the change as well.
      *
-     * @param index relative offset from this frame's origin
-     * @param b     byte to write
+     * @param flags new flags value (low 8 bits used)
      */
-    void setFrameByteAt(int index, byte b) {
-        frameData[frameOffset + index] = b;
+    void setFlags(int flags) {
+        this.flags = flags;
+        frameData[frameOffset + 4] = (byte) flags;
     }
 
     /**
@@ -455,7 +411,7 @@ public final class Http2Frame {
      * @return frames in order
      */
     static List<Http2Frame> fromByteBuffer(ByteBuffer buf) {
-        List<Http2Frame> frames = new ArrayList<Http2Frame>();
+        List<Http2Frame> frames = new ArrayList<>();
         byte[] src = buf.array();
         int total = buf.limit();
         int pos = 0;

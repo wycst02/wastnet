@@ -5,12 +5,16 @@ import io.github.wycst.wastnet.http.proxy.HttpProxyConfig;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Answers.RETURNS_SELF;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.withSettings;
 
 /**
  * Coverage tests for HttpRouterHandler including RouteEntry.
@@ -230,7 +234,7 @@ public class HttpRouterHandlerTest {
 
         HttpRequest req = mock(HttpRequest.class);
         when(req.getRequestUri()).thenReturn("/test");
-        HttpResponse resp = mock(HttpResponse.class);
+        HttpResponse resp = mock(HttpResponse.class, withSettings().defaultAnswer(RETURNS_SELF));
 
         h.handle(req, resp);
         verify(route).handle(eq("/test"), same(req), same(resp));
@@ -245,7 +249,7 @@ public class HttpRouterHandlerTest {
 
         HttpRequest req = mock(HttpRequest.class);
         when(req.getRequestUri()).thenReturn("/api/users");
-        HttpResponse resp = mock(HttpResponse.class);
+        HttpResponse resp = mock(HttpResponse.class, withSettings().defaultAnswer(RETURNS_SELF));
 
         h.handle(req, resp);
         verify(route).handle(eq("/api/users"), same(req), same(resp));
@@ -260,7 +264,7 @@ public class HttpRouterHandlerTest {
 
         HttpRequest req = mock(HttpRequest.class);
         when(req.getRequestUri()).thenReturn("/user/42");
-        HttpResponse resp = mock(HttpResponse.class);
+        HttpResponse resp = mock(HttpResponse.class, withSettings().defaultAnswer(RETURNS_SELF));
 
         h.handle(req, resp);
         verify(route).handle(eq("/user/42"), same(req), same(resp));
@@ -276,7 +280,7 @@ public class HttpRouterHandlerTest {
 
         HttpRequest req = mock(HttpRequest.class);
         when(req.getRequestUri()).thenReturn("/app/hello");
-        HttpResponse resp = mock(HttpResponse.class);
+        HttpResponse resp = mock(HttpResponse.class, withSettings().defaultAnswer(RETURNS_SELF));
 
         h.handle(req, resp);
         verify(route).handle(eq("/hello"), same(req), same(resp));
@@ -292,7 +296,7 @@ public class HttpRouterHandlerTest {
 
         HttpRequest req = mock(HttpRequest.class);
         when(req.getRequestUri()).thenReturn("/app");
-        HttpResponse resp = mock(HttpResponse.class);
+        HttpResponse resp = mock(HttpResponse.class, withSettings().defaultAnswer(RETURNS_SELF));
 
         h.handle(req, resp);
         verify(route).handle(eq("/"), same(req), same(resp));
@@ -306,7 +310,7 @@ public class HttpRouterHandlerTest {
 
         HttpRequest req = mock(HttpRequest.class);
         when(req.getRequestUri()).thenReturn("/other");
-        HttpResponse resp = mock(HttpResponse.class);
+        HttpResponse resp = mock(HttpResponse.class, withSettings().defaultAnswer(RETURNS_SELF));
         when(resp.status(any())).thenReturn(resp);
 
         h.handle(req, resp);
@@ -321,7 +325,7 @@ public class HttpRouterHandlerTest {
 
         HttpRequest req = mock(HttpRequest.class);
         when(req.getRequestUri()).thenReturn("/");
-        HttpResponse resp = mock(HttpResponse.class);
+        HttpResponse resp = mock(HttpResponse.class, withSettings().defaultAnswer(RETURNS_SELF));
         when(resp.status(any())).thenReturn(resp);
         when(resp.header(anyString(), any())).thenReturn(resp);
 
@@ -339,7 +343,7 @@ public class HttpRouterHandlerTest {
 
         HttpRequest req = mock(HttpRequest.class);
         when(req.getRequestUri()).thenReturn("/");
-        HttpResponse resp = mock(HttpResponse.class);
+        HttpResponse resp = mock(HttpResponse.class, withSettings().defaultAnswer(RETURNS_SELF));
         when(resp.status(any())).thenReturn(resp);
 
         h.handle(req, resp);
@@ -353,13 +357,13 @@ public class HttpRouterHandlerTest {
         HttpRouterHandler h = new HttpRouterHandler();
         HttpRequest req = mock(HttpRequest.class);
         when(req.getRequestUri()).thenReturn("/health");
-        HttpResponse resp = mock(HttpResponse.class);
+        HttpResponse resp = mock(HttpResponse.class, withSettings().defaultAnswer(RETURNS_SELF));
         when(resp.status(any())).thenReturn(resp);
 
         h.handle(req, resp);
-        verify(resp).setHeader(eq("Content-Type"), eq("application/json; charset=utf-8"));
+        verify(resp).contentType(HttpHeaderValues.APPLICATION_JSON_UTF8);
         verify(resp).status(HttpStatus.OK);
-        verify(resp).body(any(byte[].class));
+        verify(resp).body(any(String.class));
     }
 
     // ==================== handle() 404 fallback ====================
@@ -369,7 +373,7 @@ public class HttpRouterHandlerTest {
         HttpRouterHandler h = new HttpRouterHandler();
         HttpRequest req = mock(HttpRequest.class);
         when(req.getRequestUri()).thenReturn("/no-match");
-        HttpResponse resp = mock(HttpResponse.class);
+        HttpResponse resp = mock(HttpResponse.class, withSettings().defaultAnswer(RETURNS_SELF));
         when(resp.status(any())).thenReturn(resp);
 
         h.handle(req, resp);
@@ -385,7 +389,7 @@ public class HttpRouterHandlerTest {
 
         HttpRequest req = mock(HttpRequest.class);
         when(req.getRequestUri()).thenReturn("/no-match");
-        HttpResponse resp = mock(HttpResponse.class);
+        HttpResponse resp = mock(HttpResponse.class, withSettings().defaultAnswer(RETURNS_SELF));
 
         h.handle(req, resp);
         verify(custom404).handle(same(req), same(resp));
@@ -508,5 +512,138 @@ public class HttpRouterHandlerTest {
         assertFalse(apply(h, chain));
         assertEquals(1, a.calls);
         assertEquals(0, b.calls);
+    }
+
+    // ==================== prepare() route sorting ====================
+    // RouteEntry treats a path starting with '^' as a regex route (prefix=false),
+    // anything else as a prefix route. Mixing both kinds is what drives the comparator.
+
+    @Test
+    public void testPrepareSortsRootPrefixLast() {
+        HttpRouterHandler h = new HttpRouterHandler();
+        h.route("/", MockHttpTestBase.noopRoute());
+        h.route("/a", MockHttpTestBase.noopRoute());
+        h.route("/aaa", MockHttpTestBase.noopRoute());
+        h.prepare();
+        // non-root prefixes by descending length, then the "/" catch-all last
+        assertEquals(Arrays.asList("/aaa", "/a", "/"), patterns(h));
+    }
+
+    @Test
+    public void testPrepareMovesRootToEndWhenRootRegisteredLater() {
+        // Registering "/" later makes it the comparator's LEFT operand during insertion sort,
+        // which is the only way to hit "aRoot -> return 1" (the root-sinks-last direction).
+        HttpRouterHandler h = new HttpRouterHandler();
+        h.route("/a", MockHttpTestBase.noopRoute());
+        h.route("/", MockHttpTestBase.noopRoute());
+        h.route("/aaa", MockHttpTestBase.noopRoute());
+        h.prepare();
+        assertEquals(Arrays.asList("/aaa", "/a", "/"), patterns(h));
+    }
+
+    @Test
+    public void testPrepareSortsPrefixBeforeRegex() {
+        // regex registered first -> comparator sees (prefix, regex) and returns -1
+        HttpRouterHandler h = new HttpRouterHandler();
+        h.route("^/api/\\d+", MockHttpTestBase.noopRoute());
+        h.route("/api", MockHttpTestBase.noopRoute());
+        h.prepare();
+        List<String> p = patterns(h);
+        assertTrue(p.indexOf("/api") < p.indexOf("^/api/\\d+"), "prefix routes must sort before regex");
+    }
+
+    @Test
+    public void testPrepareSortsPrefixBeforeRegexReversed() {
+        // prefix registered first -> comparator sees (regex, prefix) and returns 1
+        HttpRouterHandler h = new HttpRouterHandler();
+        h.route("/api", MockHttpTestBase.noopRoute());
+        h.route("^/api/\\d+", MockHttpTestBase.noopRoute());
+        h.prepare();
+        List<String> p = patterns(h);
+        assertTrue(p.indexOf("/api") < p.indexOf("^/api/\\d+"), "prefix routes must sort before regex");
+    }
+
+    @Test
+    public void testPrepareKeepsRegexRegistrationOrder() {
+        HttpRouterHandler h = new HttpRouterHandler();
+        h.route("^/x.*", MockHttpTestBase.noopRoute());
+        h.route("^/y.*", MockHttpTestBase.noopRoute());
+        h.route("^/z.*", MockHttpTestBase.noopRoute());
+        h.prepare();
+        // comparator returns 0 for two regex routes -> stable sort preserves registration order
+        assertEquals(Arrays.asList("^/x.*", "^/y.*", "^/z.*"), patterns(h));
+    }
+
+    @Test
+    public void testPrepareSortsLongerPrefixFirst() {
+        HttpRouterHandler h = new HttpRouterHandler();
+        h.route("/user", MockHttpTestBase.noopRoute());
+        h.route("/user/aaa", MockHttpTestBase.noopRoute());
+        h.prepare();
+        List<String> p = patterns(h);
+        assertTrue(p.indexOf("/user/aaa") < p.indexOf("/user"), "longer prefix must sort first");
+    }
+
+    @Test
+    public void testPrepareIsNoopForZeroOrOneRoute() {
+        HttpRouterHandler empty = new HttpRouterHandler();
+        empty.prepare();
+        assertEquals(0, patterns(empty).size());
+
+        HttpRouterHandler one = new HttpRouterHandler();
+        one.route("/only", MockHttpTestBase.noopRoute());
+        one.prepare();
+        assertEquals(Arrays.asList("/only"), patterns(one));
+    }
+
+    @Test
+    public void testDisableAutoSortKeepsRegistrationOrder() {
+        HttpRouterHandler h = new HttpRouterHandler();
+        h.route("/", MockHttpTestBase.noopRoute());
+        h.route("/aaa", MockHttpTestBase.noopRoute());
+        assertSame(h, h.disableAutoSort());
+        // sorting would reorder this to ["/aaa", "/"]; disabled auto-sort must keep it as-is
+        h.prepare();
+        assertEquals(Arrays.asList("/", "/aaa"), patterns(h));
+    }
+
+    @Test
+    public void testSetDefaultHealthResponse() throws Throwable {
+        Field ct = HttpRouterHandler.class.getDeclaredField("defaultHealthContentType");
+        Field bd = HttpRouterHandler.class.getDeclaredField("defaultHealthResponseBody");
+        ct.setAccessible(true);
+        bd.setAccessible(true);
+        String origCt = (String) ct.get(null);
+        String origBody = (String) bd.get(null);
+        try {
+            HttpRouterHandler.setDefaultHealthResponse("text/plain", "OK");
+            assertEquals("text/plain", ct.get(null));
+            assertEquals("OK", bd.get(null));
+
+            // the built-in /health route must actually serve the new defaults
+            HttpRouterHandler h = new HttpRouterHandler();
+            HttpResponse res = mock(HttpResponse.class, RETURNS_SELF);
+            h.handle(MockHttpTestBase.mockRequest(HttpMethod.GET, "/health"), res);
+            verify(res).contentType("text/plain");
+            verify(res).body("OK");
+        } finally {
+            // static state: always restore so other tests keep the shipped defaults
+            HttpRouterHandler.setDefaultHealthResponse(origCt, origBody);
+        }
+    }
+
+    /** Reads the (private) pattern of every registered route, in current order. */
+    private static List<String> patterns(HttpRouterHandler h) {
+        List<String> out = new ArrayList<String>();
+        try {
+            Field f = HttpRouterHandler.RouteEntry.class.getDeclaredField("pattern");
+            f.setAccessible(true);
+            for (HttpRouterHandler.RouteEntry e : h.routes) {
+                out.add((String) f.get(e));
+            }
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return out;
     }
 }

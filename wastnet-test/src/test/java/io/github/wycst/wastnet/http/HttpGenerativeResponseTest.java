@@ -1,14 +1,13 @@
 package io.github.wycst.wastnet.http;
 
+import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
-import org.junit.jupiter.api.AfterAll;
+import io.github.wycst.wastnet.socket.tcp.NioConfig;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.io.Serializable;
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,36 +20,37 @@ import static org.mockito.Mockito.*;
  */
 public class HttpGenerativeResponseTest {
 
-    private static boolean originalWriteDefaultHeaders;
-    private static boolean originalExposeServerHeader;
-
-    @BeforeAll
-    static void setupReflection() throws Exception {
-        originalWriteDefaultHeaders = HttpConf.WRITE_DEFAULT_HEADERS;
-        originalExposeServerHeader = HttpConf.EXPOSE_SERVER_HEADER;
+    /**
+     * Returns a real {@link ChannelContext} bound to a {@link NioConfig} that mirrors the
+     * live {@link HttpConf} values. Configuration overrides are applied per-test via a
+     * dedicated NioConfig, so no reflective/Unsafe mutation of HttpConf static fields is needed.
+     */
+    private static ChannelContext mockChannelContext() {
+        return mockChannelContext(new NioConfig());
     }
 
-    @AfterAll
-    static void cleanupReflection() throws Exception {
-        setFinalStaticField(HttpConf.class, "WRITE_DEFAULT_HEADERS", originalWriteDefaultHeaders);
-        setFinalStaticField(HttpConf.class, "EXPOSE_SERVER_HEADER", originalExposeServerHeader);
-    }
-
-    private static void setFinalStaticField(Class<?> clazz, String fieldName, Object value) throws Exception {
-        Field field = clazz.getDeclaredField(fieldName);
-        field.setAccessible(true);
-        Field unsafeField = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
-        unsafeField.setAccessible(true);
-        sun.misc.Unsafe unsafe = (sun.misc.Unsafe) unsafeField.get(null);
-        Object base = unsafe.staticFieldBase(field);
-        long offset = unsafe.staticFieldOffset(field);
-        if (field.getType() == boolean.class) {
-            unsafe.putBoolean(base, offset, (Boolean) value);
-        } else if (field.getType() == int.class) {
-            unsafe.putInt(base, offset, (Integer) value);
-        } else {
-            unsafe.putObject(base, offset, value);
+    private static ChannelContext mockChannelContext(NioConfig overrideConfig) {
+        ChannelContext ctx;
+        try {
+            java.lang.reflect.Constructor<ChannelContext> ctor =
+                    ChannelContext.class.getDeclaredConstructor(long.class, java.nio.channels.SocketChannel.class, int.class);
+            ctor.setAccessible(true);
+            ctx = ctor.newInstance(0L, null, 0);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
+        // Per-test overrides are applied on top of each option's default value (option.value,
+        // which mirrors the live HttpConf). Unset keys fall back to the default automatically.
+        NioConfig nioConfig = new NioConfig();
+        if (overrideConfig != null) {
+            nioConfig.option(HttpOptions.EXPOSE_SERVER_HEADER, overrideConfig.option(HttpOptions.EXPOSE_SERVER_HEADER));
+            nioConfig.option(HttpOptions.WRITE_DEFAULT_HEADERS, overrideConfig.option(HttpOptions.WRITE_DEFAULT_HEADERS));
+            nioConfig.option(HttpOptions.GZIP, overrideConfig.option(HttpOptions.GZIP));
+            nioConfig.option(HttpOptions.GZIP_MIN_SIZE, overrideConfig.option(HttpOptions.GZIP_MIN_SIZE));
+            nioConfig.option(HttpOptions.BODY_MEMORY_THRESHOLD, overrideConfig.option(HttpOptions.BODY_MEMORY_THRESHOLD));
+        }
+        ctx.attachNioConfig(nioConfig);
+        return ctx;
     }
 
     // ==================== Header management ====================
@@ -76,7 +76,7 @@ public class HttpGenerativeResponseTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
         when(mockReq.getHeader(anyString(), anyBoolean())).thenReturn(null);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, mockChannelContext());
         Assertions.assertEquals("keep-alive", resp.testGetConnectionHeaderValue());
     }
 
@@ -85,7 +85,7 @@ public class HttpGenerativeResponseTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_0);
         when(mockReq.getHeader(anyString(), anyBoolean())).thenReturn(null);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, mockChannelContext());
         Assertions.assertEquals("close", resp.testGetConnectionHeaderValue());
     }
 
@@ -93,7 +93,7 @@ public class HttpGenerativeResponseTest {
     public void testConnectionHeaderMirrorsRequest() {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHeader(anyString(), anyBoolean())).thenReturn("Upgrade");
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, mockChannelContext());
         Assertions.assertEquals("Upgrade", resp.testGetConnectionHeaderValue());
     }
 
@@ -125,7 +125,7 @@ public class HttpGenerativeResponseTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
         when(mockReq.getHeader(anyString(), anyBoolean())).thenReturn(null);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, mockChannelContext());
         resp.testWriteDefaultHeaders();
         String headerStr = new String(resp.headerBuf.toBytes());
         // Date header (case varies by config, check length and GMT suffix)
@@ -201,7 +201,7 @@ public class HttpGenerativeResponseTest {
     public void testGetHttpVersion() {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_2);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, mockChannelContext());
         Assertions.assertSame(HttpVersion.HTTP_2, resp.testGetHttpVersion());
     }
 
@@ -220,36 +220,30 @@ public class HttpGenerativeResponseTest {
 
     @Test
     public void testWriteDefaultHeadersWithServerExposed() throws Exception {
-        setFinalStaticField(HttpConf.class, "EXPOSE_SERVER_HEADER", true);
-        try {
-            TestResponse resp = createResponse();
-            resp.testWriteDefaultHeaders();
-            String headerStr = new String(resp.headerBuf.toBytes());
-            Assertions.assertTrue(headerStr.toLowerCase().contains("server:"),
-                    "Server header should be exposed when EXPOSE_SERVER_HEADER=true");
-        } finally {
-            setFinalStaticField(HttpConf.class, "EXPOSE_SERVER_HEADER", originalExposeServerHeader);
-        }
+        NioConfig cfg = new NioConfig();
+        cfg.option(HttpOptions.EXPOSE_SERVER_HEADER, true);
+        TestResponse resp = createResponse(mockChannelContext(cfg));
+        resp.testWriteDefaultHeaders();
+        String headerStr = new String(resp.headerBuf.toBytes());
+        Assertions.assertTrue(headerStr.toLowerCase().contains("server:"),
+                "Server header should be exposed when EXPOSE_SERVER_HEADER=true");
     }
 
     @Test
     public void testWriteDefaultHeadersWithServerExposedAndAlreadySet() throws Exception {
         // Cover EXPOSE_SERVER_HEADER=true + server header already present → !containsKey=false branch
-        setFinalStaticField(HttpConf.class, "EXPOSE_SERVER_HEADER", true);
-        try {
-            TestResponse resp = createResponse();
-            // Pre-set Server header so the condition short-circuits at containsKey
-            resp.testDirectlyPutHeader(HttpHeaderNormalized.getServer(), "MyServer");
-            resp.testWriteDefaultHeaders();
-            String headerStr = new String(resp.headerBuf.toBytes());
-            // Custom Server value "MyServer" should appear without being duplicated
-            int firstIdx = headerStr.toLowerCase().indexOf("server:");
-            int lastIdx = headerStr.toLowerCase().lastIndexOf("server:");
-            Assertions.assertEquals(firstIdx, lastIdx,
-                    "Server header should appear only once when already present");
-        } finally {
-            setFinalStaticField(HttpConf.class, "EXPOSE_SERVER_HEADER", originalExposeServerHeader);
-        }
+        NioConfig cfg = new NioConfig();
+        cfg.option(HttpOptions.EXPOSE_SERVER_HEADER, true);
+        TestResponse resp = createResponse(mockChannelContext(cfg));
+        // Pre-set Server header so the condition short-circuits at containsKey
+        resp.testDirectlyPutHeader(HttpHeaderNormalized.getServer(), "MyServer");
+        resp.testWriteDefaultHeaders();
+        String headerStr = new String(resp.headerBuf.toBytes());
+        // Custom Server value "MyServer" should appear without being duplicated
+        int firstIdx = headerStr.toLowerCase().indexOf("server:");
+        int lastIdx = headerStr.toLowerCase().lastIndexOf("server:");
+        Assertions.assertEquals(firstIdx, lastIdx,
+                "Server header should appear only once when already present");
     }
 
     @Test
@@ -510,28 +504,29 @@ public class HttpGenerativeResponseTest {
 
     @Test
     public void testWriteHeadersWithoutDefaultHeaders() throws Exception {
-        setFinalStaticField(HttpConf.class, "WRITE_DEFAULT_HEADERS", false);
-        try {
-            TestResponse resp = createResponse();
-            resp.writeHeaders();
-            String headerStr = new String(resp.headerBuf.toBytes());
-            // Log output for debugging
-            System.out.println("Headers without defaults: " + headerStr);
-            // Should NOT contain connection header (the default header that's normally written)
-            Assertions.assertFalse(headerStr.toLowerCase().contains("connection:"),
-                    "Connection header should not be written when WRITE_DEFAULT_HEADERS=false");
-            // Normal Status line and final CRLF should still be present
-            Assertions.assertTrue(headerStr.endsWith("\r\n\r\n"),
-                    "Headers should end with double CRLF");
-        } finally {
-            setFinalStaticField(HttpConf.class, "WRITE_DEFAULT_HEADERS", originalWriteDefaultHeaders);
-        }
+        NioConfig cfg = new NioConfig();
+        cfg.option(HttpOptions.WRITE_DEFAULT_HEADERS, false);
+        TestResponse resp = createResponse(mockChannelContext(cfg));
+        resp.writeHeaders();
+        String headerStr = new String(resp.headerBuf.toBytes());
+        // Log output for debugging
+        System.out.println("Headers without defaults: " + headerStr);
+        // Should NOT contain connection header (the default header that's normally written)
+        Assertions.assertFalse(headerStr.toLowerCase().contains("connection:"),
+                "Connection header should not be written when WRITE_DEFAULT_HEADERS=false");
+        // Normal Status line and final CRLF should still be present
+        Assertions.assertTrue(headerStr.endsWith("\r\n\r\n"),
+                "Headers should end with double CRLF");
     }
 
     // ==================== Helpers ====================
 
     private TestResponse createResponse() {
-        return new TestResponse(createMockRequest(), null);
+        return new TestResponse(createMockRequest(), mockChannelContext());
+    }
+
+    private TestResponse createResponse(ChannelContext ctx) {
+        return new TestResponse(createMockRequest(), ctx);
     }
 
     private static HttpRequest createMockRequest() {

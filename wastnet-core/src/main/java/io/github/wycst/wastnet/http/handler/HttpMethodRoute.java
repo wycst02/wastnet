@@ -63,9 +63,7 @@ public class HttpMethodRoute implements HttpRoute {
      * @return this builder for chaining
      */
     public HttpMethodRoute get(HttpRoute handler) {
-        handlers[HttpMethod.GET.ordinal()] = handler;
-        buildAllowHeader();
-        return this;
+        return methodHandler(HttpMethod.GET, handler);
     }
 
     /**
@@ -75,9 +73,7 @@ public class HttpMethodRoute implements HttpRoute {
      * @return this builder for chaining
      */
     public HttpMethodRoute head(HttpRoute handler) {
-        handlers[HttpMethod.HEAD.ordinal()] = handler;
-        buildAllowHeader();
-        return this;
+        return methodHandler(HttpMethod.HEAD, handler);
     }
 
     /**
@@ -87,9 +83,7 @@ public class HttpMethodRoute implements HttpRoute {
      * @return this builder for chaining
      */
     public HttpMethodRoute post(HttpRoute handler) {
-        handlers[HttpMethod.POST.ordinal()] = handler;
-        buildAllowHeader();
-        return this;
+        return methodHandler(HttpMethod.POST, handler);
     }
 
     /**
@@ -99,9 +93,7 @@ public class HttpMethodRoute implements HttpRoute {
      * @return this builder for chaining
      */
     public HttpMethodRoute put(HttpRoute handler) {
-        handlers[HttpMethod.PUT.ordinal()] = handler;
-        buildAllowHeader();
-        return this;
+        return methodHandler(HttpMethod.PUT, handler);
     }
 
     /**
@@ -111,9 +103,7 @@ public class HttpMethodRoute implements HttpRoute {
      * @return this builder for chaining
      */
     public HttpMethodRoute delete(HttpRoute handler) {
-        handlers[HttpMethod.DELETE.ordinal()] = handler;
-        buildAllowHeader();
-        return this;
+        return methodHandler(HttpMethod.DELETE, handler);
     }
 
     /**
@@ -123,7 +113,18 @@ public class HttpMethodRoute implements HttpRoute {
      * @return this builder for chaining
      */
     public HttpMethodRoute patch(HttpRoute handler) {
-        handlers[HttpMethod.PATCH.ordinal()] = handler;
+        return methodHandler(HttpMethod.PATCH, handler);
+    }
+
+    /**
+     * Bind a handler for the specified HTTP method (shared by builder methods).
+     *
+     * @param method  the HTTP method to bind
+     * @param handler the route handler for the method
+     * @return this builder for chaining
+     */
+    HttpMethodRoute methodHandler(HttpMethod method, HttpRoute handler) {
+        handlers[method.ordinal()] = handler;
         buildAllowHeader();
         return this;
     }

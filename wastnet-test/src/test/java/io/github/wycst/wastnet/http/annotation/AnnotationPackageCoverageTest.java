@@ -54,6 +54,60 @@ public class AnnotationPackageCoverageTest {
     @Controller("/empty")
     public static class EmptyController {}
 
+    // Exercises resolveInterceptorNames: class-level only, plus class+method merge with
+    // deduplication and empty-string filtering. Deliberately NOT annotated @Controller so the
+    // package router-scan tests don't try to register it (its @WithInterceptor names are unbound).
+    @WithInterceptor({"a", "b", ""})
+    public static class InterceptorController {
+        @Endpoint("/m1")
+        public void m1(HttpRequest req, HttpResponse resp) {}
+
+        @Endpoint("/m2")
+        @WithInterceptor({"b", "c", ""})
+        public void m2(HttpRequest req, HttpResponse resp) {}
+    }
+
+    // Class carries no @WithInterceptor, method carries one -> method-level-only path.
+    public static class InterceptorMethodOnlyController {
+        @Endpoint("/m")
+        @WithInterceptor({"x"})
+        public void m(HttpRequest req, HttpResponse resp) {}
+    }
+
+    // SSE endpoint with @WithInterceptor to exercise the resolveSseEndpoints entry point.
+    @WithInterceptor({"svc"})
+    public static class InterceptorSseController {
+        @Sse("/stream")
+        @WithInterceptor({"audit", "svc"})
+        public void stream(SseEmitter emitter) {}
+    }
+
+    // Class and method share a name -> method-level duplicate hits !names.contains(name)==false
+    // (the "already added" skip branch inside the class-level loop).
+    @WithInterceptor("dup")
+    public static class InterceptorDupController {
+        @Endpoint("/d")
+        @WithInterceptor({"dup"})
+        public void d(HttpRequest req, HttpResponse resp) {}
+    }
+
+    // Class-level value itself contains a duplicate ("dup" twice) -> the class-level loop's
+    // !names.contains(name)==false branch (L68) is exercised directly.
+    @WithInterceptor({"dup", "dup"})
+    public static class InterceptorClassDupController {
+        @Endpoint("/cd")
+        public void cd(HttpRequest req, HttpResponse resp) {}
+    }
+
+    // Class-level absent and method-level value is only the empty string -> every entry is
+    // filtered out, names stays empty, and resolveInterceptorNames returns null
+    // (the names.isEmpty() arm of the ternary at L76).
+    public static class InterceptorAllEmptyController {
+        @Endpoint("/z")
+        @WithInterceptor({""})
+        public void z(HttpRequest req, HttpResponse resp) {}
+    }
+
     @Controller("/sse-only")
     public static class SseOnlyController {
         @Sse("/stream")
@@ -201,6 +255,74 @@ public class AnnotationPackageCoverageTest {
         assertTrue(r.resolveSseEndpoints(String.class).isEmpty());
         // Static method should be skipped
         assertTrue(r.resolveSseEndpoints(EmptyController.class).isEmpty());
+    }
+
+    // ==================== resolveInterceptorNames (private, reached via Endpoint/SSE) ====================
+
+    @Test public void testResolveInterceptorNames_classLevelOnly() {
+        DefaultAnnotationResolver r = new DefaultAnnotationResolver();
+        List<MethodRouteInfo> routes = r.resolveEndpointRoutes(InterceptorController.class);
+        // m1: class-level {"a","b",""} -> empty string filtered -> [a, b]
+        MethodRouteInfo m1 = findRoute(routes, "/m1");
+        assertArrayEquals(new String[]{"a", "b"}, m1.getInterceptorNames());
+        // m2: class {a,b} merged with method {b,c} -> deduped -> [a, b, c]
+        MethodRouteInfo m2 = findRoute(routes, "/m2");
+        assertArrayEquals(new String[]{"a", "b", "c"}, m2.getInterceptorNames());
+    }
+
+    @Test public void testResolveInterceptorNames_methodLevelOnly() {
+        DefaultAnnotationResolver r = new DefaultAnnotationResolver();
+        List<MethodRouteInfo> routes = r.resolveEndpointRoutes(InterceptorMethodOnlyController.class);
+        MethodRouteInfo m = findRoute(routes, "/m");
+        assertArrayEquals(new String[]{"x"}, m.getInterceptorNames());
+    }
+
+    @Test public void testResolveInterceptorNames_viaSse() {
+        DefaultAnnotationResolver r = new DefaultAnnotationResolver();
+        List<MethodRouteInfo> routes = r.resolveSseEndpoints(InterceptorSseController.class);
+        MethodRouteInfo m = findRoute(routes, "/stream");
+        // class {svc} merged with method {audit, svc} -> [svc, audit]
+        assertArrayEquals(new String[]{"svc", "audit"}, m.getInterceptorNames());
+    }
+
+    @Test public void testResolveInterceptorNames_none() {
+        DefaultAnnotationResolver r = new DefaultAnnotationResolver();
+        // Endpoints but no @WithInterceptor anywhere -> names stay null
+        List<MethodRouteInfo> routes = r.resolveEndpointRoutes(BasicController.class);
+        for (MethodRouteInfo info : routes) {
+            assertNull(info.getInterceptorNames());
+        }
+    }
+
+    @Test public void testResolveInterceptorNames_duplicateSkipped() {
+        DefaultAnnotationResolver r = new DefaultAnnotationResolver();
+        List<MethodRouteInfo> routes = r.resolveEndpointRoutes(InterceptorDupController.class);
+        MethodRouteInfo d = findRoute(routes, "/d");
+        // class {dup} merged with method {dup} -> duplicate skipped -> single "dup"
+        assertArrayEquals(new String[]{"dup"}, d.getInterceptorNames());
+    }
+
+    @Test public void testResolveInterceptorNames_classLevelDuplicate() {
+        DefaultAnnotationResolver r = new DefaultAnnotationResolver();
+        List<MethodRouteInfo> routes = r.resolveEndpointRoutes(InterceptorClassDupController.class);
+        MethodRouteInfo cd = findRoute(routes, "/cd");
+        // class-level value {"dup","dup"} -> deduplicated inside the class-level loop -> ["dup"]
+        assertArrayEquals(new String[]{"dup"}, cd.getInterceptorNames());
+    }
+
+    @Test public void testResolveInterceptorNames_allEmptyReturnsNull() {
+        DefaultAnnotationResolver r = new DefaultAnnotationResolver();
+        List<MethodRouteInfo> routes = r.resolveEndpointRoutes(InterceptorAllEmptyController.class);
+        MethodRouteInfo z = findRoute(routes, "/z");
+        // method-level value is only "" -> all filtered out -> names empty -> returns null
+        assertNull(z.getInterceptorNames());
+    }
+
+    private static MethodRouteInfo findRoute(List<MethodRouteInfo> routes, String path) {
+        for (MethodRouteInfo info : routes) {
+            if (path.equals(info.getPath())) return info;
+        }
+        throw new AssertionError("route not found: " + path);
     }
 
     @Test public void testIsWebSocketEndpoint() {

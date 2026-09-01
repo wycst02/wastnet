@@ -43,7 +43,7 @@ public class HttpProxyWorker extends Thread {
 
     Selector selector;
     volatile boolean registering;
-    final Map<Long, HttpProxyConnection> connections = new ConcurrentHashMap<Long, HttpProxyConnection>();
+    final Map<Long, HttpProxyConnection> connections = new ConcurrentHashMap<>();
     final HttpProxyWorkerManager manager;
     private volatile boolean shutdown = false;
 

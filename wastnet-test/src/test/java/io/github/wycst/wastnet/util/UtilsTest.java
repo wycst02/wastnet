@@ -223,4 +223,76 @@ public class UtilsTest {
         // control char below ' '
         Assertions.assertEquals("a\\u0001b", Utils.escapeSpecialString("a\u0001b"));
     }
+
+    // ==================== hexDump ====================
+
+    @Test
+    public void testHexDumpNullAndEmpty() {
+        // L154: data == null and len <= 0 both return ""
+        Assertions.assertEquals("", Utils.hexDump(null, 0, 8));
+        Assertions.assertEquals("", Utils.hexDump(new byte[8], 0, 0));
+        Assertions.assertEquals("", Utils.hexDump(new byte[8], 0, -1));
+    }
+
+    @Test
+    public void testHexDumpExactOneLine() {
+        // 16 bytes -> exactly one data line, no trailing padding, all printable-ish (0x00 -> '.')
+        byte[] data = new byte[16]; // all zeros
+        String dump = Utils.hexDump(data, 0, 16);
+        Assertions.assertTrue(dump.startsWith("---------"));
+        Assertions.assertTrue(dump.trim().endsWith("+"));
+        Assertions.assertTrue(dump.contains("00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00"));
+        // L184: non-printable 0x00 rendered as '.' (16 of them)
+        Assertions.assertTrue(dump.contains("| ................ |"));
+    }
+
+    @Test
+    public void testHexDumpMultipleLinesWithPadding() {
+        // 32 bytes -> two full lines (exercises outer loop multi-iteration)
+        byte[] data = new byte[32];
+        for (int i = 0; i < 32; i++) data[i] = (byte) i;
+        String dump = Utils.hexDump(data, 0, 32);
+        // L178: half-gap space appears at the 8th byte of each line
+        Assertions.assertTrue(dump.contains("00 01 02 03 04 05 06 07  08 09 0A 0B 0C 0D 0E 0F"));
+        Assertions.assertTrue(dump.contains("10 11 12 13 14 15 16 17  18 19 1A 1B 1C 1D 1E 1F"));
+        // L184: printable ASCII for 0x20-0x7E, '.' for the rest (here all printable)
+        Assertions.assertTrue(dump.contains("| ................ |"));
+    }
+
+    @Test
+    public void testHexDumpPartialLastLine() {
+        // 20 bytes -> first line full (16), second line has 4 real bytes + 12 padding spaces.
+        byte[] data = new byte[20];
+        // first 16 zeros, then 'A'(0x41), 'B'(0x42), LF(0x0A), DEL(0x7F)
+        data[16] = 0x41;
+        data[17] = 0x42;
+        data[18] = 0x0A;
+        data[19] = 0x7F;
+        String dump = Utils.hexDump(data, 0, 20);
+        String[] lines = dump.split("\n");
+        Assertions.assertTrue(lines[1].contains("00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00"));
+        // L181 false branch: second line has only 4 real bytes then blank padding
+        Assertions.assertTrue(lines[2].contains("41 42 0A 7F"));
+        // L184: 'A','B' printable, 0x0A & 0x7F non-printable -> rendered as '.'
+        Assertions.assertTrue(lines[2].contains("AB.."));
+    }
+
+    @Test
+    public void testHexDumpOffset() {
+        // off > 0 must skip the leading bytes (L177 off+i+j)
+        byte[] data = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C};
+        // dump 8 bytes starting at offset 4 -> should show 05..0C, not 01..08
+        String dump = Utils.hexDump(data, 4, 8);
+        Assertions.assertTrue(dump.contains("05 06 07 08 09 0A 0B 0C"));
+        Assertions.assertFalse(dump.contains("01 02 03 04"));
+    }
+
+    @Test
+    public void testHexDumpSingleNonPrintableOnly() {
+        // single byte 0x7F -> L184 '.' branch on a one-byte (padded) line
+        String dump = Utils.hexDump(new byte[]{(byte) 0x7F}, 0, 1);
+        String[] lines = dump.split("\n");
+        Assertions.assertTrue(lines[1].contains("7F"));
+        Assertions.assertTrue(lines[1].contains("| .                |"));
+    }
 }

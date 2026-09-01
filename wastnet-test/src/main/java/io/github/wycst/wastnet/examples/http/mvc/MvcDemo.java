@@ -75,14 +75,14 @@ public class MvcDemo {
         int port = 8080;
         
         NioConfig nioConfig = new NioConfig();
-        // nioConfig.testMode();
+        nioConfig.testMode();
         
         HTTPServer server = HTTPServer.of(port, nioConfig)
         .requestHandler(annotationRouterHandler)
         .startupBannerEnabled(false); //（关闭默认 banner，改为打印可用入口）
         
         // 启用 SSL，访问应使用 https / wss
-        boolean ssl = true;
+        boolean ssl = System.getProperty("mvc.demo.ssl", "true").equals("true");
         if(ssl) {
             server.pemSSL("cert/cert.pem", "cert/server.pem")
                   .h2();

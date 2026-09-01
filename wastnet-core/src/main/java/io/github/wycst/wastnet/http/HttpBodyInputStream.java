@@ -15,7 +15,7 @@
  */
 package io.github.wycst.wastnet.http;
 
-import io.github.wycst.wastnet.socket.conf.SocketConf;
+import io.github.wycst.wastnet.socket.conf.SocketOptions;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 
 import java.io.IOException;
@@ -34,6 +34,7 @@ public class HttpBodyInputStream extends InputStream {
     protected final ChannelContext ctx;
     protected final long bodyLength;
     protected final byte[] readedBytes;
+    protected final long readTimeoutMs;
 
     protected long readedLength;
     protected long pos;
@@ -58,26 +59,16 @@ public class HttpBodyInputStream extends InputStream {
      */
     protected static final long COMPLETE_CUMULATIVE_TIMEOUT_MS = 30000;
 
-    /**
-     * Buffer size for direct buffer discard (8KB).
-     */
-    protected static final int DIRECT_BUFFER_SIZE = 8 * 1024;
-
-    /**
-     * Threshold for using direct buffer (512KB).
-     * Direct buffer allocation is expensive, only worthwhile for larger data.
-     */
-    private static final int DIRECT_BUFFER_THRESHOLD = 512 * 1024;
-
     public HttpBodyInputStream(long bodyLength, byte[] readedBytes, ChannelContext ctx) {
         this.bodyLength = bodyLength;
         this.readedBytes = readedBytes;
         this.readedLength = readedBytes.length;
         this.ctx = ctx;
+        this.readTimeoutMs = ctx.option(SocketOptions.READ_TIMEOUT_MS);
     }
 
     protected final int next() throws IOException {
-        return next(SocketConf.READ_TIMEOUT_MS);
+        return next(readTimeoutMs);
     }
 
     protected final int next(long timeoutMs) throws IOException {
@@ -92,7 +83,8 @@ public class HttpBodyInputStream extends InputStream {
     /**
      * <p>Read a single byte from the stream.</p>
      * <p><b>Blocking operation</b>: This method blocks until data is available or timeout occurs.
-     * Timeout is controlled by {@link SocketConf#READ_TIMEOUT_MS}.</p>
+     * Timeout is controlled by the connection-level read timeout (see {@link SocketOptions#READ_TIMEOUT_MS}),
+     * resolved via {@code ctx.option(...)} and stored as {@link #readTimeoutMs}.</p>
      * <p>Performance warning: This method is inefficient as it creates a new byte array for each call.
      * Not recommended for bulk reading operations.</p>
      * <p>Recommended: Use {@link #read(byte[], int, int)} for better performance when reading multiple bytes.</p>
@@ -102,13 +94,14 @@ public class HttpBodyInputStream extends InputStream {
      */
     @Override
     public int read() throws IOException {
-        return next(SocketConf.READ_TIMEOUT_MS);
+        return next(readTimeoutMs);
     }
 
     /**
      * <p>Read bytes from the stream with custom timeout.</p>
      * <p><b>Blocking operation</b>: This method blocks until the specified length is read or timeout occurs.</p>
-     * <p>Use this method when you need a timeout different from {@link SocketConf#READ_TIMEOUT_MS}.</p>
+     * <p>Use this method when you need a timeout different from the connection-level read timeout
+     * (see {@link SocketOptions#READ_TIMEOUT_MS}).</p>
      *
      * @param buf       the buffer into which the data is read
      * @param off       the start offset in array {@code buf}
@@ -152,7 +145,8 @@ public class HttpBodyInputStream extends InputStream {
     /**
      * <p>Read bytes from the stream.</p>
      * <p><b>Blocking operation</b>: This method blocks until data is available or timeout occurs.
-     * Timeout is controlled by {@link SocketConf#READ_TIMEOUT_MS}.</p>
+     * Timeout is controlled by the connection-level read timeout (see {@link SocketOptions#READ_TIMEOUT_MS}),
+     * resolved via {@code ctx.option(...)} and stored as {@link #readTimeoutMs}.</p>
      *
      * @param buf the buffer into which the data is read
      * @param off the start offset in array {@code buf} at which the data is written
@@ -162,7 +156,7 @@ public class HttpBodyInputStream extends InputStream {
      */
     @Override
     public int read(byte[] buf, int off, int len) throws IOException {
-        return readFully(buf, off, len, SocketConf.READ_TIMEOUT_MS);
+        return readFully(buf, off, len, readTimeoutMs);
     }
 
     /**
@@ -236,47 +230,6 @@ public class HttpBodyInputStream extends InputStream {
                 return;
             }
 
-            /*// Use direct buffer for efficient discard (non-SSL only, large data only)
-            if (!ctx.isSSL() && remaining > DIRECT_BUFFER_THRESHOLD) {
-                java.nio.ByteBuffer directBuffer = java.nio.ByteBuffer.allocateDirect(DIRECT_BUFFER_SIZE);
-                long lastReadTime = System.currentTimeMillis();
-                final long ZERO_READ_TIMEOUT_MS = 2000;  // 2 seconds grace period for zero reads
-                try {
-                    while (remaining > 0) {
-                        if (System.currentTimeMillis() - startTime > COMPLETE_CUMULATIVE_TIMEOUT_MS) {
-                            completeAndClose();
-                            return;
-                        }
-                        directBuffer.clear().limit((int) Math.min(remaining, DIRECT_BUFFER_SIZE));
-
-                        // Read from socket, data will be discarded
-                        int read = ctx.channel().read(directBuffer);
-                        if (read < 0) {
-                            // Connection closed by client
-                            completeAndClose();
-                            return;
-                        }
-                        if (read == 0) {
-                            // Check if zero read timeout exceeded
-                            if (System.currentTimeMillis() - lastReadTime > ZERO_READ_TIMEOUT_MS) {
-                                completeAndClose();
-                                return;
-                            }
-                            continue;
-                        }
-                        lastReadTime = System.currentTimeMillis();
-
-                        remaining -= read;
-                        readedLength += read;
-                    }
-                    markCompleted();
-                    return;
-                } catch (IOException e) {
-                    // Direct buffer method failed, try fallback
-                }
-            }*/
-
-            // Fallback: buffer-based blocking discard (works for SSL)
             do {
                 readChannel(DISCARD_BUF, 0, DISCARD_BUF.length, DISCARD_TIMEOUT_MS);
                 // Check cumulative timeout to prevent DoS attacks

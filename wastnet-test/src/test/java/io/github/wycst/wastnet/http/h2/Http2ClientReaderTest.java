@@ -1,8 +1,9 @@
 package io.github.wycst.wastnet.http.h2;
 
 import io.github.wycst.wastnet.http.HttpDecodedResponse;
-import io.github.wycst.wastnet.socket.handler.ChannelHandler;
+import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
+import io.github.wycst.wastnet.socket.tcp.NioConfig;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -57,6 +58,21 @@ public class Http2ClientReaderTest {
     void testInitSendsPreface() throws Exception {
         Http2ClientReader reader = new Http2ClientReader();
         reader.init(noopCtx());
+    }
+
+    /** True branch (L101): configured initialReceiveWindowSize differs from default -> init builds custom client SETTINGS.
+     *  Isolation is achieved via a per-instance NioConfig (no global change). */
+    @Test
+    void testInitCustomWindowTriggersBuildInitClientSettings() throws Exception {
+        ChannelContext ctx = noopCtx();
+        // per-instance NioConfig isolation (no global change); attachNioConfig is public
+        NioConfig nioConfig = new NioConfig();
+        nioConfig.option(HttpOptions.HTTP2_INITIAL_SEND_WINDOW_SIZE, 123456); // non-default
+        ctx.attachNioConfig(nioConfig);
+
+        Http2ClientReader reader = new Http2ClientReader(ctx);
+        reader.init(ctx);
+        // init reaches the true branch (custom SETTINGS built) and flushes preface + settings without error
     }
 
     @Test

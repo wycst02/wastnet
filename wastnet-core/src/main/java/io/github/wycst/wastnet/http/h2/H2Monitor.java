@@ -43,7 +43,7 @@ public final class H2Monitor {
     private static final boolean ENABLED = Boolean.getBoolean("wastnet.h2.monitor");
 
     /** All live H2 connections, keyed by connection ID. */
-    private static final ConcurrentHashMap<Long, Http2MessageReader> LIVE = new ConcurrentHashMap<Long, Http2MessageReader>();
+    private static final ConcurrentHashMap<Long, Http2MessageReader> LIVE = new ConcurrentHashMap<>();
 
     /** Process-level cumulative counters, kept across connection lifecycles. */
     private static final AtomicLong TOTAL_OPEN_STREAMS = new AtomicLong();
@@ -105,28 +105,28 @@ public final class H2Monitor {
      * Return a structured snapshot of all live connections.
      */
     public static Map<String, Object> global() {
-        Map<String, Object> m = new LinkedHashMap<String, Object>();
+        Map<String, Object> m = new LinkedHashMap<>();
         if (!ENABLED) { m.put("enabled", false); return m; }
-        List<Map<String, Object>> conns = new ArrayList<Map<String, Object>>(LIVE.size());
+        List<Map<String, Object>> conns = new ArrayList<>(LIVE.size());
         long activeStreams = 0;
         for (Map.Entry<Long, Http2MessageReader> e : LIVE.entrySet()) {
             Http2MessageReader r = e.getValue();
-            Map<String, Object> cm = new LinkedHashMap<String, Object>();
+            Map<String, Object> cm = new LinkedHashMap<>();
             cm.put("connectionId", e.getKey());
             cm.put("streamCount", r.streamMap.size());
             cm.put("maxStreamId", r.currentMaxStreamId);
             cm.put("sendWindow", r.connectSendWindow);
             cm.put("recvWindow", r.connectRecvWindow.get());
-            cm.put("recvWindowInit", Http2MessageReader.CONNECT_RECEIVE_WINDOW_SIZE);
+            cm.put("recvWindowInit", r.initConnectReceiveWindowSize);
             // diagnostic state (monitoring only)
             r.fillDiagnostic(cm);
 
-            List<Map<String, Object>> streams = new ArrayList<Map<String, Object>>(r.streamMap.size());
+            List<Map<String, Object>> streams = new ArrayList<>(r.streamMap.size());
             for (Http2Stream s : r.streamMap.values()) {
-                Map<String, Object> sm = new LinkedHashMap<String, Object>();
+                Map<String, Object> sm = new LinkedHashMap<>();
                 sm.put("streamId", s.streamId);
                 sm.put("sendWindowInit", r.streamInitSendWindowSize);
-                sm.put("recvWindowInit", Http2MessageReader.INITIAL_RECEIVE_WINDOW_SIZE);
+                sm.put("recvWindowInit", r.initialReceiveWindowSize);
                 // diagnostic state (monitoring only)
                 s.fillDiagnostic(sm);
                 streams.add(sm);

@@ -1,13 +1,14 @@
 package io.github.wycst.wastnet.http;
 
+import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
+import io.github.wycst.wastnet.socket.tcp.NioConfig;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.lang.reflect.Field;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -86,6 +87,75 @@ public class HttpInternalResponseTest {
         Assertions.assertEquals("GBK", resp.getCharacterEncoding());
     }
 
+    @Test
+    public void testSetContentTypeExtractsCharset() {
+        TestResponse resp = createResponse();
+        resp.setContentType("application/json; charset=gbk");
+        Assertions.assertEquals("application/json; charset=gbk", resp.getContentType());
+        // charset parameter is synced to the character encoding
+        Assertions.assertEquals("gbk", resp.getCharacterEncoding());
+    }
+
+    @Test
+    public void testApplyCharsetFromContentTypeNoCharset() {
+        TestResponse resp = createResponse();
+        resp.applyCharsetFromContentType("text/plain");
+        // no charset in the value -> encoding untouched
+        Assertions.assertNotEquals("utf-8", resp.getCharacterEncoding());
+    }
+
+    @Test
+    public void testApplyCharsetFromContentTypeWithSemicolonTrailing() {
+        TestResponse resp = createResponse();
+        resp.applyCharsetFromContentType("text/html;charset=UTF-8;");
+        Assertions.assertEquals("UTF-8", resp.getCharacterEncoding());
+    }
+
+    @Test
+    public void testGetBufferSizeDelegatesToContext() {
+        TestResponse resp = createResponse();
+        // getBufferSize() returns ctx.getWriteBufferSize()
+        Assertions.assertEquals(resp.ctx.getWriteBufferSize(), resp.getBufferSize());
+    }
+
+    @Test
+    public void testResetBufferClearsBodyBeforeCommit() {
+        TestResponse resp = createResponse();
+        resp.body("hello");
+        Assertions.assertEquals(5, resp.bodyBuf.size());
+        resp.resetBuffer();
+        Assertions.assertEquals(0, resp.bodyBuf.size());
+    }
+
+    @Test
+    public void testResetBufferThrowsAfterCommit() {
+        TestResponse resp = createResponse();
+        resp.headersSent = true;
+        Assertions.assertThrows(IllegalStateException.class, resp::resetBuffer);
+    }
+
+    @Test
+    public void testAddHeaderRejectsCRLFInKey() {
+        TestResponse resp = createResponse();
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> resp.addHeader("X-Evil\r\nInjected", "v"));
+    }
+
+    @Test
+    public void testAddHeaderRejectsCRLFInValue() {
+        TestResponse resp = createResponse();
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> resp.addHeader("X-Evil", "bad\r\nvalue"));
+    }
+
+    @Test
+    public void testAddHeaderAcceptsNumberAndBoolean() {
+        TestResponse resp = createResponse();
+        // Number / Boolean values are inherently CR/LF-free and must be accepted
+        resp.addHeader("X-Num", 123);
+        resp.addHeader("X-Bool", true);
+    }
+
     // ==================== GZIP compress (protected final, same-package can call) ====================
 
     @Test
@@ -114,14 +184,6 @@ public class HttpInternalResponseTest {
     public void testGzipCompressEmptyData() throws Exception {
         TestResponse resp = createResponse();
         byte[] result = resp.callGzipCompress(new byte[0]);
-        Assertions.assertNotNull(result);
-        Assertions.assertEquals(0, result.length);
-    }
-
-    @Test
-    public void testGzipCompressNullData() throws Exception {
-        TestResponse resp = createResponse();
-        byte[] result = resp.callGzipCompress(null, 0, 0);
         Assertions.assertNotNull(result);
         Assertions.assertEquals(0, result.length);
     }
@@ -179,7 +241,7 @@ public class HttpInternalResponseTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
         when(mockReq.getHeader(anyString(), anyBoolean())).thenReturn(null);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         Assertions.assertTrue(resp.isKeepAlive());
     }
 
@@ -188,7 +250,7 @@ public class HttpInternalResponseTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_0);
         when(mockReq.getHeader(anyString(), anyBoolean())).thenReturn(null);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         Assertions.assertFalse(resp.isKeepAlive());
     }
 
@@ -196,7 +258,7 @@ public class HttpInternalResponseTest {
     public void testIsKeepAliveH2() {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_2);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         Assertions.assertTrue(resp.isKeepAlive());
     }
 
@@ -205,7 +267,7 @@ public class HttpInternalResponseTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
         when(mockReq.getHeader(HttpHeaderNormalized.getConnection(), true)).thenReturn("close");
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         Assertions.assertFalse(resp.isKeepAlive());
     }
 
@@ -215,7 +277,7 @@ public class HttpInternalResponseTest {
     public void testIsGzipSupported() {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHeader(eq("accept-encoding"), anyBoolean())).thenReturn("gzip, deflate");
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         Assertions.assertTrue(resp.isGzipSupported());
     }
 
@@ -223,7 +285,7 @@ public class HttpInternalResponseTest {
     public void testIsGzipNotSupported() {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHeader(eq("accept-encoding"), anyBoolean())).thenReturn("deflate");
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         Assertions.assertFalse(resp.isGzipSupported());
     }
 
@@ -264,7 +326,7 @@ public class HttpInternalResponseTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
         final boolean[] notFoundCalled = {false};
-        TestResponse resp = new TestResponse(mockReq, null) {
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT) {
             @Override
             protected void notFound() {
                 notFoundCalled[0] = true;
@@ -280,7 +342,7 @@ public class HttpInternalResponseTest {
     public void testCheckNotModifiedNoMatchHeader() throws Exception {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHeader(anyString(), anyBoolean())).thenReturn(null);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         boolean result = resp.callCheckNotModified(100L, 12345L);
         Assertions.assertFalse(result, "Should return false without If-None-Match or If-Modified-Since");
     }
@@ -358,7 +420,7 @@ public class HttpInternalResponseTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHeader(eq("accept-encoding"), anyBoolean())).thenReturn("gzip");
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         resp.body("data that is long enough for gzip to apply but gzip is config-disabled");
         // Should be false because HttpConf.GZIP is false by default
         Assertions.assertFalse(resp.callShouldApplyAutoGzip());
@@ -369,7 +431,7 @@ public class HttpInternalResponseTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHeader(eq("accept-encoding"), anyBoolean())).thenReturn("gzip");
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         Assertions.assertFalse(resp.callShouldApplyAutoGzip());
     }
 
@@ -423,7 +485,7 @@ public class HttpInternalResponseTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
         when(mockReq.getHeader(HttpHeaderNormalized.getConnection(), true)).thenReturn("keep-alive");
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         Assertions.assertTrue(resp.isKeepAlive());
     }
 
@@ -480,7 +542,7 @@ public class HttpInternalResponseTest {
     public void testIsGzipNotSupportedWhenNoAcceptEncoding() {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHeader(HttpHeaderNormalized.getAcceptEncoding(), true)).thenReturn(null);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         Assertions.assertFalse(resp.isGzipSupported());
     }
 
@@ -501,7 +563,7 @@ public class HttpInternalResponseTest {
     public void testCompleteWithAutoGzipTrue() throws Exception {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         resp.body("content");
         resp.autoGzipResult = true;
         Assertions.assertDoesNotThrow(() -> resp.complete());
@@ -550,16 +612,6 @@ public class HttpInternalResponseTest {
         Assertions.assertNotNull(emitter);
     }
 
-    // ==================== gzipCompress null data ====================
-
-    @Test
-    public void testGzipCompressNullDataDirect() throws Exception {
-        TestResponse resp = createResponse();
-        byte[] result = resp.callGzipCompress((byte[]) null);
-        Assertions.assertNotNull(result);
-        Assertions.assertEquals(0, result.length);
-    }
-
     // ==================== shouldApplyAutoGzip additional ====================
 
     @Test
@@ -567,7 +619,7 @@ public class HttpInternalResponseTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHeader(HttpHeaderNormalized.getAcceptEncoding(), true)).thenReturn("gzip");
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         resp.body("data that is long enough for gzip to apply");
         resp.headersSent = true;
         Assertions.assertFalse(resp.callShouldApplyAutoGzip());
@@ -582,7 +634,7 @@ public class HttpInternalResponseTest {
         when(mockReq.getHeader(HttpHeaderNormalized.getIfNoneMatch(), true))
             .thenReturn("\"abc-64\"");
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         boolean result = resp.callCheckNotModified(100L, 2748L);
         Assertions.assertTrue(result, "Should return true when If-None-Match matches");
     }
@@ -593,7 +645,7 @@ public class HttpInternalResponseTest {
         when(mockReq.getHeader(HttpHeaderNormalized.getIfNoneMatch(), true))
             .thenReturn("\"not-match\"");
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         boolean result = resp.callCheckNotModified(100L, 2748L);
         Assertions.assertFalse(result, "Should return false when If-None-Match does not match");
     }
@@ -606,7 +658,7 @@ public class HttpInternalResponseTest {
         when(mockReq.getHeader(HttpHeaderNormalized.getIfModifiedSince(), true))
             .thenReturn(dateHeader);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         boolean result = resp.callCheckNotModified(100L, lastModified);
         Assertions.assertTrue(result, "Should return true when If-Modified-Since matches");
     }
@@ -690,7 +742,7 @@ public class HttpInternalResponseTest {
         final String[] capturedCC = {null};
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null) {
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT) {
             @Override
             protected void doAddHeader(String key, String value) {
                 if (HttpHeaderNames.CACHE_CONTROL.equals(key)) {
@@ -714,7 +766,7 @@ public class HttpInternalResponseTest {
         final boolean[] ccSet = {false};
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null) {
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT) {
             @Override
             protected void doAddHeader(String key, String value) {
                 if (HttpHeaderNames.CACHE_CONTROL.equals(key)) {
@@ -738,7 +790,7 @@ public class HttpInternalResponseTest {
         final String[] capturedCC = {null};
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null) {
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT) {
             @Override
             protected void doAddHeader(String key, String value) {
                 if (HttpHeaderNames.CACHE_CONTROL.equals(key)) {
@@ -813,7 +865,7 @@ public class HttpInternalResponseTest {
         when(mockReq.getHeader(HttpHeaderNormalized.getIfNoneMatch(), true))
             .thenReturn("*abc-64\"");
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         boolean result = resp.callCheckNotModified(100L, 2748L);
         Assertions.assertFalse(result, "Should return false when first char is not quote");
     }
@@ -826,7 +878,7 @@ public class HttpInternalResponseTest {
         when(mockReq.getHeader(HttpHeaderNormalized.getIfNoneMatch(), true))
             .thenReturn("\"abc-64*");
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         boolean result = resp.callCheckNotModified(100L, 2748L);
         Assertions.assertFalse(result, "Should return false when last char is not quote");
     }
@@ -839,7 +891,7 @@ public class HttpInternalResponseTest {
         when(mockReq.getHeader(HttpHeaderNormalized.getIfNoneMatch(), true))
             .thenReturn("\"abc:64\"");
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         boolean result = resp.callCheckNotModified(100L, 2748L);
         Assertions.assertFalse(result, "Should return false when separator is not dash");
     }
@@ -852,7 +904,7 @@ public class HttpInternalResponseTest {
         when(mockReq.getHeader(HttpHeaderNormalized.getIfNoneMatch(), true))
             .thenReturn("\"abd-64\"");
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         boolean result = resp.callCheckNotModified(100L, 2748L);
         Assertions.assertFalse(result, "Should return false when hexLastModified does not match");
     }
@@ -865,7 +917,7 @@ public class HttpInternalResponseTest {
         when(mockReq.getHeader(HttpHeaderNormalized.getIfNoneMatch(), true))
             .thenReturn("\"abc-65\"");
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         boolean result = resp.callCheckNotModified(100L, 2748L);
         Assertions.assertFalse(result, "Should return false when hexFileSize does not match");
     }
@@ -878,19 +930,9 @@ public class HttpInternalResponseTest {
         when(mockReq.getHeader(HttpHeaderNormalized.getIfModifiedSince(), true))
             .thenReturn("Thu, 01 Jan 1970 00:00:00 GMT");
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         boolean result = resp.callCheckNotModified(100L, 2748L);
         Assertions.assertFalse(result, "Should return false when If-Modified-Since does not match");
-    }
-
-    // ==================== gzipCompress: null data with non-zero len (ternary false branch) ====================
-
-    @Test
-    public void testGzipCompressNullWithNonZeroLen() throws Exception {
-        TestResponse resp = createResponse();
-        // gzipCompress(null, 5, 10): data==null=true, enter if, len==0=false → return data (null)
-        byte[] result = resp.callGzipCompress(null, 5, 10);
-        Assertions.assertNull(result);
     }
 
     // ==================== sendFile: !file.canRead() ====================
@@ -927,7 +969,7 @@ public class HttpInternalResponseTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHeader(HttpHeaderNormalized.getAcceptEncoding(), true)).thenReturn("deflate");
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < 512; ++i) sb.append("ABCD");
         resp.body(sb.toString());
@@ -939,7 +981,7 @@ public class HttpInternalResponseTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHeader(HttpHeaderNormalized.getAcceptEncoding(), true)).thenReturn("gzip");
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         resp.body("body");
         resp.headersSent = true;
         Assertions.assertFalse(resp.callShouldApplyAutoGzip());
@@ -950,7 +992,7 @@ public class HttpInternalResponseTest {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHeader(HttpHeaderNormalized.getAcceptEncoding(), true)).thenReturn("gzip");
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        TestResponse resp = new TestResponse(mockReq, null);
+        TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         resp.body("tiny");
         Assertions.assertFalse(resp.callShouldApplyAutoGzip());
     }
@@ -1026,111 +1068,99 @@ public class HttpInternalResponseTest {
 
     @Test
     public void testHttp1SendFileCompressSmallFile() throws Exception {
-        Field gzipField = HttpConf.class.getDeclaredField("GZIP");
-        Field minSizeField = HttpConf.class.getDeclaredField("GZIP_MIN_SIZE");
-        gzipField.setAccessible(true);
-        minSizeField.setAccessible(true);
-        boolean origGzip = setFinalStaticBoolean(gzipField, true);
-        int origMinSize = setFinalStaticInt(minSizeField, 1);
+        NioConfig cfg = new NioConfig();
+        cfg.option(HttpOptions.GZIP, true);
+        cfg.option(HttpOptions.GZIP_MIN_SIZE, 1);
+        ChannelContext ctx = mockChannelContext(cfg);
+
+        HttpRequest mockReq = mock(HttpRequest.class);
+        when(mockReq.getHeader(HttpHeaderNormalized.getAcceptEncoding(), true)).thenReturn("gzip");
+        when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
+
+        HttpDefaultResponse resp = new HttpDefaultResponse(mockReq, ctx);
+
+        File tempFile = File.createTempFile("test-", ".html");
         try {
-            HttpRequest mockReq = mock(HttpRequest.class);
-            when(mockReq.getHeader(HttpHeaderNormalized.getAcceptEncoding(), true)).thenReturn("gzip");
-            when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-            ChannelContext mockCtx = mock(ChannelContext.class);
-            when(mockCtx.getWriteBufferSize()).thenReturn(8192);
-            when(mockCtx.isSSL()).thenReturn(false);
-
-            HttpDefaultResponse resp = new HttpDefaultResponse(mockReq, mockCtx);
-
-            File tempFile = File.createTempFile("test-", ".html");
-            try {
-                byte[] content = "Hello World, compressible data! ".getBytes();
-                java.nio.file.Files.write(tempFile.toPath(), content);
-                resp.sendFile(tempFile, true, -1);
-                // Small file compressed and sent via bodyBuf + commit → headers should have been sent
-                Assertions.assertNotNull(resp.getContentType());
-            } finally {
-                tempFile.delete();
-            }
+            byte[] content = "Hello World, compressible data! ".getBytes();
+            java.nio.file.Files.write(tempFile.toPath(), content);
+            resp.sendFile(tempFile, true, -1);
+            // Small file compressed and sent via bodyBuf + commit → headers should have been sent
+            Assertions.assertNotNull(resp.getContentType());
         } finally {
-            setFinalStaticBoolean(gzipField, origGzip);
-            setFinalStaticInt(minSizeField, origMinSize);
+            tempFile.delete();
         }
     }
 
     @Test
     public void testHttp1SendFileCompressLargeFile() throws Exception {
-        Field gzipField = HttpConf.class.getDeclaredField("GZIP");
-        Field minSizeField = HttpConf.class.getDeclaredField("GZIP_MIN_SIZE");
-        Field thresholdField = HttpConf.class.getDeclaredField("BODY_MEMORY_THRESHOLD");
-        gzipField.setAccessible(true);
-        minSizeField.setAccessible(true);
-        thresholdField.setAccessible(true);
-        boolean origGzip = setFinalStaticBoolean(gzipField, true);
-        int origMinSize = setFinalStaticInt(minSizeField, 1);
-        int origThreshold = setFinalStaticInt(thresholdField, 16);
+        NioConfig cfg = new NioConfig();
+        cfg.option(HttpOptions.GZIP, true);
+        cfg.option(HttpOptions.GZIP_MIN_SIZE, 1);
+        cfg.option(HttpOptions.BODY_MEMORY_THRESHOLD, 16);
+        ChannelContext ctx = mockChannelContext(cfg);
+
+        HttpRequest mockReq = mock(HttpRequest.class);
+        when(mockReq.getHeader(HttpHeaderNormalized.getAcceptEncoding(), true)).thenReturn("gzip");
+        when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
+
+        HttpDefaultResponse resp = new HttpDefaultResponse(mockReq, ctx);
+
+        File tempFile = File.createTempFile("test-", ".html");
         try {
-            HttpRequest mockReq = mock(HttpRequest.class);
-            when(mockReq.getHeader(HttpHeaderNormalized.getAcceptEncoding(), true)).thenReturn("gzip");
-            when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-            ChannelContext mockCtx = mock(ChannelContext.class);
-            when(mockCtx.getWriteBufferSize()).thenReturn(8192);
-            when(mockCtx.isSSL()).thenReturn(false);
-
-            HttpDefaultResponse resp = new HttpDefaultResponse(mockReq, mockCtx);
-
-            File tempFile = File.createTempFile("test-", ".html");
-            try {
-                byte[] content = "This is a larger file for streaming GZIP compression in Http1 response!".getBytes();
-                java.nio.file.Files.write(tempFile.toPath(), content);
-                resp.sendFile(tempFile, true, -1);
-                Assertions.assertNotNull(resp.getContentType());
-            } finally {
-                tempFile.delete();
-            }
+            byte[] content = "This is a larger file for streaming GZIP compression in Http1 response!".getBytes();
+            java.nio.file.Files.write(tempFile.toPath(), content);
+            resp.sendFile(tempFile, true, -1);
+            Assertions.assertNotNull(resp.getContentType());
         } finally {
-            setFinalStaticBoolean(gzipField, origGzip);
-            setFinalStaticInt(minSizeField, origMinSize);
-            setFinalStaticInt(thresholdField, origThreshold);
+            tempFile.delete();
         }
-    }
-
-    // ==================== Unsafe helpers for modifying HttpConf static finals ====================
-
-    private static final Object UNSAFE;
-
-    static {
-        try {
-            Field f = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe");
-            f.setAccessible(true);
-            UNSAFE = f.get(null);
-        } catch (Exception e) {
-            throw new RuntimeException("Cannot get Unsafe instance", e);
-        }
-    }
-
-    private static int setFinalStaticInt(Field field, int value) throws Exception {
-        long offset = (long) UNSAFE.getClass().getMethod("staticFieldOffset", Field.class).invoke(UNSAFE, field);
-        Object base = UNSAFE.getClass().getMethod("staticFieldBase", Field.class).invoke(UNSAFE, field);
-        int original = (int) UNSAFE.getClass().getMethod("getInt", Object.class, long.class).invoke(UNSAFE, base, offset);
-        UNSAFE.getClass().getMethod("putInt", Object.class, long.class, int.class).invoke(UNSAFE, base, offset, value);
-        return original;
-    }
-
-    private static boolean setFinalStaticBoolean(Field field, boolean value) throws Exception {
-        long offset = (long) UNSAFE.getClass().getMethod("staticFieldOffset", Field.class).invoke(UNSAFE, field);
-        Object base = UNSAFE.getClass().getMethod("staticFieldBase", Field.class).invoke(UNSAFE, field);
-        boolean original = (boolean) UNSAFE.getClass().getMethod("getBoolean", Object.class, long.class).invoke(UNSAFE, base, offset);
-        UNSAFE.getClass().getMethod("putBoolean", Object.class, long.class, boolean.class).invoke(UNSAFE, base, offset, value);
-        return original;
     }
 
     // ==================== Helpers ====================
 
+    /**
+     * Build a real {@link ChannelContext} (spy) bound to a {@link NioConfig} that mirrors the
+     * live HttpConf defaults and applies the given overrides, so config-branch coverage does
+     * not require reflective/Unsafe mutation of HttpConf static fields.
+     */
+    private static ChannelContext mockChannelContext(NioConfig overrides) {
+        ChannelContext ctx;
+        try {
+            java.lang.reflect.Constructor<ChannelContext> ctor =
+                    ChannelContext.class.getDeclaredConstructor(long.class, java.nio.channels.SocketChannel.class, int.class);
+            ctor.setAccessible(true);
+            // Mock channel + a non-zero bufferSize so sendFile takes the buffered (in-memory) path
+            // instead of zero-copy transferTo; the mock channel's write() consumes all bytes so the
+            // real ChannelContext#write loop cannot deadlock on a 0-byte return.
+            java.nio.channels.SocketChannel mockChannel = mock(java.nio.channels.SocketChannel.class);
+            when(mockChannel.write(any(java.nio.ByteBuffer.class))).thenAnswer(inv -> {
+                java.nio.ByteBuffer b = inv.getArgument(0);
+                int n = b.remaining();
+                b.position(b.limit());
+                return n;
+            });
+            ctx = ctor.newInstance(0L, mockChannel, 8192);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        // Per-test overrides are applied on top of each option's default value (option.value,
+        // which mirrors the live HttpConf). Unset keys fall back to the default automatically.
+        NioConfig nioConfig = new NioConfig();
+        if (overrides != null) {
+            nioConfig.option(HttpOptions.EXPOSE_SERVER_HEADER, overrides.option(HttpOptions.EXPOSE_SERVER_HEADER));
+            nioConfig.option(HttpOptions.WRITE_DEFAULT_HEADERS, overrides.option(HttpOptions.WRITE_DEFAULT_HEADERS));
+            nioConfig.option(HttpOptions.GZIP, overrides.option(HttpOptions.GZIP));
+            nioConfig.option(HttpOptions.GZIP_MIN_SIZE, overrides.option(HttpOptions.GZIP_MIN_SIZE));
+            nioConfig.option(HttpOptions.BODY_MEMORY_THRESHOLD, overrides.option(HttpOptions.BODY_MEMORY_THRESHOLD));
+        }
+        ctx.attachNioConfig(nioConfig);
+        return ctx;
+    }
+
     private TestResponse createResponse() {
         HttpRequest mockReq = mock(HttpRequest.class);
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
-        return new TestResponse(mockReq, null);
+        return new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
     }
 
 

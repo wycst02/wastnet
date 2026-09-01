@@ -15,9 +15,9 @@ import io.github.wycst.wastnet.util.Utils;
 public class HttpWelcomeHandler implements HttpRequestHandler {
 
     // Static HTML template
-    private static final String HTML_TEMPLATE = buildTemplate(HTTPServer.VERSION);
+    private static final String HTML_TEMPLATE = buildTemplate();
 
-    private static String buildTemplate(String version) {
+    private static String buildTemplate() {
         return "<!DOCTYPE html>\n" +
                 "<html lang=\"zh-CN\">\n" +
                 "<head>\n" +
@@ -39,7 +39,7 @@ public class HttpWelcomeHandler implements HttpRequestHandler {
                 "<body>\n" +
                 "<div class=\"c\">\n" +
                 "  <div class=\"card\">\n" +
-                "    <h1>wastnet <span style=\"font-size:14px;color:#999;font-weight:400;\">v" + version + "</span></h1>\n" +
+                "    <h1>wastnet <span style=\"font-size:14px;color:#999;font-weight:400;\">v" + HTTPServer.VERSION + "</span></h1>\n" +
                 "    <p style=\"margin-top:8px;\">\n" +
                 "      <span class=\"tag\">HTTP/1.1</span>\n" +
                 "      <span class=\"tag\">HTTP/2</span>\n" +

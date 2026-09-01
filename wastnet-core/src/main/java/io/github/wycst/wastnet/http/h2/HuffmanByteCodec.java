@@ -14,10 +14,6 @@
  * limitations under the License.
  */
 package io.github.wycst.wastnet.http.h2;
-
-import io.github.wycst.wastnet.log.Log;
-import io.github.wycst.wastnet.log.LogFactory;
-
 import java.util.Arrays;
 
 /**
@@ -26,8 +22,6 @@ import java.util.Arrays;
  * @author wangyc
  */
 public final class HuffmanByteCodec {
-
-    static final Log log = LogFactory.getLog(HuffmanByteCodec.class);
 
     // Masks for the number of bits
     private final static int[] MASKS = {0, 0x1, 0x3, 0x7, 0xF, 0x1F, 0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF, 0x7FF, 0xFFF, 0x1FFF, 0x3FFF, 0x7FFF, 0xFFFF};
@@ -159,7 +153,6 @@ public final class HuffmanByteCodec {
         int begin = outOff, hufLen = computeHuffmanLength(buf, offset, len);
         outOff += Http2HpackCodec.encodeLength(hufLen, output, outOff);
         int written = encodeData(buf, offset, len, output, outOff);
-        // if (written != hufLen) throw new IllegalStateException("internal error (coding bug): huffmanLength()=" + hufLen + " but encodeData() returned " + written);
         return outOff + written - begin;
     }
 
@@ -253,8 +246,8 @@ public final class HuffmanByteCodec {
     private static int decodeFF(int val, int level) {
         int b = val & 0xFF;
         if (level == 0) return b < 0xFE ? FF_LEVEL0[b] /*& 0xFF */: val;
+        int b1 = val >> 8 & 0xFF;// 0xF6 ~ 0xFF
         if (level == 1) { // value is 24bits
-            int b1 = val >> 8 & 0xFF;
             if (b1 == 0xFF) { // 0xFF 21bits ~ 24bits
                 int flag = b >> 3;
                 if (/*flag >= 0 && */flag < FF_21.length) return FF_21[flag] & 0xFF; // 21bits
@@ -269,7 +262,6 @@ public final class HuffmanByteCodec {
                 if ((flag = (b >> 3) - 0x1C) >= 0/*&& flag < FE_21.length*/) return FE_21[flag] & 0xFF; // 21bits
             }
         } else { // value is 32bits
-            int b1 = val >> 8 & 0xFF; // 0xF6 ~ 0xFF
             switch (b1) {
                 case 0xF6: return b < 128 ? 199 : 207; // 25 bits
                 case 0xF7: return b < 128 ? 234 : 235; // 25 bits

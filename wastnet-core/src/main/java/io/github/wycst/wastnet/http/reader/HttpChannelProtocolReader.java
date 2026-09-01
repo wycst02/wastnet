@@ -51,13 +51,13 @@ public final class HttpChannelProtocolReader extends ChannelDecoder<HttpMessage>
     public void init(ChannelContext ctx) throws Exception {
         if (ctx.isChannelClosed()) return;
         if ("h2".equals(ctx.getHandShakedApplicationProtocol())) {
-            reader = new Http2ServerReader();
+            reader = new Http2ServerReader(ctx);
         } else if (!ctx.isSSL() && ctx.hasApplicationProtocol("h2c")) {
             byte[] buf = new byte[24];
             try {
                 readInternal(ctx, buf, 0, 24, 10000L);
                 if (Http2MessageReader.validatePreface(buf)) {
-                    reader = new Http2ServerReader().replyServerSettings(ctx).registerGoawayOnShutdown(ctx);
+                    reader = new Http2ServerReader(ctx).replyServerSettings(ctx).registerGoawayOnShutdown(ctx);
                     H2Monitor.register(ctx.getId(), (Http2MessageReader) reader);
                     // skip init
                     return;

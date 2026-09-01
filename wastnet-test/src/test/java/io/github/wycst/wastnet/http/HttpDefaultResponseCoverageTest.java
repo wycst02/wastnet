@@ -2,6 +2,8 @@ package io.github.wycst.wastnet.http;
 
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Assertions;
+
+import java.io.Serializable;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -51,6 +53,94 @@ public class HttpDefaultResponseCoverageTest {
     public void testToContentLengthWithShortValue() {
         resp.addHeader(HttpHeaderNames.CONTENT_LENGTH, (short) 300);
         Assertions.assertEquals(300, resp.getContentLength());
+    }
+
+    /**
+     * toContentLength: invalid String value -> IllegalArgumentException
+     * Branch L62-65: Long.parseLong throws NumberFormatException
+     */
+    @Test
+    public void testToContentLengthWithInvalidString() {
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> resp.addHeader(HttpHeaderNames.CONTENT_LENGTH, "not-a-number"));
+    }
+
+    /**
+     * toContentLength: negative numeric value -> IllegalArgumentException
+     * Branch L69-70: length < 0
+     */
+    @Test
+    public void testToContentLengthNegativeValue() {
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> resp.addHeader(HttpHeaderNames.CONTENT_LENGTH, -5L));
+    }
+
+    /**
+     * toContentLength with Integer value -> true branch (value instanceof Integer)
+     * Branch L59-60: length = ((Number) value).longValue()
+     */
+    @Test
+    public void testToContentLengthWithInteger() {
+        resp.addHeader(HttpHeaderNames.CONTENT_LENGTH, 200);
+        Assertions.assertEquals(200, resp.getContentLength());
+    }
+
+    /**
+     * toContentLength with Long value -> true branch (value instanceof Long)
+     * Branch L59-60: length = ((Number) value).longValue()
+     */
+    @Test
+    public void testToContentLengthWithLong() {
+        resp.addHeader(HttpHeaderNames.CONTENT_LENGTH, 300L);
+        Assertions.assertEquals(300, resp.getContentLength());
+    }
+
+    /**
+     * toContentLength: chunked encoding enabled -> IllegalStateException
+     * Branch L55-56: chunked -> throw
+     */
+    @Test
+    public void testToContentLengthWhenChunked() {
+        resp.setChunked(true);
+        Assertions.assertThrows(IllegalStateException.class,
+                () -> resp.addHeader(HttpHeaderNames.CONTENT_LENGTH, 100));
+    }
+
+    /**
+     * toContentLength: Integer/Long direct path (no String parsing)
+     * Branch L59-60: value instanceof Integer || Long -> longValue()
+     */
+    @Test
+    public void testToContentLengthWithIntegerAndLong() {
+        resp.addHeader(HttpHeaderNames.CONTENT_LENGTH, 128);
+        Assertions.assertEquals(128, resp.getContentLength());
+        // reset by removing, then add a Long
+        resp.removeHeader(HttpHeaderNames.CONTENT_LENGTH);
+        resp.addHeader(HttpHeaderNames.CONTENT_LENGTH, 1024L);
+        Assertions.assertEquals(1024, resp.getContentLength());
+    }
+
+    /**
+     * toContentLength true branch (L59-60): value instanceof Integer || Long -> ((Number) value).longValue()
+     * <p>
+     * NOTE: addHeader(key, value) converts value to String via String.valueOf() BEFORE
+     * updateContentFlags/toContentLength sees it (see HttpInternalResponse.addHeader), so the
+     * Integer/Long type info is lost on the addHeader path and only the Long.parseLong branch
+     * (else) is exercised. To cover the instanceof Integer/Long branch we must invoke the
+     * private toContentLength(Serializable) directly with a real Integer/Long instance.
+     */
+    @Test
+    public void testToContentLengthDirectIntegerLongCoversInstanceofBranch() throws Exception {
+        java.lang.reflect.Method m = HttpDefaultResponse.class.getDeclaredMethod("toContentLength", Serializable.class);
+        m.setAccessible(true);
+
+        // Integer -> L59 first operand true, L60 executed
+        long fromInt = (long) m.invoke(resp, Integer.valueOf(200));
+        Assertions.assertEquals(200, fromInt);
+
+        // Long -> L59 second operand true, L60 executed
+        long fromLong = (long) m.invoke(resp, Long.valueOf(300));
+        Assertions.assertEquals(300, fromLong);
     }
 
     // ==================== updateContentFlags uncovered branches ====================
@@ -481,6 +571,20 @@ public class HttpDefaultResponseCoverageTest {
         java.lang.reflect.Field thresholdField = HttpConf.class.getDeclaredField("BODY_MEMORY_THRESHOLD");
         thresholdField.setAccessible(true);
         return thresholdField.getInt(null);
+    }
+
+    // ==================== sendFile / notFound ====================
+
+    /**
+     * sendFile null file -> notFound() -> 404 status.
+     * Note: the real data-sending internals (sendFile0 / sendFileBuffered / compressAndSendFile)
+     * rely on final ChannelContext methods (option/write/channel) bound to a live socket, so they
+     * cannot be exercised by a Mockito mock or a stub subclass and require an integration test.
+     */
+    @Test
+    public void testSendFileNullReturnsNotFound() throws Exception {
+        resp.sendFile((java.io.File) null);
+        Assertions.assertEquals(HttpStatus.NOT_FOUND, resp.getStatus());
     }
 
     /**

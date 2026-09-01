@@ -364,7 +364,6 @@ public class SmallClassCoverageTest {
                 .ssl(true)
                 .sslContext(mock(SSLContext.class))
                 .sslContextFactory(mock(SSLContextFactory.class))
-                .config(nc)
                 .bufferSize(1024)
                 .workerNum(1)
                 .printSSLErrorLog(true)
@@ -378,6 +377,7 @@ public class SmallClassCoverageTest {
                 .idleStateHandler(mock(IdleStateHandler.class))
                 .connectionFilter(mock(ConnectionFilter.class))
                 .upgradeHandler(mock(UpgradeHandler.class))
+                .startupBannerEnabled(false)
                 .sslCipherSuites("TLS_AES_128_GCM_SHA256");
         assertNotNull(s);
         s.shutdown();
@@ -387,6 +387,7 @@ public class SmallClassCoverageTest {
     public void testHttpserverUpgradeHandler() {
         HTTPServer s = HTTPServer.of(freePort()).localOnly(true)
                 .requestHandler(mock(HttpRequestHandler.class))
+                .startupBannerEnabled(false)
                 .start();
         assertNotNull(s.upgradeHandler());
         s.shutdown();
@@ -406,6 +407,7 @@ public class SmallClassCoverageTest {
     public void testHttpserverNonLocal() {
         HTTPServer s = HTTPServer.of(freePort())
                 .requestHandler(mock(HttpRequestHandler.class))
+                .startupBannerEnabled(false)
                 .start();
         s.shutdown();
     }

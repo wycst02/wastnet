@@ -13,7 +13,6 @@ import java.nio.ByteBuffer;
 import java.nio.channels.ClosedSelectorException;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
-import java.util.Arrays;
 
 /**
  * Per-connection runner that handles read, decode and dispatch for a single SocketChannel.
@@ -23,8 +22,8 @@ class ChannelRunner extends Thread {
     protected final ChannelWorker worker;
     protected final ChannelContext ctx;
     protected final NioConfig nioConfig;
-    protected final ChannelReader channelReader;
-    protected final ChannelHandler channelHandler;
+    protected final ChannelReader<?> channelReader;
+    protected final ChannelHandler<?> channelHandler;
 
     protected boolean ready;
     protected boolean closed;
@@ -52,10 +51,7 @@ class ChannelRunner extends Thread {
         this(worker, new ChannelContext(channel, nioConfig.getWriteBufferSize()), nioConfig);
     }
 
-    static final ChannelHandler<Object> UNDO = new ChannelHandler<Object>() {
-        @Override
-        public void onHandle(ChannelContext ctx, Object message) {
-        }
+    static final ChannelHandler<Object> UNDO = (ctx, message) -> {
     };
 
     ChannelRunner(ChannelWorker worker, final ChannelContext ctx, NioConfig nioConfig) throws IOException {
@@ -199,9 +195,9 @@ class ChannelRunner extends Thread {
     public final void read(ByteBuffer buf) throws IOException {
         if (buf.hasRemaining()) {
             if (nioConfig.isPrintApplicationMessage()) {
-                byte[] data = Arrays.copyOf(buf.array(), buf.limit());
-                LOG.info("text \n{}", new String(data));
-                LOG.info("hex \n{}", Utils.printHexString(data, ' '));
+                int len = buf.remaining();
+                LOG.debug("application message hex dump ({} bytes):\n{}",
+                        len, Utils.hexDump(buf.array(), buf.position(), len));
             }
             try {
                 channelReader.decode(ctx, buf);
@@ -230,8 +226,8 @@ class ChannelRunner extends Thread {
         try {
             wakeup();
             ctx.close();
-        } catch (Throwable ignored) {
-            LOG.debug("close error", ignored);
+        } catch (Throwable err) {
+            LOG.error("close error", err);
         }
     }
 

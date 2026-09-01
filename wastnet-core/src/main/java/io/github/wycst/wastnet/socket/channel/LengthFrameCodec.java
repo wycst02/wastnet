@@ -15,7 +15,7 @@
  */
 package io.github.wycst.wastnet.socket.channel;
 
-import io.github.wycst.wastnet.socket.conf.SocketConf;
+import io.github.wycst.wastnet.socket.conf.SocketOptions;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 
 import java.io.IOException;
@@ -45,7 +45,7 @@ public class LengthFrameCodec<T> extends ChannelCodec<T> {
     private final int bodyLengthBias;
     private final int trailerLength;
     private final long timeoutMs;
-    protected ByteOrder byteOrder = ByteOrder.BIG_ENDIAN;
+    protected ByteOrder byteOrder;
     protected boolean closeOnCodecError = true;
 
     /** Close connection on encode/decode error (default true). */
@@ -57,21 +57,21 @@ public class LengthFrameCodec<T> extends ChannelCodec<T> {
     // body-length-only constructor, see full constructor
     public LengthFrameCodec(int headerLength, int lengthFieldOffset,
                             int lengthFieldLength, int maxFrameLength) {
-        this(headerLength, lengthFieldOffset, lengthFieldLength, maxFrameLength, 0, false, ByteOrder.BIG_ENDIAN, SocketConf.READ_TIMEOUT_MS);
+        this(headerLength, lengthFieldOffset, lengthFieldLength, maxFrameLength, 0, false, ByteOrder.BIG_ENDIAN, -1);
     }
 
     // see full constructor
     public LengthFrameCodec(int headerLength, int lengthFieldOffset,
                             int lengthFieldLength, int maxFrameLength,
                             boolean lengthIncludesHeader) {
-        this(headerLength, lengthFieldOffset, lengthFieldLength, maxFrameLength, 0, lengthIncludesHeader, ByteOrder.BIG_ENDIAN, SocketConf.READ_TIMEOUT_MS);
+        this(headerLength, lengthFieldOffset, lengthFieldLength, maxFrameLength, 0, lengthIncludesHeader, ByteOrder.BIG_ENDIAN, -1);
     }
 
     // see full constructor
     public LengthFrameCodec(int headerLength, int lengthFieldOffset,
                             int lengthFieldLength, int maxFrameLength,
                             int trailerLength, boolean lengthIncludesHeader) {
-        this(headerLength, lengthFieldOffset, lengthFieldLength, maxFrameLength, trailerLength, lengthIncludesHeader, ByteOrder.BIG_ENDIAN, SocketConf.READ_TIMEOUT_MS);
+        this(headerLength, lengthFieldOffset, lengthFieldLength, maxFrameLength, trailerLength, lengthIncludesHeader, ByteOrder.BIG_ENDIAN, -1);
     }
 
     /**
@@ -116,6 +116,7 @@ public class LengthFrameCodec<T> extends ChannelCodec<T> {
     }
 
     private void decodeFrames(ChannelContext ctx, byte[] data, int offset, int len) throws IOException {
+        long timeoutMs = this.timeoutMs < 0 ? ctx.option(SocketOptions.READ_TIMEOUT_MS) : this.timeoutMs;
         while (len > 0) {
             if (len < headerLength) {
                 data = read(ctx, data, offset + len, headerLength - len, timeoutMs);

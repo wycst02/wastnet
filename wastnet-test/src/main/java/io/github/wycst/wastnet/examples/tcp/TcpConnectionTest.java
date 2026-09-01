@@ -153,7 +153,7 @@ public class TcpConnectionTest {
         System.out.println("峰值活跃连接: " + activeConnections.get());
     }
 
-    static class EchoHandler extends ChannelHandler<String> {
+    static class EchoHandler implements ChannelHandler<String> {
         @Override
         public void onConnected(ChannelContext ctx) {}
         
@@ -161,7 +161,7 @@ public class TcpConnectionTest {
         public void onHandle(ChannelContext ctx, String msg) {
             try {
                 ctx.writeFlush(("Echo: " + msg).getBytes());
-            } catch (Exception e) {}
+            } catch (Exception ignored) {}
         }
         
         @Override

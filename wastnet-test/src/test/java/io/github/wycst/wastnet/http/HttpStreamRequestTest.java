@@ -141,8 +141,9 @@ public class HttpStreamRequestTest {
 
     @Test
     public void testGetBodyDataExceedsLimitThrows() throws Exception {
-        // contentLength > 2 * MAX_BODY_IN_MEMORY: getBodyData() should throw before reading
-        long overLimit = (long) HttpConf.MAX_BODY_IN_MEMORY << 1;
+        // contentLength must be STRICTLY greater than 2 * MAX_BODY_IN_MEMORY to trigger the throw.
+        // (the if uses '>', so 2*MAX alone does NOT enter the branch)
+        long overLimit = ((long) HttpConf.MAX_BODY_IN_MEMORY << 1) + 1;
         HttpBodyInputStream bodyStream = new HttpBodyInputStream(overLimit, new byte[0], mockCtx());
         HttpStreamRequest request = new HttpStreamRequest(
                 HttpMethod.POST,

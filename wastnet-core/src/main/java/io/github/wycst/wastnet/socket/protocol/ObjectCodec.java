@@ -133,7 +133,6 @@ public class ObjectCodec<T> extends LengthFrameCodec<T> {
     @Override
     @SuppressWarnings("unchecked")
     protected void onFrame(ChannelContext ctx, byte[] header, byte[] body, byte[] trailer) throws IOException {
-        boolean frameValid = true;
         if (validate) {
             int magicRead = readInt(header, 0);
             if (magicRead != magic) {

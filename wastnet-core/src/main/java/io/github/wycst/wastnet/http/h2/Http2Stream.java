@@ -16,7 +16,6 @@
 package io.github.wycst.wastnet.http.h2;
 
 import io.github.wycst.wastnet.http.HttpBuf;
-import io.github.wycst.wastnet.http.HttpConf;
 import io.github.wycst.wastnet.http.HttpRequest;
 import io.github.wycst.wastnet.log.Log;
 import io.github.wycst.wastnet.log.LogFactory;
@@ -52,19 +51,10 @@ public abstract class Http2Stream {
     final ChannelContext ctx;
     final Map<String, Object> headers;
 
-    /**
-     * Maximum bodyData capacity before switching to streaming mode.
-     * Equals max(INITIAL_RECEIVE_WINDOW_SIZE * 2, MAX_BODY_IN_MEMORY).
-     */
-    static final int MAX_STREAM_CAPACITY_SIZE = Math.max(Http2MessageReader.INITIAL_RECEIVE_WINDOW_SIZE << 1, HttpConf.MAX_BODY_IN_MEMORY);
-
-    /** Enter streaming at first window exhaustion when {@link HttpConf#HTTP2_STREAM_EARLY} is set. */
-    static final boolean STREAM_EARLY = HttpConf.HTTP2_STREAM_EARLY;
-
     // depends on the client's initial window size
     long sendWindow;
     // depends on the server's initial window size
-    long receiveWindow = Http2MessageReader.INITIAL_RECEIVE_WINDOW_SIZE;
+    long receiveWindow;
     /** Stream creation timestamp for age calculation (monitoring). */
     final long createdAt = System.currentTimeMillis();
     // Atomic handoff of consumed bytes from the consumer thread to the reader thread (keeps receiveWindow reader-private).
@@ -135,7 +125,8 @@ public abstract class Http2Stream {
         this.streamId = streamId;
         this.ctx = ctx;
         this.sendWindow = reader.streamInitSendWindowSize;
-        this.headers = streamId == 0 ? Collections.<String, Object>emptyMap() : new LinkedHashMap<String, Object>();
+        this.receiveWindow = reader.initialReceiveWindowSize;
+        this.headers = streamId == 0 ? Collections.emptyMap() : new LinkedHashMap<>();
         this.bodyData = HttpRequest.EMPTY_BODY;
     }
 
@@ -211,7 +202,6 @@ public abstract class Http2Stream {
                 if (frame.payloadLength != 5) {
                     rstStream(ctx, 6); // RFC 7540 §6.3: FRAME_SIZE_ERROR
                 }
-                return;
         }
     }
 
@@ -235,7 +225,7 @@ public abstract class Http2Stream {
         frameBuf = appendHeaderBlock(frameBuf, frame, frameEndHeaders);
 
         // Guard against oversized header blocks (RFC 6585)
-        if (frameBuf.size() > HttpConf.MAX_HTTP_HEADER_SIZE) {
+        if (frameBuf.size() > reader.maxHttpHeaderSize) {
             sendEarlyResponse(H2_ERROR_431_HEADER_PAYLOAD);
             return;
         }
@@ -286,7 +276,7 @@ public abstract class Http2Stream {
 
         // Oversized trailer: never send 431 here — the response may already be streaming (DATA sent),
         // an extra HEADERS would corrupt the stream. Reset the stream instead.
-        if (trailerBuf.size() > HttpConf.MAX_HTTP_HEADER_SIZE) {
+        if (trailerBuf.size() > reader.maxHttpHeaderSize) {
             rstStream(ctx, 1); // PROTOCOL_ERROR
             return;
         }
@@ -298,7 +288,7 @@ public abstract class Http2Stream {
         }
 
         // Trailer block: pseudo-header fields are forbidden (RFC 7540 §8.1.2.1).
-        if (!decodeHeaderBlock(trailerBuf, ctx, trailers = new LinkedHashMap<String, Object>(), true)) return;
+        if (!decodeHeaderBlock(trailerBuf, ctx, trailers = new LinkedHashMap<>(), true)) return;
 
         // Trailer block fully received. Never call endHeaders() — it expects request pseudo-headers
         // and would NPE / mis-validate. Finalize the stream instead.
@@ -439,18 +429,18 @@ public abstract class Http2Stream {
         }
 
         // c. recvWindow == 0
-        if (STREAM_EARLY) {
+        if (reader.streamEarly) {
             // First window exhaustion => stream now (ring buffer = INITIAL_RECEIVE_WINDOW_SIZE)
             startStreaming();
             return;
         }
-        if (dataFramesTotalLength < MAX_STREAM_CAPACITY_SIZE) {
+        if (dataFramesTotalLength < reader.maxStreamCapacitySize) {
             // First window exhaustion: send WU to refill
             // newWindowSize = MAX_STREAM_CAPACITY_SIZE - dataFramesTotalLength (remaining buffer space)
-            int newWindowSize = MAX_STREAM_CAPACITY_SIZE - dataFramesTotalLength;
+            int newWindowSize = reader.maxStreamCapacitySize - dataFramesTotalLength;
             reader.sendWindowUpdatePair(ctx, this, newWindowSize, true);
             receiveWindow = refilled = newWindowSize;
-        } else if (dataFramesTotalLength == MAX_STREAM_CAPACITY_SIZE) {
+        } else if (dataFramesTotalLength == reader.maxStreamCapacitySize) {
             startStreaming();
         }
     }
@@ -476,7 +466,7 @@ public abstract class Http2Stream {
      * Returns an empty map if no trailers were sent.
      */
     public Map<String, Object> getTrailers() {
-        return trailers == null ? Collections.<String, Object>emptyMap() : trailers;
+        return trailers == null ? Collections.emptyMap() : trailers;
     }
 
     /**
@@ -783,8 +773,8 @@ public abstract class Http2Stream {
      * {@code maxPayload}). Callers that build variable-size DATA frames (e.g.
      * {@code sendChunkedData}) use this through {@link #acquirePartialSendWindow}.
      */
-    private int waitForSendCredit(int maxPayload, boolean requireAll) throws IOException {
-        long deadline = System.currentTimeMillis() + HttpConf.HTTP2_FLOW_CONTROL_WAIT_TIMEOUT_MS;
+    private int waitForSendCredit(int maxPayload, boolean requireAll) {
+        long deadline = System.currentTimeMillis() + reader.flowControlWaitTimeoutMs;
         synchronized (reader) {
             int available;
             while (true) {
@@ -809,7 +799,7 @@ public abstract class Http2Stream {
      * <p>
      * Returns {@code false} if the peer sent GOAWAY, or flow control timed out.
      */
-    boolean acquireSendWindow(int payloadLength) throws IOException {
+    boolean acquireSendWindow(int payloadLength) {
         return waitForSendCredit(payloadLength, true) == payloadLength;
     }
 
@@ -878,7 +868,7 @@ public abstract class Http2Stream {
         // Collect HEADERS + all CONTINUATION frames, then write atomically as one unit.
         // This prevents other streams from interleaving between HEADERS and CONTINUATION
         // (RFC 7540 §6.2/§6.10) and flushes only once.
-        List<ByteBuffer> frames = new ArrayList<ByteBuffer>();
+        List<ByteBuffer> frames = new ArrayList<>();
         ByteBuffer head = createFrameBuffer(9 + max, max, Http2Frame.FRAME_TYPE_HEADERS, 0); // HEADERS carries no END_HEADERS/END_STREAM
         head.put(payload, 0, max).flip();
         frames.add(head);

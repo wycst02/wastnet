@@ -1,6 +1,7 @@
 package io.github.wycst.wastnet.socket.conf;
 
 import java.io.*;
+import java.nio.file.Files;
 import java.util.Properties;
 
 /**
@@ -83,7 +84,7 @@ public abstract class Conf {
             if (!file.exists() || file.isDirectory()) {
                 return;
             }
-            loadInputStream(props, new FileInputStream(file));
+            loadInputStream(props, Files.newInputStream(file.toPath()));
         } catch (Throwable ignored) {
         }
     }

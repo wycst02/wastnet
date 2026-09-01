@@ -11,8 +11,12 @@ import io.github.wycst.wastnet.http.proxy.HttpProxyConfig;
 import io.github.wycst.wastnet.http.proxy.HttpProxyRoute;
 import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketConnection;
 import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketResource;
+import io.github.wycst.wastnet.log.LogFactory;
+import io.github.wycst.wastnet.log.LogLevel;
+import io.github.wycst.wastnet.socket.tcp.ConnectionFilter;
 
 import java.io.IOException;
+import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -24,12 +28,14 @@ public class MiniNginxHttp2 {
         // Configurable via system properties: -Dport=8080 -DcontextPath=/schedule-layout-ui -DdocBase=E:/2026_ws/failure-schedule/front-end/dist
         // Enable gzip compression
         System.setProperty("wastnet.http.gzip", "true");
+        System.setProperty("wastnet.http2.debug", "true");
+        LogFactory.setLevel(LogLevel.DEBUG);
 
-        int port = Integer.getInteger("port", 8000);
-        String contextPath = System.getProperty("contextPath", "/screen-layout/schedule/fault-command-dispatch-web");
+        int port = Integer.getInteger("port", 18001);
+        String contextPath = System.getProperty("contextPath", "/");
 //        String contextPath = System.getProperty("contextPath", "/");
-        String docBase = System.getProperty("docBase", "E:/2026_ws/tianti/biz-fault-command-dispatch-web/dist");
-        String gatewayTarget = System.getProperty("gateway", "http://192.168.1.226:19028");
+        String docBase = System.getProperty("docBase", "E:\\2025_ws\\sop-ui\\dist");
+        String gatewayTarget = System.getProperty("gateway", "http://192.168.1.152:8028");
 
         HttpRoute userHandler = new HttpRoute() {
             @Override
@@ -53,6 +59,13 @@ public class MiniNginxHttp2 {
         };
 
         final HttpRouterHandler router = new HttpRouterHandler(contextPath);
+
+        // Static resource handler with 103 Early Hints for index page
+        router.resource(new HttpResourceRoute("/", docBase)
+                .earlyHints(
+                        "<$base_path/upgrade.css>; rel=preload; as=style",
+                        "<$base_path/loading.css>; rel=preload; as=style"
+                ));
 
         // Exact match
         router.exactRoute("/user", userHandler);
@@ -112,12 +125,6 @@ public class MiniNginxHttp2 {
             }
         });
 
-        // Static resource handler with 103 Early Hints for index page
-        router.resource(new HttpResourceRoute("/", docBase)
-                .earlyHints(
-                        "<$base_path/upgrade.css>; rel=preload; as=style",
-                        "<$base_path/loading.css>; rel=preload; as=style"
-                ));
 
         // 404 handler
         router.notFoundHandler(new HttpRequestHandler() {

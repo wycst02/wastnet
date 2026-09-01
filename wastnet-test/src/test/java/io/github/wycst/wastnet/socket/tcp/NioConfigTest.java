@@ -1,6 +1,7 @@
 package io.github.wycst.wastnet.socket.tcp;
 
 import io.github.wycst.wastnet.socket.channel.ChannelReader;
+import io.github.wycst.wastnet.socket.conf.SocketOptions;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import io.github.wycst.wastnet.socket.handler.ClearableHandler;
 import io.github.wycst.wastnet.socket.handler.IdleStateHandler;
@@ -188,8 +189,8 @@ public class NioConfigTest {
     @Test
     public void testSetGetSslHandshakeTimeoutMs() {
         NioConfig config = new NioConfig();
-        config.setSslHandshakeTimeoutMs(10000);
-        Assertions.assertEquals(10000, config.getSslHandshakeTimeoutMs());
+        config.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS, 10000L);
+        Assertions.assertEquals(10000L, config.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS));
     }
 
     @Test
@@ -222,7 +223,7 @@ public class NioConfigTest {
     @Test
     public void testSslHandshakeTimeoutDefault() {
         NioConfig config = new NioConfig();
-        long timeout = config.getSslHandshakeTimeoutMs();
+        long timeout = config.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS);
         Assertions.assertTrue(timeout > 0);
     }
 }

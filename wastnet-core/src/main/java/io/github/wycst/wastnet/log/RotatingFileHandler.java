@@ -85,7 +85,7 @@ class RotatingFileHandler {
     private static final int IDLE_LIMIT = 2;
     private static final long FLUSH_INTERVAL_SECONDS = 1;
     private ScheduledExecutorService scheduler;
-    private final Runnable flushTask = () -> flushTick();
+    private final Runnable flushTask = this::flushTick;
     private ScheduledFuture<?> timerFuture;
     private volatile boolean timerRunning = false;
     private final Object timerLock = new Object();
@@ -118,7 +118,7 @@ class RotatingFileHandler {
         this.baseFilePath = baseFilePath;
         this.maxSize = maxSize;
         this.maxFiles = maxFiles;
-        int size = bufferSize < 1024 ? 1024 : bufferSize;
+        int size = Math.max(bufferSize, 1024);
         this.buf = new byte[size];
     }
 
@@ -298,7 +298,7 @@ class RotatingFileHandler {
 
     private void ensureShutdownHook() {
         if (shutdownHookThread == null) {
-            shutdownHookThread = new Thread(() -> onJvmShutdown(), "RotatingFileHandler-shutdown-" + baseFilePath);
+            shutdownHookThread = new Thread(this::onJvmShutdown, "RotatingFileHandler-shutdown-" + baseFilePath);
             Runtime.getRuntime().addShutdownHook(shutdownHookThread);
         }
     }

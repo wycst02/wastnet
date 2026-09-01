@@ -1,18 +1,8 @@
 package io.github.wycst.wastnet.http.h2;
 
-import io.github.wycst.wastnet.socket.tcp.ChannelContext;
-import io.github.wycst.wastnet.http.HttpBuf;
 import io.github.wycst.wastnet.http.HttpMethod;
 import io.github.wycst.wastnet.http.HttpRequest;
-import io.github.wycst.wastnet.http.h2.Http2BodyInputStream;
-import io.github.wycst.wastnet.http.h2.Http2ClientReader;
-import io.github.wycst.wastnet.http.h2.Http2ClientStream;
-import io.github.wycst.wastnet.http.h2.Http2Helper;
-import io.github.wycst.wastnet.http.h2.Http2HpackCodec;
-import io.github.wycst.wastnet.http.h2.Http2MessageReader;
-import io.github.wycst.wastnet.http.h2.Http2ServerReader;
-import io.github.wycst.wastnet.http.h2.Http2ServerStream;
-import io.github.wycst.wastnet.http.h2.H2TestHelper;
+import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -22,13 +12,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * Supplementary coverage for {@link Http2Helper} branch/streaming paths that the
@@ -44,8 +28,8 @@ public class Http2HelperExtraTest {
     private static Http2ServerReader mockServerReader() {
         Http2ServerReader reader = mock(Http2ServerReader.class);
         H2TestHelper.initMockReader(reader);
-        installCodec(reader);
-        reader.connectRecvWindow = new java.util.concurrent.atomic.AtomicLong(65535);
+        H2TestHelper.installCodec(reader);
+        H2TestHelper.setConnectRecvWindow(reader, 65535);
         reader.streamInitSendWindowSize = 65535;
         reader.maxSendPayloadSize = 16384;
         return reader;
@@ -54,21 +38,11 @@ public class Http2HelperExtraTest {
     private static Http2ClientReader mockClientReader() {
         Http2ClientReader reader = mock(Http2ClientReader.class);
         H2TestHelper.initMockReader(reader);
-        installCodec(reader);
-        reader.connectRecvWindow = new java.util.concurrent.atomic.AtomicLong(65535);
+        H2TestHelper.installCodec(reader);
+        H2TestHelper.setConnectRecvWindow(reader, 65535);
         reader.streamInitSendWindowSize = 65535;
         reader.maxSendPayloadSize = 16384;
         return reader;
-    }
-
-    private static void installCodec(Http2MessageReader reader) {
-        try {
-            Field f = Http2MessageReader.class.getDeclaredField("http2HpackCodec");
-            f.setAccessible(true);
-            f.set(reader, new Http2HpackCodec());
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
     }
 
     private static Http2ServerStream serverStream() {

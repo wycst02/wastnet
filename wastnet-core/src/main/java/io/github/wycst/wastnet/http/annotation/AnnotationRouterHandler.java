@@ -173,10 +173,10 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
      * into controllers.
      */
     public AnnotationRouterHandler scanPackages(String... packageNames) {
-        Set<Class<?>> allControllers = new LinkedHashSet<Class<?>>();
-        Set<Class<?>> allComponents = new LinkedHashSet<Class<?>>();
-        Set<Class<?>> allConfigurations = new LinkedHashSet<Class<?>>();
-        Set<Class<?>> allWebSocketClasses = new LinkedHashSet<Class<?>>();
+        Set<Class<?>> allControllers = new LinkedHashSet<>();
+        Set<Class<?>> allComponents = new LinkedHashSet<>();
+        Set<Class<?>> allConfigurations = new LinkedHashSet<>();
+        Set<Class<?>> allWebSocketClasses = new LinkedHashSet<>();
         for (String pkg : packageNames) {
             for (Class<?> clazz : classifyClasses(pkg)) {
                 if (resolver.isController(clazz)) {
@@ -217,7 +217,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
             // only PRE_ROUTE run unconditionally; ENDPOINT ones are bound per endpoint;
             // skip @Interceptor(disabled = true)
             if (!(bean instanceof RouterInterceptor) || ann == null || ann.disabled() || ann.type() == InterceptorType.ENDPOINT) continue;
-            if (chain == null) chain = new ArrayList<RouterInterceptor>();
+            if (chain == null) chain = new ArrayList<>();
             chain.add((RouterInterceptor) bean);
         }
         if (chain == null) return;
@@ -244,7 +244,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
     private List<RouterInterceptor> resolveEndpointInterceptors(MethodRouteInfo routeInfo) {
         String[] names = routeInfo.getInterceptorNames();
         if (isInterceptorsDisabled() || names == null) return Collections.emptyList();
-        List<RouterInterceptor> chain = new ArrayList<RouterInterceptor>(names.length);
+        List<RouterInterceptor> chain = new ArrayList<>(names.length);
         for (String name : names) {
             Object bean = beanContainer.getBean(name);
             if (bean == null) {
@@ -272,7 +272,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
     /** Scan a package and return eligible classes. */
     private Set<Class<?>> classifyClasses(String packageName) {
         Set<Class<?>> classes = PackageScanner.scan(packageName, resolver);
-        Set<Class<?>> result = new LinkedHashSet<Class<?>>();
+        Set<Class<?>> result = new LinkedHashSet<>();
         for (Class<?> clazz : classes) {
             if (isEligibleClass(clazz)) result.add(clazz);
         }
@@ -284,7 +284,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
      * register their return values back into the container.
      */
     private void processBeanMethods(Set<Class<?>> configurations, Set<Class<?>> components) {
-        List<Executable> deferred = new ArrayList<Executable>();
+        List<Executable> deferred = new ArrayList<>();
         // Register @Configuration and process @Bean methods
         for (Class<?> configClass : configurations) {
             Constructor<?> ctor = configClass.getConstructors().length > 0 ? configClass.getConstructors()[0] : null;
@@ -292,7 +292,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
             String name = Character.toLowerCase(configClass.getSimpleName().charAt(0)) + configClass.getSimpleName().substring(1);
             Object configInstance;
             try {
-                configInstance = configClass.newInstance();
+                configInstance = configClass.getDeclaredConstructor().newInstance();
             } catch (Exception e) {
                 throw new RuntimeException("Failed to instantiate @Configuration: " + configClass.getName(), e);
             }
@@ -319,7 +319,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
             List<Executable> pending = deferred;
             int retry = 4;
             while (--retry > -1 && !pending.isEmpty()) {
-                List<Executable> next = new ArrayList<Executable>();
+                List<Executable> next = new ArrayList<>();
                 for (Executable exec : pending) {
                     if (exec instanceof Method) {
                         Method method = (Method) exec;
@@ -368,7 +368,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
         try {
             String path = resolver.resolveWebSocketPath(clazz);
             if (path.isEmpty()) return;
-            WebSocketResource resource = (WebSocketResource) clazz.newInstance();
+            WebSocketResource resource = (WebSocketResource) clazz.getDeclaredConstructor().newInstance();
             ws(path, resource);
         } catch (Exception e) {
             throw new RuntimeException("Failed to register WebSocket endpoint: " + clazz.getName(), e);
@@ -441,7 +441,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
                     }
                     String[] segs = fullPath.split("/", -1);
                     StringBuilder rb = new StringBuilder();
-                    pathVarSegIndex = new HashMap<String, Integer>(segs.length);
+                    pathVarSegIndex = new HashMap<>(segs.length);
                     for (int si = 0; si < segs.length; ++si) {
                         String seg = segs[si];
                         if (si == 0) continue; // leading slash
@@ -615,7 +615,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
     private Object resolveInstance(Class<?> clazz) throws Exception {
         Constructor<?> ctor = findConstructor(clazz.getConstructors());
         Parameter[] params;
-        if (ctor == null || (params = ctor.getParameters()).length == 0) return clazz.newInstance();
+        if (ctor == null || (params = ctor.getParameters()).length == 0) return clazz.getDeclaredConstructor().newInstance();
         Object[] args = resolveParameters(params, clazz.getName());
         if (args == null) return null;
         return ctor.newInstance(args);
@@ -787,7 +787,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
                 if (required) throw new IllegalArgumentException("Missing required file parameter: " + name);
                 return null;
             }
-            return fields.toArray(new MultipartField[fields.size()]);
+            return fields.toArray(new MultipartField[0]);
         }
         MultipartField field = request.getMultipartField(name);
         if (field == null && required) throw new IllegalArgumentException("Missing required file parameter: " + name);
@@ -796,12 +796,10 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
 
     private static Object toCollection(Class<?> type, Object[] arr) {
         if (Set.class.isAssignableFrom(type) || SortedSet.class.isAssignableFrom(type)) {
-            Set<Object> set = new LinkedHashSet<Object>();
-            for (Object o : arr) set.add(o);
-            return set;
+            return new LinkedHashSet<>(Arrays.asList(arr));
         }
-        List<Object> list = new ArrayList<Object>(arr.length);
-        for (Object o : arr) list.add(o);
+        List<Object> list = new ArrayList<>(arr.length);
+        list.addAll(Arrays.asList(arr));
         return list;
     }
 

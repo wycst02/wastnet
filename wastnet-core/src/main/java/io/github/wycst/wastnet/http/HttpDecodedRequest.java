@@ -48,14 +48,14 @@ public abstract class HttpDecodedRequest extends HttpInternalRequest {
         this.method = method;
         this.httpVersion = httpVersion;
         this.bodyData = bodyData;
-        this.headers = new LinkedHashMap<String, Object>(headers);
+        this.headers = new LinkedHashMap<>(headers);
         this.contentLength = contentLength;
         this.contentType = contentType;
         this.response = new HttpDefaultResponse(this, ctx);
     }
 
     HttpDecodedRequest() {
-        super(null);
+        super(ChannelContext.EMPTY_CONTEXT);
         this.uriAsciiBytes = this.rawUriBytes = null;
         this.uri = null;
         this.requestUri = null;
@@ -84,7 +84,7 @@ public abstract class HttpDecodedRequest extends HttpInternalRequest {
         this.requestUri = null;
         this.parameters = null;
         this.httpVersion = httpVersion;
-        this.headers = new HashMap<String, Object>(headers);
+        this.headers = new HashMap<>(headers);
         this.method = null;
         this.bodyData = EMPTY_BODY;
         this.contentLength = 0;
@@ -160,7 +160,7 @@ public abstract class HttpDecodedRequest extends HttpInternalRequest {
 
     @Override
     public Set<String> getHeaderNames() {
-        return new LinkedHashSet<String>(headers.keySet());
+        return new LinkedHashSet<>(headers.keySet());
     }
 
     @Override

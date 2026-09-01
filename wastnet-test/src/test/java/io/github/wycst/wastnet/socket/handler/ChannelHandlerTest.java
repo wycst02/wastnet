@@ -75,7 +75,7 @@ public class ChannelHandlerTest {
     }
 
     /** Concrete subclass for testing abstract ChannelHandler. */
-    static class RecordingHandler extends ChannelHandler<String> {
+    static class RecordingHandler implements ChannelHandler<String> {
         final List<String> received = new ArrayList<String>();
         final List<String> lifecycle = new ArrayList<String>();
 
@@ -86,19 +86,16 @@ public class ChannelHandlerTest {
 
         @Override
         public void onConnected(ChannelContext ctx) throws IOException {
-            super.onConnected(ctx);
             lifecycle.add("connected");
         }
 
         @Override
         public void onClosed(ChannelContext ctx) throws IOException {
-            super.onClosed(ctx);
             lifecycle.add("closed");
         }
 
         @Override
         public void onException(ChannelContext context, Throwable cause) throws IOException {
-            super.onException(context, cause);
             lifecycle.add("exception");
         }
     }

@@ -17,10 +17,19 @@ public class RuntimeEnv {
     public static final RuntimeEnv INSTANCE;
     public static final float JDK_VERSION;
     public static final boolean JDK9PLUS;
+    public static final boolean WINDOWS_PLATFORM;
 
     RuntimeEnv() {}
 
     static {
+        boolean isWindows = false;
+        try {
+            String osName = System.getProperty("os.name").toLowerCase();
+            isWindows = osName.contains("win");
+        } catch (Throwable ignored) {
+        }
+        WINDOWS_PLATFORM = isWindows;
+
         float jdkVersion = 1.8f;
         try {
             String version = System.getProperty("java.specification.version");

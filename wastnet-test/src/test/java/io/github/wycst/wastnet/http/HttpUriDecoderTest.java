@@ -153,6 +153,17 @@ public class HttpUriDecoderTest {
     }
 
     @Test
+    public void testDecodeParamValueContainingEquals() {
+        // '=' inside a value must be preserved verbatim (common in base64 / JWT params)
+        HttpUriDecoder decoder = new HttpUriDecoder(false);
+        decoder.codec("/path?token=abc==&sig=z".getBytes());
+        decoder.endCodec();
+        Assertions.assertEquals("abc==", decoder.getParameters().get("token").get(0));
+        Assertions.assertEquals("z", decoder.getParameters().get("sig").get(0));
+        Assertions.assertEquals(2, decoder.getParameters().size());
+    }
+
+    @Test
     public void testIncrementalCodec() {
         HttpUriDecoder decoder = new HttpUriDecoder(false);
         decoder.codec("/pa".getBytes());
@@ -161,5 +172,77 @@ public class HttpUriDecoderTest {
         decoder.endCodec();
         Assertions.assertEquals("/path", decoder.getUri());
         Assertions.assertEquals("hello", decoder.getParameters().get("q").get(0));
+    }
+
+    /**
+     * Cover L92: a second '?' while already in parameter mode is treated as a literal char.
+     * Uses parameter=true constructor so the very first '?' does not flip the flag.
+     */
+    @Test
+    public void testParameterModeSecondQuestionMark() {
+        HttpUriDecoder decoder = new HttpUriDecoder(false, true);
+        decoder.codec("a?b?c".getBytes());
+        decoder.endCodec();
+        // In parameter mode (constructor flag) the first '?' does not flip the flag,
+        // so every '?' is a literal char written to content -> covers L92.
+        Assertions.assertNotNull(decoder.getParameters().get("a?b?c"));
+    }
+
+    /**
+     * Cover L155-156 (strict, codecState==2 with invalid low hex): % + valid high nibble + invalid low nibble.
+     */
+    @Test
+    public void testStrictModeInvalidLowHex() {
+        HttpUriDecoder decoder = new HttpUriDecoder(true);
+        try {
+            decoder.codec("/path%1zmore".getBytes());
+            decoder.endCodec();
+            Assertions.fail("Expected IllegalArgumentException in strict mode");
+        } catch (IllegalArgumentException e) {
+            // expected: codecState==2 reached, low hex invalid, strict -> throw
+        }
+    }
+
+    /**
+     * Cover L158-160 (non-strict, codecState==2 with invalid low hex): rollback to literal '%'.
+     */
+    @Test
+    public void testNonStrictModeInvalidLowHex() {
+        HttpUriDecoder decoder = new HttpUriDecoder(false);
+        decoder.codec("/path%1zmore".getBytes());
+        decoder.endCodec();
+        // '%1z' -> '%' + '1' + 'z' written literally
+        Assertions.assertEquals("/path%1zmore", decoder.getUri());
+    }
+
+    /**
+     * Cover L110/L123 false branches: in non-parameter (URI) mode, '=' and '&' are NOT
+     * treated as delimiters and are written verbatim.
+     */
+    @Test
+    public void testNonParameterModeEqualsAndAmpersand() {
+        HttpUriDecoder decoder = new HttpUriDecoder(false);
+        decoder.codec("/a=b&c".getBytes());
+        decoder.endCodec();
+        Assertions.assertEquals("/a=b&c", decoder.getUri());
+        Assertions.assertTrue(decoder.getParameters().isEmpty());
+    }
+
+    /**
+     * Cover L236: reset() when contentBa has grown beyond MAX_CACHE_SIZE reallocates a fresh buffer.
+     */
+    @Test
+    public void testResetAfterLargeBuffer() {
+        HttpUriDecoder decoder = new HttpUriDecoder(false);
+        // Feed > MAX_CACHE_SIZE (16KB) of data so contentBa capacity exceeds the threshold
+        byte[] big = new byte[20 * 1024];
+        for (int i = 0; i < big.length; ++i) big[i] = (byte) 'x';
+        decoder.codec(big);
+        decoder.endCodec();
+        Assertions.assertNotNull(decoder.getUri());
+        decoder.reset();
+        decoder.codec("/after-reset".getBytes());
+        decoder.endCodec();
+        Assertions.assertEquals("/after-reset", decoder.getUri());
     }
 }

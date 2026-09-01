@@ -30,7 +30,7 @@ import java.util.Map;
  */
 final class HttpProxyVariables {
 
-    private static final Map<String, HttpProxyConfig.HeaderValueResolver> BUILTINS = new HashMap<String, HttpProxyConfig.HeaderValueResolver>();
+    private static final Map<String, HttpProxyConfig.HeaderValueResolver> BUILTINS = new HashMap<>();
 
     static {
         // $remote_addr - client IP address
@@ -52,13 +52,13 @@ final class HttpProxyVariables {
         });
 
         // $scheme - request scheme (http / https)
-        BUILTINS.put("$scheme", request -> request.getScheme());
+        BUILTINS.put("$scheme", HttpRequest::getScheme);
 
         // $request_uri - decoded request URI (without query parameters)
-        BUILTINS.put("$request_uri", request -> request.getRequestUri());
+        BUILTINS.put("$request_uri", HttpRequest::getRequestUri);
 
         // $uri - raw request URI (includes query parameters)
-        BUILTINS.put("$uri", request -> request.getUri());
+        BUILTINS.put("$uri", HttpRequest::getUri);
 
         // $query_string - query string (after ?)
         BUILTINS.put("$query_string", request -> {

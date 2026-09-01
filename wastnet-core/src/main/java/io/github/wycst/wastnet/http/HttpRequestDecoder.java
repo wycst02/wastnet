@@ -67,18 +67,37 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
     private boolean expectContinue; // Expect: 100-continue detected
     private boolean chunked; // Transfer-Encoding: chunked detected
     private long requestStartTime; // Request decode start time for timeout check
-    final Map<String, Object> headers = HttpConf.PRESERVE_HEADER_ORDER ? new LinkedHashMap<String, Object>() : new HashMap<String, Object>();
+
+    // Hot-path configuration snapshot resolved from ctx at construction time (read-only).
+    private final int maxUriLength;
+    private final int maxSingleHeaderSize;
+    private final int maxHttpHeaderSize;
+    private final boolean pipelineEnabled;
+    private final long maxBodyInMemory;
+
+    final Map<String, Object> headers;
     String contentType;
     boolean shallow;
 
-    /** No-arg constructor, ctx must be set externally before use. */
+    /** No-arg constructor for testing / default config */
     public HttpRequestDecoder() {
-        this(null);
+        this(ChannelContext.EMPTY_CONTEXT);
     }
 
-    /** @param ctx the channel context for this connection (may be null if set later) */
+    /**
+     * Create a decoder bound to the given connection context.
+     *
+     * @param ctx the channel context for this connection (must not be null)
+     */
     public HttpRequestDecoder(ChannelContext ctx) {
         this.ctx = ctx;
+        this.maxUriLength = ctx.option(HttpOptions.MAX_URI_LENGTH);
+        this.maxSingleHeaderSize = ctx.option(HttpOptions.MAX_SINGLE_HEADER_SIZE);
+        this.maxHttpHeaderSize = ctx.option(HttpOptions.MAX_HTTP_HEADER_SIZE);
+        this.pipelineEnabled = ctx.option(HttpOptions.PIPELINE_ENABLED);
+        this.maxBodyInMemory = ctx.option(HttpOptions.MAX_BODY_IN_MEMORY);
+        this.headers = ctx.option(HttpOptions.PRESERVE_HEADER_ORDER)
+                ? new LinkedHashMap<>() : new HashMap<>();
     }
 
     /**
@@ -130,7 +149,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
     private boolean handleBadOrTimeout() throws IOException {
         if(shallow) return false;
         if (readState != ReadState.Completed
-                && System.currentTimeMillis() - requestStartTime > HttpConf.REQUEST_TIMEOUT_MS) {
+                && System.currentTimeMillis() - requestStartTime > ctx.option(HttpOptions.REQUEST_TIMEOUT_MS)) {
             status = HttpStatus.REQUEST_TIMEOUT;
             readState = ReadState.Completed;
         }
@@ -178,7 +197,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
     /** Log reason and close connection on protocol violation. */
     private void protocolClose(String reason) {
         log.debug("Protocol violation, closing: {}", reason);
-        if (ctx != null) ctx.close();
+        ctx.close();
     }
 
     /**
@@ -245,7 +264,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
                 }
             }
             if (offset == limit) {
-                if (httpBuf.size() > HttpConf.MAX_URI_LENGTH) status = HttpStatus.REQUEST_URI_TOO_LONG;
+                if (httpBuf.size() > maxUriLength) status = HttpStatus.REQUEST_URI_TOO_LONG;
                 return limit;
             }
             if (b == '\n' && httpBuf.isEmpty()) {
@@ -265,7 +284,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
             } else {
                 onDecodeUri(startLineMiddle = httpBuf.toBytes());
                 httpBuf.clear();
-                if (startLineMiddle.length > HttpConf.MAX_URI_LENGTH) {
+                if (startLineMiddle.length > maxUriLength) {
                     status = HttpStatus.REQUEST_URI_TOO_LONG;
                     return limit;
                 }
@@ -310,7 +329,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
             if (headerState == HEADER_KEY) {
                 offset = readHeaderKey(buf, offset, limit);
                 if (offset == limit) {
-                    if (httpBuf.size() > HttpConf.MAX_HTTP_HEADER_SIZE) status = HttpStatus.REQUEST_HEADER_FIELDS_TOO_LARGE;
+                    if (httpBuf.size() > maxHttpHeaderSize) status = HttpStatus.REQUEST_HEADER_FIELDS_TOO_LARGE;
                     return limit;
                 }
                 ++offset;
@@ -318,7 +337,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
             }
             offset = readHeaderValue(buf, offset, limit);
             if (offset == limit) {
-                if (httpBuf.size() > HttpConf.MAX_HTTP_HEADER_SIZE) status = HttpStatus.REQUEST_HEADER_FIELDS_TOO_LARGE;
+                if (httpBuf.size() > maxHttpHeaderSize) status = HttpStatus.REQUEST_HEADER_FIELDS_TOO_LARGE;
                 return limit;
             }
             addHeader(headerKey, headerValue);
@@ -334,7 +353,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
 
     protected void prepareRequestContent() {
         if(shallow) return;
-        if (expectContinue && status == null && ctx != null) {
+        if (expectContinue && status == null) {
             ctx.writeFlushWithoutThrow(CONTINUE_RESPONSE);
             expectContinue = false;
         }
@@ -440,18 +459,18 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
         }
         if (contentLength <= 0 /*|| bodySize == contentLength*/) { // bodySize always < contentLength
             readState = ReadState.Completed;
-            if (HttpConf.PIPELINE_ENABLED) {
+            if (pipelineEnabled) {
                 return offset; // zero-copy: remaining pipeline data starts here
             } else if (len > 0 && !hasContentLength) {
                 status = HttpStatus.LENGTH_REQUIRED;
             } // if CL:0 with residual data, ignore and fall through to return limit
         } else {
             if (len == 0) return limit;
-            if (contentLength < HttpConf.MAX_BODY_IN_MEMORY) {
+            if (contentLength < maxBodyInMemory) {
                 if (bodySize + len >= contentLength) {
                     int bodyLen = (int) contentLength - bodySize;
                     completedBody(buf, offset, bodyLen, bodySize, BODY_MODE_NORMAL);
-                    return HttpConf.PIPELINE_ENABLED ? offset + bodyLen : limit; // zero-copy: remaining pipeline data starts here
+                    return pipelineEnabled ? offset + bodyLen : limit; // zero-copy: remaining pipeline data starts here
                 } else {
                     httpBuf.write(buf, offset, len);
                 }
@@ -523,8 +542,8 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
     void addHeader(String name, String value) { // note: the name is normalized and name-value is all iso-8859-1
         if(!shallow) {
             int singleHeaderSize = name.length() + value.length() + 4;
-            if (singleHeaderSize > HttpConf.MAX_SINGLE_HEADER_SIZE
-                    || (totalHeaderSize += singleHeaderSize) > HttpConf.MAX_HTTP_HEADER_SIZE) {
+            if (singleHeaderSize > maxSingleHeaderSize
+                    || (totalHeaderSize += singleHeaderSize) > maxHttpHeaderSize) {
                 status = HttpStatus.REQUEST_HEADER_FIELDS_TOO_LARGE;
                 return;
             }
@@ -534,7 +553,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
         if (prev == null) {
             headers.put(name, value);
         } else if (prev instanceof String) {
-            List<String> list = new ArrayList<String>(2);
+            List<String> list = new ArrayList<>(2);
             list.add((String) prev);
             list.add(value);
             headers.put(name, list);
@@ -566,7 +585,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
                     this.hasContentLength = true;
                     if (this.contentLength < 0) {
                         this.status = HttpStatus.BAD_REQUEST;
-                    } else if (this.contentLength > HttpConf.BODY_MAX_SIZE) {
+                    } else if (this.contentLength > ctx.option(HttpOptions.BODY_MAX_SIZE)) {
                         this.status = HttpStatus.REQUEST_ENTITY_TOO_LARGE;
                     }
                 }

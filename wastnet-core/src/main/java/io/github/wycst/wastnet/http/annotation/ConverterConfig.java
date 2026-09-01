@@ -19,7 +19,7 @@ public class ConverterConfig {
     private boolean pretty;
     private boolean skipNull;
     private String dateFormat;
-    private final Map<String, String> properties = new HashMap<String, String>();
+    private final Map<String, String> properties = new HashMap<>();
 
     /** Default constructor — leaves all fields at defaults. */
     public ConverterConfig() {

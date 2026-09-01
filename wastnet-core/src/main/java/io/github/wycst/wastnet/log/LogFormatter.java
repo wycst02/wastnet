@@ -69,11 +69,10 @@ public class LogFormatter {
             return "null";
         }
         int parameterCount;
-        if (placeholder == null || placeholder.length() == 0 || parameters == null || (parameterCount = parameters.length) == 0) {
+        if (placeholder == null || placeholder.isEmpty() || parameters == null || (parameterCount = parameters.length) == 0) {
             return message;
         }
-        int placeholderIndex = -1;
-        placeholderIndex = message.indexOf(placeholder);
+        int placeholderIndex = message.indexOf(placeholder);
         if (placeholderIndex < 0) {
             return message;
         }
@@ -102,12 +101,9 @@ public class LogFormatter {
         if (t == null)
             return null;
         StringWriter sw = new StringWriter();
-        PrintWriter pw = new PrintWriter(sw);
-        try {
+        try (PrintWriter pw = new PrintWriter(sw)) {
             t.printStackTrace(pw);
             return sw.toString();
-        } finally {
-            pw.close();
         }
     }
 }

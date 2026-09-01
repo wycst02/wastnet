@@ -2,6 +2,7 @@ package io.github.wycst.wastnet.socket.tcp;
 
 import io.github.wycst.wastnet.http.HTTPServer;
 import io.github.wycst.wastnet.socket.channel.ChannelReader;
+import io.github.wycst.wastnet.socket.conf.SocketOptions;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -292,7 +293,7 @@ public class ChannelRunnerTest {
             NioConfig config = new NioConfig();
             config.setReadBufferSize(4096);
             config.setAllowPlaintextWhenSslEnabled(true);
-            config.setSslHandshakeTimeoutMs(2000);
+            config.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS, 2000L);
             ChannelReader mockReader = mock(ChannelReader.class);
             config.setChannelReader(mockReader);
             SSLContext sslCtx = SSLContext.getInstance("TLS");
@@ -337,7 +338,7 @@ public class ChannelRunnerTest {
         ChannelSSLContext sslChannelCtx = new ChannelSSLContext(ch, engineCtx);
         NioConfig config = new NioConfig();
         config.setReadBufferSize(4096);
-        config.setSslHandshakeTimeoutMs(100);  // short timeout triggers return -1
+        config.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS, 100L);  // short timeout triggers return -1
         ChannelReader mockReader = mock(ChannelReader.class);
         config.setChannelReader(mockReader);
         ChannelSSLRunner runner = new ChannelSSLRunner(null, sslChannelCtx, config);
@@ -367,7 +368,7 @@ public class ChannelRunnerTest {
         ChannelSSLContext sslChannelCtx = new ChannelSSLContext(ch, engineCtx);
         NioConfig config = new NioConfig();
         config.setReadBufferSize(4096);
-        config.setSslHandshakeTimeoutMs(5000);
+        config.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS, 5000L);
         ChannelSSLRunner runner = new ChannelSSLRunner(null, sslChannelCtx, config);
 
         runner.beforeReady();
@@ -400,7 +401,7 @@ public class ChannelRunnerTest {
             NioConfig config = new NioConfig();
             config.setReadBufferSize(4096);
             config.setAllowPlaintextWhenSslEnabled(true);
-            config.setSslHandshakeTimeoutMs(3000);
+            config.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS, 3000L);
             ChannelReader mockReader = mock(ChannelReader.class);
             config.setChannelReader(mockReader);
 
@@ -433,7 +434,7 @@ public class ChannelRunnerTest {
         ChannelSSLContext sslChannelCtx = new ChannelSSLContext(ch, engineCtx);
         NioConfig config = new NioConfig();
         config.setReadBufferSize(4096);
-        config.setSslHandshakeTimeoutMs(5000);
+        config.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS, 5000L);
         ChannelSSLRunner runner = new ChannelSSLRunner(null, sslChannelCtx, config);
 
         runner.beforeReady();

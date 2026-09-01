@@ -6,7 +6,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Answers.RETURNS_SELF;
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.withSettings;
 
 /**
  * Coverage tests for HttpRouterHandler and HttpResourceRoute.
@@ -21,7 +23,7 @@ class HttpHandlerCoverageTest {
     void setUp() {
         router = new HttpRouterHandler();
         mockReq = mock(HttpRequest.class);
-        mockResp = mock(HttpResponse.class);
+        mockResp = mock(HttpResponse.class, withSettings().defaultAnswer(RETURNS_SELF));
     }
 
     // ==================== HttpRouterHandler constructor ====================
@@ -250,7 +252,7 @@ class HttpHandlerCoverageTest {
     void testResourceHandlerSetBasePath() {
         HttpResourceRoute h = new HttpResourceRoute("/static", ".");
         h.earlyHints("<$base_path/style.css>");
-        h.setBasePath("/app");
+        h.basePath("/app");
     }
 
     @Test

@@ -53,7 +53,7 @@ final class HttpBodyDefaultDecoder extends HttpBodyDecoder {
         final int[] badChar = useAsciiStringApi ? null : buildBadCharTable(boundaryBytes);
         int boundaryLen = boundaryBytes.length;
 
-        Map<String, List<MultipartField>> result = new HashMap<String, List<MultipartField>>(8);
+        Map<String, List<MultipartField>> result = new HashMap<>(8);
         int offset = 0;
         int fieldIndex = 0;
 
@@ -100,10 +100,7 @@ final class HttpBodyDefaultDecoder extends HttpBodyDecoder {
                 }
                 MultipartField field = new MultipartFieldData(fieldName, headerValues[1], headerValues[2], HttpBuf.wrap(bodyData, contentStart, contentEnd - contentStart), charset);
                 field.setIndex(fieldIndex++);
-                List<MultipartField> fieldList = result.get(fieldName);
-                if (fieldList == null) {
-                    result.put(fieldName, fieldList = new ArrayList<MultipartField>(1));
-                }
+                List<MultipartField> fieldList = result.computeIfAbsent(fieldName, k -> new ArrayList<>(1));
                 fieldList.add(field);
 
                 offset = nextBoundary;

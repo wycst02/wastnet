@@ -4,12 +4,14 @@ import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import io.github.wycst.wastnet.util.Utils;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.zip.GZIPOutputStream;
 
 /**
  * Abstract base class for HTTP response implementations
@@ -57,7 +59,7 @@ abstract class HttpGenerativeResponse extends HttpInternalResponse {
     protected HttpGenerativeResponse(HttpRequest request, ChannelContext ctx) {
         super(request, ctx);
         this.httpVersion = request.getHttpVersion();
-        this.headers = new HashMap<String, Object>(8);
+        this.headers = new HashMap<>(8);
         this.headerBuf = HttpBuf.of(192);
     }
 
@@ -161,7 +163,7 @@ abstract class HttpGenerativeResponse extends HttpInternalResponse {
         }
 
         // Write Server header if not exists and exposure is enabled
-        if (HttpConf.EXPOSE_SERVER_HEADER && !headers.containsKey(HttpHeaderNormalized.getServer())) {
+        if (exposeServerHeader() && !headers.containsKey(HttpHeaderNormalized.getServer())) {
             headerBuf.write(HttpHeaderUtils.getServerHeaderLineBytes());
         }
 
@@ -247,20 +249,14 @@ abstract class HttpGenerativeResponse extends HttpInternalResponse {
      * @param fis the input stream to compress
      * @throws IOException if an I/O error occurs
      */
-    void streamingGzipCompress(java.io.InputStream fis) throws IOException {
-        java.util.zip.GZIPOutputStream gzip = null;
-        try {
-            gzip = new java.util.zip.GZIPOutputStream(new ChunkedOutputStream(), GZIP_BUFFER_SIZE);
+    void streamingGzipCompress(InputStream fis) throws IOException {
+        try (GZIPOutputStream gzip = new GZIPOutputStream(new ChunkedOutputStream(), GZIP_BUFFER_SIZE)) {
             byte[] buffer = new byte[GZIP_BUFFER_SIZE];
             int bytesRead;
             while ((bytesRead = fis.read(buffer)) > 0) {
                 gzip.write(buffer, 0, bytesRead);
             }
             gzip.finish();
-        } finally {
-            if (gzip != null) {
-                gzip.close();
-            }
         }
     }
 
@@ -317,7 +313,7 @@ abstract class HttpGenerativeResponse extends HttpInternalResponse {
         writeStatusLine();
 
         // add default headers
-        if (HttpConf.WRITE_DEFAULT_HEADERS) {
+        if (ctx.option(HttpOptions.WRITE_DEFAULT_HEADERS)) {
             writeDefaultHeaders();
         }
 

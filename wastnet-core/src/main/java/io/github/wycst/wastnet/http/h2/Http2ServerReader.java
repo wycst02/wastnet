@@ -16,6 +16,7 @@
 package io.github.wycst.wastnet.http.h2;
 
 import io.github.wycst.wastnet.http.HttpConf;
+import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 
 import java.io.IOException;
@@ -36,33 +37,40 @@ public class Http2ServerReader extends Http2MessageReader {
      * A bounded value prevents resource exhaustion from excessive concurrent streams
      * (MadeYouReset / Rapid Reset attacks).
      */
-    static final int MAX_SERVER_CONCURRENT_STREAMS = HttpConf.HTTP2_MAX_CONCURRENT_STREAMS;
+    final int maxServerConcurrentStreams;
 
     // ---- Rapid Reset (CVE-2023-44487) defense: per-connection client RST rate limit ----
     private long rstWindowStartMs;
     private int rstCountInWindow;
 
     // Server reply: SETTINGS frame + initial connection-level WINDOW_UPDATE (40 bytes)
-    static final byte[] SERVER_REPLY_FRAMES;
+    static final byte[] SERVER_REPLY_FRAMES = buildServerReplyFrames(HttpConf.HTTP2_MAX_CONCURRENT_STREAMS, HttpConf.HTTP2_INITIAL_SEND_WINDOW_SIZE);
 
-    static {
-        int connWu = CONNECT_RECEIVE_WINDOW_SIZE - 0xFFFF;
+    static byte[] buildServerReplyFrames(int maxServerConcurrentStreams, int initialReceiveWindowSize) {
+        final int connectReceiveWindowSize = initialReceiveWindowSize << 4;
+        int connWu = connectReceiveWindowSize - 0xFFFF;
         int hts = Http2HpackCodec.MAX_DYNAMIC_TABLE_SIZE; // advertise the same value the decoder enforces (RFC 7541 §6.3)
-        // SETTINGS frame length is 18: 3 six-byte settings (0x1/0x3/0x4) = 9*2 = 18
-        SERVER_REPLY_FRAMES = new byte[]{
+        // SETTINGS payload = 18 bytes: 3 entries × 6 bytes (id=1 HEADER_TABLE_SIZE, id=3 MAX_CONCURRENT_STREAMS, id=4 INITIAL_WINDOW_SIZE)
+        return new byte[]{
                 0, 0, 18, Http2Frame.FRAME_TYPE_SETTINGS, 0, 0, 0, 0, 0,
                 0, 1,
                 (byte) (hts >> 24), (byte) (hts >> 16), (byte) (hts >> 8), (byte) hts,
                 0, 3,
-                (byte) (MAX_SERVER_CONCURRENT_STREAMS >> 24), (byte) (MAX_SERVER_CONCURRENT_STREAMS >> 16), (byte) (MAX_SERVER_CONCURRENT_STREAMS >> 8), (byte) MAX_SERVER_CONCURRENT_STREAMS,
+                (byte) (maxServerConcurrentStreams >> 24), (byte) (maxServerConcurrentStreams >> 16), (byte) (maxServerConcurrentStreams >> 8), (byte) maxServerConcurrentStreams,
                 0, 4,
-                (byte) (INITIAL_RECEIVE_WINDOW_SIZE >> 24), (byte) (INITIAL_RECEIVE_WINDOW_SIZE >> 16), (byte) (INITIAL_RECEIVE_WINDOW_SIZE >> 8), (byte) INITIAL_RECEIVE_WINDOW_SIZE,
+                (byte) (initialReceiveWindowSize >> 24), (byte) (initialReceiveWindowSize >> 16), (byte) (initialReceiveWindowSize >> 8), (byte) initialReceiveWindowSize,
                 0, 0, 4, Http2Frame.FRAME_TYPE_WINDOW_UPDATE, 0, 0, 0, 0, 0,
                 (byte) (connWu >> 24), (byte) (connWu >> 16), (byte) (connWu >> 8), (byte) connWu
         };
     }
 
     public Http2ServerReader() {
+        this(ChannelContext.EMPTY_CONTEXT);
+    }
+
+    public Http2ServerReader(ChannelContext ctx) {
+        super(ctx);
+        this.maxServerConcurrentStreams = ctx.option(HttpOptions.HTTP2_MAX_CONCURRENT_STREAMS);
     }
 
     /**
@@ -74,14 +82,14 @@ public class Http2ServerReader extends Http2MessageReader {
     @Override
     protected void onInboundRstStream(ChannelContext ctx) {
         long now = System.currentTimeMillis();
-        long windowMillis = (long) HttpConf.HTTP2_CLIENT_RST_WINDOW_SECONDS * 1000L;
+        long windowMillis = (long) ctx.option(HttpOptions.HTTP2_CLIENT_RST_WINDOW_SECONDS) * 1000L;
         if (now - rstWindowStartMs >= windowMillis) {
             rstWindowStartMs = now;
             rstCountInWindow = 0;
         }
-        if (++rstCountInWindow > HttpConf.HTTP2_CLIENT_RST_MAX_COUNT) {
+        if (++rstCountInWindow > ctx.option(HttpOptions.HTTP2_CLIENT_RST_MAX_COUNT)) {
             LOG.warn("HTTP/2 Rapid Reset suspected from {}: client RST_STREAM rate exceeded {} per {}s, closing connection",
-                    ctx.getRemoteAddress(), HttpConf.HTTP2_CLIENT_RST_MAX_COUNT, HttpConf.HTTP2_CLIENT_RST_WINDOW_SECONDS);
+                    ctx.getRemoteAddress(), ctx.option(HttpOptions.HTTP2_CLIENT_RST_MAX_COUNT), HttpOptions.HTTP2_CLIENT_RST_WINDOW_SECONDS);
             ctx.fireAbuse("RST_FLOOD");
             closeConnection(ctx);
         }
@@ -102,7 +110,6 @@ public class Http2ServerReader extends Http2MessageReader {
             closeConnection(ctx, 1); // PROTOCOL_ERROR (handshake failure)
             throw e;
         }
-        this.ctx = ctx;
         this.createdAt = System.currentTimeMillis();
         H2Monitor.register(ctx.getId(), this);
     }
@@ -125,7 +132,11 @@ public class Http2ServerReader extends Http2MessageReader {
     }
 
     public Http2ServerReader replyServerSettings(ChannelContext ctx) throws IOException {
-        ctx.writeFlush(SERVER_REPLY_FRAMES);
+        byte[] serverReplyFrames = SERVER_REPLY_FRAMES;
+        if(initialReceiveWindowSize != HttpConf.HTTP2_INITIAL_SEND_WINDOW_SIZE || maxServerConcurrentStreams != HttpConf.HTTP2_MAX_CONCURRENT_STREAMS) {
+            serverReplyFrames = buildServerReplyFrames(maxServerConcurrentStreams, initialReceiveWindowSize);
+        }
+        ctx.writeFlush(serverReplyFrames);
         return this;
     }
 
@@ -159,7 +170,7 @@ public class Http2ServerReader extends Http2MessageReader {
             }
             // unknown odd id (idle stream) -> open it
             if (streamId > currentMaxStreamId) {
-                if (streamMap.size() >= MAX_SERVER_CONCURRENT_STREAMS) {
+                if (streamMap.size() >= maxServerConcurrentStreams) {
                     sendRstStreamFrame(ctx, streamId, 7); // REFUSED_STREAM
                     return null;
                 }

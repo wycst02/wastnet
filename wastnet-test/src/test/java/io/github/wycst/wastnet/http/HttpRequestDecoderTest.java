@@ -1,74 +1,39 @@
 package io.github.wycst.wastnet.http;
 
+import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
+import io.github.wycst.wastnet.socket.tcp.NioConfig;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 public class HttpRequestDecoderTest {
 
-    private static final AtomicBoolean initialized = new AtomicBoolean();
-    private static Object origPreserve, origPipeline, origTimeout;
-
-    @BeforeAll
-    public static void setupConfig() throws Exception {
-        if (initialized.getAndSet(true)) return;
-        origPreserve = setFinalStatic(HttpConf.class, "PRESERVE_HEADER_ORDER", true);
-        origPipeline = setFinalStatic(HttpConf.class, "PIPELINE_ENABLED", true);
-        origTimeout = setFinalStatic(HttpConf.class, "REQUEST_TIMEOUT_MS", 50L);
-    }
-
-    @AfterAll
-    public static void restoreConfig() throws Exception {
-        if (origPreserve != null) {
-            setFinalStatic(HttpConf.class, "PRESERVE_HEADER_ORDER", origPreserve);
-            setFinalStatic(HttpConf.class, "PIPELINE_ENABLED", origPipeline);
-            setFinalStatic(HttpConf.class, "REQUEST_TIMEOUT_MS", origTimeout);
-        }
-    }
-
-    private static sun.misc.Unsafe getUnsafe() throws Exception {
-        Field f = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
-        f.setAccessible(true);
-        return (sun.misc.Unsafe) f.get(null);
-    }
-
-    private static <T> Object setFinalStatic(Class<?> clazz, String fieldName, T value) throws Exception {
-        Field field = clazz.getDeclaredField(fieldName);
-        field.setAccessible(true);
-        Object original = field.get(null);
-        sun.misc.Unsafe unsafe = getUnsafe();
-        Class<?> type = field.getType();
-        long offset = unsafe.staticFieldOffset(field);
-        Object base = unsafe.staticFieldBase(field);
-        if (type == long.class) {
-            unsafe.putLong(base, offset, ((Number) value).longValue());
-        } else if (type == int.class) {
-            unsafe.putInt(base, offset, ((Number) value).intValue());
-        } else if (type == boolean.class) {
-            unsafe.putBoolean(base, offset, (Boolean) value);
-        } else {
-            unsafe.putObject(base, offset, value);
-        }
-        return original;
-    }
-
     private final AtomicReference<HttpRequest> captured = new AtomicReference<HttpRequest>();
 
+    /** Builds a ctx whose NioConfig carries the option overrides that previously lived as HttpConf statics. */
     private ChannelContext createCtx() throws Exception {
+        return createCtx(cfg -> {});
+    }
+
+    private ChannelContext createCtx(java.util.function.Consumer<NioConfig> configurer) throws Exception {
         SocketChannel ch = SocketChannel.open();
         ch.configureBlocking(false);
         ChannelContext ctx = new ChannelContext(ch, 4096);
+        NioConfig cfg = new NioConfig();
+        cfg.option(HttpOptions.PRESERVE_HEADER_ORDER, true);
+        cfg.option(HttpOptions.PIPELINE_ENABLED, true);
+        cfg.option(HttpOptions.REQUEST_TIMEOUT_MS, 50L);
+        if (configurer != null) {
+            configurer.accept(cfg);
+        }
+        ctx.attachNioConfig(cfg);
         ctx.setChannelHandler(new ChannelHandler<Object>() {
             @Override
             public void onHandle(ChannelContext c, Object msg) {
@@ -258,14 +223,9 @@ public class HttpRequestDecoderTest {
 
     @Test
     public void testMaxSingleHeaderSize() throws Exception {
-        Object orig = setFinalStatic(HttpConf.class, "MAX_SINGLE_HEADER_SIZE", 5);
-        try {
-            ChannelContext ctx = createCtx();
-            HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-            decodeAll(d, "GET / HTTP/1.1\r\nX: toolong\r\n\r\n", ctx);
-        } finally {
-            setFinalStatic(HttpConf.class, "MAX_SINGLE_HEADER_SIZE", orig);
-        }
+        ChannelContext ctx = createCtx(c -> c.option(HttpOptions.MAX_SINGLE_HEADER_SIZE, 5));
+        HttpRequestDecoder d = new HttpRequestDecoder(ctx);
+        decodeAll(d, "GET / HTTP/1.1\r\nX: toolong\r\n\r\n", ctx);
     }
 
     // ===== readStartLine negative byte branch =====
@@ -454,16 +414,11 @@ public class HttpRequestDecoderTest {
 
     @Test
     public void testRequestTimeout() throws Exception {
-        Object orig = setFinalStatic(HttpConf.class, "REQUEST_TIMEOUT_MS", 10L);
-        try {
-            ChannelContext ctx = createCtx();
-            HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-            d.decode("GET / HTTP/1.1\r\n".getBytes(), 0, 16, ctx);
-            Thread.sleep(50);
-            d.decode("Host".getBytes(), 0, 4, ctx);
-        } finally {
-            setFinalStatic(HttpConf.class, "REQUEST_TIMEOUT_MS", orig);
-        }
+        ChannelContext ctx = createCtx(c -> c.option(HttpOptions.REQUEST_TIMEOUT_MS, 10L));
+        HttpRequestDecoder d = new HttpRequestDecoder(ctx);
+        d.decode("GET / HTTP/1.1\r\n".getBytes(), 0, 16, ctx);
+        Thread.sleep(50);
+        d.decode("Host".getBytes(), 0, 4, ctx);
     }
 
     @Test
@@ -666,40 +621,25 @@ public class HttpRequestDecoderTest {
 
     @Test
     public void testUriTooLong() throws Exception {
-        Object orig = setFinalStatic(HttpConf.class, "MAX_URI_LENGTH", 3);
-        try {
-            ChannelContext ctx = createCtx();
-            HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-            decodeAll(d, "GET /abc HTTP/1.1\r\nHost: a\r\n\r\n", ctx);
-        } finally {
-            setFinalStatic(HttpConf.class, "MAX_URI_LENGTH", orig);
-        }
+        ChannelContext ctx = createCtx(c -> c.option(HttpOptions.MAX_URI_LENGTH, 3));
+        HttpRequestDecoder d = new HttpRequestDecoder(ctx);
+        decodeAll(d, "GET /abc HTTP/1.1\r\nHost: a\r\n\r\n", ctx);
     }
 
     @Test
     public void testHeaderKeyTooLarge() throws Exception {
-        Object orig = setFinalStatic(HttpConf.class, "MAX_HTTP_HEADER_SIZE", 10);
-        try {
-            ChannelContext ctx = createCtx();
-            HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-            byte[] data = "GET / HTTP/1.1\r\nABCDEFGHIJKLMNOPQRSTUVWXYZ".getBytes();
-            d.decode(data, 0, data.length, ctx);
-        } finally {
-            setFinalStatic(HttpConf.class, "MAX_HTTP_HEADER_SIZE", orig);
-        }
+        ChannelContext ctx = createCtx(c -> c.option(HttpOptions.MAX_HTTP_HEADER_SIZE, 10));
+        HttpRequestDecoder d = new HttpRequestDecoder(ctx);
+        byte[] data = "GET / HTTP/1.1\r\nABCDEFGHIJKLMNOPQRSTUVWXYZ".getBytes();
+        d.decode(data, 0, data.length, ctx);
     }
 
     @Test
     public void testHeaderValueTooLarge() throws Exception {
-        Object orig = setFinalStatic(HttpConf.class, "MAX_HTTP_HEADER_SIZE", 10);
-        try {
-            ChannelContext ctx = createCtx();
-            HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-            byte[] data = "GET / HTTP/1.1\r\nK:ABCDEFGHIJKLMNOPQRSTUVWXYZ".getBytes();
-            d.decode(data, 0, data.length, ctx);
-        } finally {
-            setFinalStatic(HttpConf.class, "MAX_HTTP_HEADER_SIZE", orig);
-        }
+        ChannelContext ctx = createCtx(c -> c.option(HttpOptions.MAX_HTTP_HEADER_SIZE, 10));
+        HttpRequestDecoder d = new HttpRequestDecoder(ctx);
+        byte[] data = "GET / HTTP/1.1\r\nK:ABCDEFGHIJKLMNOPQRSTUVWXYZ".getBytes();
+        d.decode(data, 0, data.length, ctx);
     }
 
     @Test
@@ -746,15 +686,10 @@ public class HttpRequestDecoderTest {
 
     @Test
     public void testUriTooLongAtBufferEdge() throws Exception {
-        Object orig = setFinalStatic(HttpConf.class, "MAX_URI_LENGTH", 1);
-        try {
-            ChannelContext ctx = createCtx();
-            HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-            // Buffer ends at whitespace after token, token exceeds MAX_URI_LENGTH
-            d.decode("GE".getBytes(), 0, 2, ctx);
-        } finally {
-            setFinalStatic(HttpConf.class, "MAX_URI_LENGTH", orig);
-        }
+        ChannelContext ctx = createCtx(c -> c.option(HttpOptions.MAX_URI_LENGTH, 1));
+        HttpRequestDecoder d = new HttpRequestDecoder(ctx);
+        // Buffer ends at whitespace after token, token exceeds MAX_URI_LENGTH
+        d.decode("GE".getBytes(), 0, 2, ctx);
     }
 
     @Test
@@ -842,19 +777,14 @@ public class HttpRequestDecoderTest {
 
     @Test
     public void testLengthRequired() throws Exception {
-        Object orig = setFinalStatic(HttpConf.class, "PIPELINE_ENABLED", false);
-        try {
-            captured.set(null);
-            ChannelContext ctx = createCtx();
-            HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-            // POST without Content-Length, PIPELINE_DISABLED → len > 0 && !PIPELINE_ENABLED && !hasContentLength
-            decodeAll(d, "POST / HTTP/1.1\r\nHost: a\r\n\r\nx", ctx);
-            HttpRequest req = captured.get();
-            assertNotNull(req);
-            assertTrue(req.isBad());
-        } finally {
-            setFinalStatic(HttpConf.class, "PIPELINE_ENABLED", orig);
-        }
+        captured.set(null);
+        ChannelContext ctx = createCtx(c -> c.option(HttpOptions.PIPELINE_ENABLED, false));
+        HttpRequestDecoder d = new HttpRequestDecoder(ctx);
+        // POST without Content-Length, PIPELINE_DISABLED → len > 0 && !PIPELINE_ENABLED && !hasContentLength
+        decodeAll(d, "POST / HTTP/1.1\r\nHost: a\r\n\r\nx", ctx);
+        HttpRequest req = captured.get();
+        assertNotNull(req);
+        assertTrue(req.isBad());
     }
 
     // ===== readHeaderKey SWAR loop exhaust (L342 offset += 24) =====
@@ -948,21 +878,16 @@ public class HttpRequestDecoderTest {
 
     @Test
     public void testOnBadDecodedWithStreamMode() throws Exception {
-        Object origMem = setFinalStatic(HttpConf.class, "MAX_BODY_IN_MEMORY", 4);
-        try {
-            captured.set(null);
-            ChannelContext ctx = createCtx();
-            HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-            // Content-Length: 10 > MAX_BODY_IN_MEMORY(4) → STREAM mode
-            // Expect: 100-xxx sets EXPECTATION_FAILED during addHeader
-            // readBody sets bodyMode=STREAM, then handleBadOrTimeout catches status
-            decodeAll(d, "POST / HTTP/1.1\r\nContent-Length: 10\r\nExpect: 100-xxx\r\n\r\n0123456789", ctx);
-            HttpRequest req = captured.get();
-            assertNotNull(req);
-            assertTrue(req.isBad());
-        } finally {
-            setFinalStatic(HttpConf.class, "MAX_BODY_IN_MEMORY", origMem);
-        }
+        captured.set(null);
+        ChannelContext ctx = createCtx(c -> c.option(HttpOptions.MAX_BODY_IN_MEMORY, 4));
+        HttpRequestDecoder d = new HttpRequestDecoder(ctx);
+        // Content-Length: 10 > MAX_BODY_IN_MEMORY(4) → STREAM mode
+        // Expect: 100-xxx sets EXPECTATION_FAILED during addHeader
+        // readBody sets bodyMode=STREAM, then handleBadOrTimeout catches status
+        decodeAll(d, "POST / HTTP/1.1\r\nContent-Length: 10\r\nExpect: 100-xxx\r\n\r\n0123456789", ctx);
+        HttpRequest req = captured.get();
+        assertNotNull(req);
+        assertTrue(req.isBad());
     }
 
     // ===== L485 branch: onBadDecoded with bodyMode=CHUNKED (.chunked(true)) =====
@@ -981,48 +906,52 @@ public class HttpRequestDecoderTest {
         assertTrue(req.isBad());
     }
 
+    // ===== onDecoded with bodyMode=STREAM (normal completion, no bad) =====
+
+    @Test
+    public void testOnDecodedWithStreamMode() throws Exception {
+        captured.set(null);
+        ChannelContext ctx = createCtx(c -> c.option(HttpOptions.MAX_BODY_IN_MEMORY, 4));
+        HttpRequestDecoder d = new HttpRequestDecoder(ctx);
+        // Content-Length: 10 > MAX_BODY_IN_MEMORY(4) → STREAM mode, no Expect → normal completion
+        decodeAll(d, "POST / HTTP/1.1\r\nContent-Length: 10\r\nHost: a\r\n\r\n0123456789", ctx);
+        HttpRequest req = captured.get();
+        assertNotNull(req);
+        assertFalse(req.isBad());
+    }
+
     // ===== Timeout with incomplete start-line (startLineIdx != 3) → connection closed =====
 
     @Test
     public void testTimeoutIncompleteStartLineNoUri() throws Exception {
-        Object origTimeout = setFinalStatic(HttpConf.class, "REQUEST_TIMEOUT_MS", 1L);
-        try {
-            captured.set(null);
-            ChannelContext ctx = createCtx();
-            HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-            // Send only "GET " → method parsed (startLineIdx=1), URI token not yet
-            // delimited. No CRLF is ever sent.
-            d.decode("GET ".getBytes("ISO-8859-1"), 0, 4, ctx);
-            Thread.sleep(30); // exceed the 1ms timeout
-            // A second non-empty decode forces handleBadOrTimeout to observe the timeout.
-            // Since startLineIdx != 3 (malformed start-line), onBadDecoded must close the
-            // connection directly and must NOT build a request (which would NPE on
-            // createAsciiString(null) or carry a null URI downstream).
-            d.decode(new byte[]{'x'}, 0, 1, ctx);
-            assertNull(captured.get());
-        } finally {
-            setFinalStatic(HttpConf.class, "REQUEST_TIMEOUT_MS", origTimeout);
-        }
+        captured.set(null);
+        ChannelContext ctx = createCtx(c -> c.option(HttpOptions.REQUEST_TIMEOUT_MS, 1L));
+        HttpRequestDecoder d = new HttpRequestDecoder(ctx);
+        // Send only "GET " → method parsed (startLineIdx=1), URI token not yet
+        // delimited. No CRLF is ever sent.
+        d.decode("GET ".getBytes("ISO-8859-1"), 0, 4, ctx);
+        Thread.sleep(30); // exceed the 1ms timeout
+        // A second non-empty decode forces handleBadOrTimeout to observe the timeout.
+        // Since startLineIdx != 3 (malformed start-line), onBadDecoded must close the
+        // connection directly and must NOT build a request (which would NPE on
+        // createAsciiString(null) or carry a null URI downstream).
+        d.decode(new byte[]{'x'}, 0, 1, ctx);
+        assertNull(captured.get());
     }
 
     // ===== Timeout with missing version token (startLineIdx == 2) → connection closed =====
 
     @Test
     public void testTimeoutIncompleteStartLineMissingVersion() throws Exception {
-        Object origTimeout = setFinalStatic(HttpConf.class, "REQUEST_TIMEOUT_MS", 1L);
-        try {
-            captured.set(null);
-            ChannelContext ctx = createCtx();
-            HttpRequestDecoder d = new HttpRequestDecoder(ctx);
-            // Send "GET /" → method + URI parsed (startLineIdx=2, startLineMiddle set),
-            // but version token missing. No CRLF is ever sent.
-            d.decode("GET /".getBytes("ISO-8859-1"), 0, 5, ctx);
-            Thread.sleep(30); // exceed the 1ms timeout
-            d.decode(new byte[]{'x'}, 0, 1, ctx);
-            assertNull(captured.get());
-        } finally {
-            setFinalStatic(HttpConf.class, "REQUEST_TIMEOUT_MS", origTimeout);
-        }
+        captured.set(null);
+        ChannelContext ctx = createCtx(c -> c.option(HttpOptions.REQUEST_TIMEOUT_MS, 1L));
+        HttpRequestDecoder d = new HttpRequestDecoder(ctx);
+        // Send "GET /" → method + URI parsed (startLineIdx=2, startLineMiddle set),
+        // but version token missing. No CRLF is ever sent.
+        d.decode("GET /".getBytes("ISO-8859-1"), 0, 5, ctx);
+        Thread.sleep(30); // exceed the 1ms timeout
+        d.decode(new byte[]{'x'}, 0, 1, ctx);
+        assertNull(captured.get());
     }
 
     // ===== L142/L145 branch: getResult with non-null status =====

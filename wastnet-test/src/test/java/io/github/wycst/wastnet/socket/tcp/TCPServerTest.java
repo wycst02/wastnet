@@ -1,6 +1,7 @@
 package io.github.wycst.wastnet.socket.tcp;
 
 import io.github.wycst.wastnet.exception.SocketException;
+import io.github.wycst.wastnet.socket.conf.SocketOptions;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import io.github.wycst.wastnet.socket.handler.IdleStateHandler;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
@@ -380,57 +381,28 @@ public class TCPServerTest {
 
     // ==================== nextWorker load balance ====================
 
-    private static final Object UNSAFE;
-    static {
-        try {
-            java.lang.reflect.Field f = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe");
-            f.setAccessible(true);
-            UNSAFE = f.get(null);
-        } catch (Exception e) { throw new RuntimeException(e); }
-    }
-
-    private static void setFinalBoolean(Class<?> clazz, String fieldName, boolean value) throws Exception {
-        java.lang.reflect.Field f = clazz.getDeclaredField(fieldName);
-        f.setAccessible(true);
-        long offset = (long) UNSAFE.getClass().getMethod("objectFieldOffset", java.lang.reflect.Field.class).invoke(UNSAFE, f);
-        Object base = UNSAFE.getClass().getMethod("staticFieldBase", java.lang.reflect.Field.class).invoke(UNSAFE, f);
-        boolean original = (boolean) UNSAFE.getClass().getMethod("getBoolean", Object.class, long.class).invoke(UNSAFE, base, offset);
-        UNSAFE.getClass().getMethod("putBoolean", Object.class, long.class, boolean.class).invoke(UNSAFE, base, offset, value);
-    }
-
     @Test
     public void testNextWorkerLoadBalance() throws Exception {
-        // Temporarily enable load balance via Unsafe
-        java.lang.reflect.Field lbField = io.github.wycst.wastnet.socket.conf.SocketConf.class.getDeclaredField("USE_LEAST_CONNECTIONS");
-        lbField.setAccessible(true);
-        long offset = (long) UNSAFE.getClass().getMethod("staticFieldOffset", java.lang.reflect.Field.class).invoke(UNSAFE, lbField);
-        Object base = UNSAFE.getClass().getMethod("staticFieldBase", java.lang.reflect.Field.class).invoke(UNSAFE, lbField);
-        boolean orig = (boolean) UNSAFE.getClass().getMethod("getBoolean", Object.class, long.class).invoke(UNSAFE, base, offset);
+        int port = findFreePort();
+        TCPServer server = new TCPServer(port);
+        server.config().option(SocketOptions.LOAD_BALANCE_TYPE, "LEAST_CONN");
+        server.config().setChannelHandler(new ChannelHandler<byte[]>() {
+            @Override
+            public void onHandle(ChannelContext ctx, byte[] message) {}
+        });
         try {
-            UNSAFE.getClass().getMethod("putBoolean", Object.class, long.class, boolean.class).invoke(UNSAFE, base, offset, true);
+            server.start();
+            ChannelWorker[] workers = server.workers();
 
-            int port = findFreePort();
-            TCPServer server = new TCPServer(port);
-            server.config().setChannelHandler(new ChannelHandler<byte[]>() {
-                @Override
-                public void onHandle(ChannelContext ctx, byte[] message) {}
-            });
-            try {
-                server.start();
-                ChannelWorker[] workers = server.workers();
+            // Decrement one worker more than others to create imbalance
+            workers[0].decrementConnectionCount();
+            workers[0].decrementConnectionCount();
 
-                // Decrement one worker more than others to create imbalance
-                workers[0].decrementConnectionCount();
-                workers[0].decrementConnectionCount();
-
-                // nextWorker should select the one with least connections
-                ChannelWorker selected = server.nextWorker(0, workers);
-                Assertions.assertNotNull(selected);
-            } finally {
-                server.shutdown();
-            }
+            // nextWorker should select the one with least connections
+            ChannelWorker selected = server.nextWorker(0, workers);
+            Assertions.assertNotNull(selected);
         } finally {
-            UNSAFE.getClass().getMethod("putBoolean", Object.class, long.class, boolean.class).invoke(UNSAFE, base, offset, orig);
+            server.shutdown();
         }
     }
 }

@@ -8,6 +8,7 @@ import io.github.wycst.wastnet.http.handler.HttpServerChannelHandler;
 import io.github.wycst.wastnet.http.reader.HttpChannelReaderFactory;
 import io.github.wycst.wastnet.http.upgrade.UpgradeHandler;
 import io.github.wycst.wastnet.socket.channel.ChannelReader;
+import io.github.wycst.wastnet.socket.conf.Option;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import io.github.wycst.wastnet.socket.handler.IdleStateHandler;
 import io.github.wycst.wastnet.socket.tcp.ConnectionFilter;
@@ -17,12 +18,17 @@ import io.github.wycst.wastnet.socket.tcp.TCPServer;
 
 import javax.net.ssl.SSLContext;
 import java.io.InputStream;
+import java.net.Inet4Address;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.util.Enumeration;
 
 /**
- * Base NIO HTTP server
+ * Base NIO HTTP server.
+ *
+ * <p>High-performance HTTP server based on NIO.</p>
  *
  * @author wangyc
- * @Description: High-performance HTTP server based on NIO
  */
 public class HTTPServer extends TCPServer {
 
@@ -124,6 +130,7 @@ public class HTTPServer extends TCPServer {
         return this;
     }
 
+    @SuppressWarnings("rawtypes")
     public HTTPServer channelReader(ChannelReader channelReader) {
         super.channelReader(channelReader);
         return this;
@@ -178,11 +185,6 @@ public class HTTPServer extends TCPServer {
         return this;
     }
 
-    public HTTPServer config(NioConfig nioConfig) {
-        super.config(nioConfig);
-        return this;
-    }
-
     public HTTPServer bufferSize(int buffSize) {
         super.bufferSize(buffSize);
         return this;
@@ -225,7 +227,12 @@ public class HTTPServer extends TCPServer {
     }
 
     public HTTPServer workerNum(int workerNum) {
-        nioConfig.setWorkerNum(workerNum);
+        super.workerNum(workerNum);
+        return this;
+    }
+
+    public <T> HTTPServer option(Option<T> option, T value) {
+        super.option(option, value);
         return this;
     }
 
@@ -268,14 +275,14 @@ public class HTTPServer extends TCPServer {
 
     private void logNetworkAddresses(String scheme) {
         try {
-            java.util.Enumeration<java.net.NetworkInterface> ifs = java.net.NetworkInterface.getNetworkInterfaces();
+            Enumeration<NetworkInterface> ifs = NetworkInterface.getNetworkInterfaces();
             while (ifs.hasMoreElements()) {
-                java.net.NetworkInterface ni = ifs.nextElement();
+                NetworkInterface ni = ifs.nextElement();
                 if (ni.isLoopback() || !ni.isUp()) continue;
-                java.util.Enumeration<java.net.InetAddress> addrs = ni.getInetAddresses();
+                Enumeration<InetAddress> addrs = ni.getInetAddresses();
                 while (addrs.hasMoreElements()) {
-                    java.net.InetAddress addr = addrs.nextElement();
-                    if (addr instanceof java.net.Inet4Address) {
+                    InetAddress addr = addrs.nextElement();
+                    if (addr instanceof Inet4Address) {
                         System.out.println("  >>  Network:" + " " + scheme + "://" + addr.getHostAddress() + ":" + port);
                     }
                 }

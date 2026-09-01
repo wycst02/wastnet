@@ -15,7 +15,6 @@
  */
 package io.github.wycst.wastnet.http;
 
-import io.github.wycst.wastnet.socket.conf.SocketConf;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import io.github.wycst.wastnet.util.Utils;
 
@@ -140,19 +139,19 @@ final class HttpChunkedStream extends HttpBodyInputStream {
                     }
                 }
                 // 1. read chunk size
-                int chunkSize = readChunkSize(SocketConf.READ_TIMEOUT_MS);
+                int chunkSize = readChunkSize(readTimeoutMs);
                 if (chunkSize == 0) {
                     readEndChunked();
                     markCompleted();
                     return len - rem;
                 } else {
                     // Check total size limit for chunked encoding
-                    if (totalReadedSize + chunkSize > HttpConf.BODY_MAX_SIZE) {
+                    if (totalReadedSize + chunkSize > ctx.option(HttpOptions.BODY_MAX_SIZE)) {
                         markErrorChunked();
-                        throw new IllegalStateException("Chunked body size exceeds limit " + HttpConf.BODY_MAX_SIZE);
+                        throw new IllegalStateException("Chunked body size exceeds limit " + ctx.option(HttpOptions.BODY_MAX_SIZE));
                     }
                     // 2. read chunk data
-                    readFully(chunkData = new byte[chunkSize], 0, chunkSize, SocketConf.READ_TIMEOUT_MS);
+                    readFully(chunkData = new byte[chunkSize], 0, chunkSize, readTimeoutMs);
                     readCRLF();
                     // 3. update total size and reset chunkRemSize
                     totalReadedSize += chunkSize;

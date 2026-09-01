@@ -18,4 +18,12 @@ public interface HttpRequestHandler {
      * @throws Throwable if handling fails
      */
     void handle(HttpRequest request, HttpResponse response) throws Throwable;
+
+    /**
+     * Prepare this handler before the server starts serving (called once at startup).
+     * <p>Default is a no-op; subclasses may override to do one-time setup such as
+     * route pre-processing (e.g. sorting).</p>
+     */
+    default void prepare() {
+    }
 }

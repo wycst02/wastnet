@@ -15,7 +15,7 @@
  */
 package io.github.wycst.wastnet.http.h2;
 
-import io.github.wycst.wastnet.http.HttpConf;
+import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.log.Log;
 import io.github.wycst.wastnet.log.LogFactory;
 
@@ -32,7 +32,6 @@ import java.net.SocketTimeoutException;
  * or the stream has ended.
  * <p>
  * Buffer capacity is fixed at construction time and should be pre-allocated
- * to {@link HttpConf#MAX_BODY_IN_MEMORY}
  * for streaming scenarios.
  * <p>
  * Implementation notes:
@@ -112,8 +111,9 @@ public class Http2BodyInputStream extends InputStream {
         if (len == 0) return 0;
         // Empty singleton: no body to read
         if (capacity == 0) return -1;
-        long deadline = HttpConf.HTTP2_BODY_READ_TIMEOUT_MS > 0
-                ? System.currentTimeMillis() + HttpConf.HTTP2_BODY_READ_TIMEOUT_MS : Long.MAX_VALUE;
+        final int bodyReadTimeoutMs = stream == null ? HttpOptions.HTTP2_BODY_READ_TIMEOUT_MS.value : stream.ctx.option(HttpOptions.HTTP2_BODY_READ_TIMEOUT_MS);
+        long deadline = bodyReadTimeoutMs > 0
+                ? System.currentTimeMillis() + bodyReadTimeoutMs : Long.MAX_VALUE;
         while (true) {
             int pos = bodyPos, feed = feedPos;
             // avail from cursors: linear (pos<feed) or wrapped (pos>feed); pos==feed is empty(0)/full(capacity),
@@ -134,15 +134,14 @@ public class Http2BodyInputStream extends InputStream {
                 bodyPos = newPos;
                 consumed += toRead;
                 // After read, send WU to update client's send window
-                if (stream != null) {
+                if(stream != null) {
                     stream.notifyConsumed(toRead);
                 }
                 return toRead;
             }
             if (ended) return -1;
             if (System.currentTimeMillis() >= deadline) {
-                throw new SocketTimeoutException("HTTP/2 body read timeout after "
-                        + HttpConf.HTTP2_BODY_READ_TIMEOUT_MS + "ms");
+                throw new SocketTimeoutException("HTTP/2 body read timeout after " + bodyReadTimeoutMs + "ms");
             }
             synchronized (this) {
                 if (totalLength > consumed) continue;

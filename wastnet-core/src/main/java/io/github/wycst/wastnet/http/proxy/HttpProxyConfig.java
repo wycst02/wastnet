@@ -52,9 +52,9 @@ public class HttpProxyConfig {
     boolean h2c;
 
     // Headers: name -> resolver
-    final Map<String, HeaderValueResolver> headers = new LinkedHashMap<String, HeaderValueResolver>();
+    final Map<String, HeaderValueResolver> headers = new LinkedHashMap<>();
     // Headers to remove
-    final Set<String> removedHeaders = new HashSet<String>();
+    final Set<String> removedHeaders = new HashSet<>();
 
     private HttpProxyConfig(String target) {
         this.target = target;

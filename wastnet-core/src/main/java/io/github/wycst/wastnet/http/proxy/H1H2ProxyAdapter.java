@@ -40,7 +40,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class H1H2ProxyAdapter extends H2H2ProxyAdapter {
 
     private final ConcurrentHashMap<Integer, HttpDecodedRequest> requestMap =
-            new ConcurrentHashMap<Integer, HttpDecodedRequest>();
+            new ConcurrentHashMap<>();
 
     public H1H2ProxyAdapter(HttpProxyConnection connection) {
         super(connection);

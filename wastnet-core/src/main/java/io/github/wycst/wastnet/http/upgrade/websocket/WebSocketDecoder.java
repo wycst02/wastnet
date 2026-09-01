@@ -44,7 +44,6 @@ public class WebSocketDecoder extends HttpMessageDecoder {
         final int maxContinuations = holder != null ? holder.resource.getMaxContinuations() : HttpConf.MAX_WS_CONTINUATIONS;
         final long fragmentMergeTimeoutMs = holder != null ? holder.resource.getFragmentMergeTimeoutMs() : HttpConf.MAX_WS_FRAGMENT_MERGE_TIMEOUT_MS;
         final WebSocketResource.ContinuationStrategy strategy = holder != null ? holder.resource.getContinuationStrategy() : WebSocketResource.ContinuationStrategy.MERGE;
-
         int i = offset, rem = len;
         WebSocketFrame targetFrame = null;
         int continuationCount = 0;
@@ -133,7 +132,9 @@ public class WebSocketDecoder extends HttpMessageDecoder {
                 continue;
             }
             if (targetFrame == null) { // BATCH / MERGE: accumulate continuation frames
-                if (opcode == 0x0) { // Protocol error: first frame cannot be continuation frame
+                // Protocol error: first frame cannot be a continuation frame, and control frames
+                // MUST NOT be fragmented (RFC 6455 §5.5) — reject fragmented control frames here.
+                if (opcode == 0x0 || (opcode >= 0x8 && !fin)) {
                     handleWebSocketError(ctx, 1002);
                     return;
                 }

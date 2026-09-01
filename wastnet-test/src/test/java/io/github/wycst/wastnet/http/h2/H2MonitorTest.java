@@ -104,4 +104,18 @@ public class H2MonitorTest {
             H2Monitor.unregister(2);
         }
     }
+
+    @Test
+    void testReset() {
+        // Monitoring must be enabled (-Dwastnet.h2.monitor=true, see class javadoc).
+        H2Monitor.incrTotalOpenStreams();
+        H2Monitor.incrSubmitRequests();
+        H2Monitor.incrTotalResponses(System.currentTimeMillis() - 50);
+        H2Monitor.reset();
+        Map<String, Object> after = H2Monitor.global();
+        assertEquals(0L, (Long) after.get("totalOpenStreams"));
+        assertEquals(0L, (Long) after.get("submitRequests"));
+        assertEquals(0L, (Long) after.get("totalResponses"));
+        assertEquals(0L, (Long) after.get("maxResponseTimeMs"));
+    }
 }

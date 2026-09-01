@@ -1,6 +1,7 @@
 package io.github.wycst.wastnet.http.integration;
 
 import io.github.wycst.wastnet.http.HTTPServer;
+import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.http.HttpRequest;
 import io.github.wycst.wastnet.http.HttpResponse;
 import io.github.wycst.wastnet.http.HttpStatus;
@@ -11,6 +12,8 @@ import org.junit.jupiter.api.*;
 
 import java.io.*;
 import java.net.ServerSocket;
+import java.util.zip.GZIPInputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -26,6 +29,7 @@ public class HttpIntegrationTest {
     private static int port;
     private static File testFile;
     private static File htmlFile;
+    private static File largeHtmlFile;
     private static File smallFile;
     private static OkHttpClient httpClient;
     private static final MediaType FORM = MediaType.parse("application/x-www-form-urlencoded");
@@ -48,6 +52,16 @@ public class HttpIntegrationTest {
         smallFile = File.createTempFile("http-small-", ".txt");
         try (FileOutputStream fos = new FileOutputStream(smallFile)) {
             fos.write("small content".getBytes());
+        }
+        // Large html file (> default BODY_MEMORY_THRESHOLD 512KB) for compressAndSendFile
+        // streaming-gzip branch (fileSize > bodyMemoryThreshold).
+        largeHtmlFile = File.createTempFile("http-sendfile-large-", ".html");
+        try (FileOutputStream fos = new FileOutputStream(largeHtmlFile)) {
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 600; ++i) sb.append("<p>large html content for streaming gzip testing</p>\n");
+            // repeat to exceed 512KB
+            byte[] line = sb.toString().getBytes();
+            for (int i = 0; i < 1100; ++i) fos.write(line);
         }
 
         // 共享 OkHttpClient（自动复用连接）
@@ -244,6 +258,23 @@ public class HttpIntegrationTest {
             }
         });
 
+        // sendFile gzip large (file > BODY_MEMORY_THRESHOLD -> streaming gzip branch in compressAndSendFile)
+        router.get("/send-file-gzip-large", new HttpRoute() {
+            public void handle(String path, HttpRequest request, HttpResponse response) throws Throwable {
+                response.status(HttpStatus.OK).sendFile(largeHtmlFile);
+            }
+        });
+
+        // auto-gzip: plain body >= GZIP_MIN_SIZE with client Accept-Encoding gzip triggers attemptAutoGzipAndSend true branch
+        router.get("/auto-gzip", new HttpRoute() {
+            public void handle(String path, HttpRequest request, HttpResponse response) throws Throwable {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < 200; ++i) sb.append("auto gzip plain body content line\n");
+                // length > 2048 (GZIP_MIN_SIZE default)
+                response.status(HttpStatus.OK).body(sb.toString().getBytes());
+            }
+        });
+
         // sendFile small file (triggers sendFileBuffered, file < bufferSize)
         router.get("/send-file-small", new HttpRoute() {
             public void handle(String path, HttpRequest request, HttpResponse response) throws Throwable {
@@ -316,7 +347,7 @@ public class HttpIntegrationTest {
         });
 
         server = new HTTPServer(port);
-        server.requestHandler(router).bufferSize(1024).startupBannerEnabled(false).start();
+        server.requestHandler(router).bufferSize(1024).option(HttpOptions.GZIP, true).startupBannerEnabled(false).start();
     }
 
     // ==================== Tests ====================
@@ -523,6 +554,39 @@ public class HttpIntegrationTest {
         try (Response resp = get("/app/send-file-gzip", "Accept-Encoding", "gzip")) {
             assertEquals(200, resp.code());
             resp.body().bytes();
+        }
+    }
+
+    @Test
+    public void testSendFileGzipLarge() throws Exception {
+        try (Response resp = get("/app/send-file-gzip-large", "Accept-Encoding", "gzip")) {
+            assertEquals(200, resp.code());
+            assertTrue(resp.body().bytes().length > 0, "streaming gzip large file body should not be empty");
+        }
+    }
+
+    @Test
+    public void testAutoGzip() throws Exception {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 200; ++i) sb.append("auto gzip plain body content line\n");
+        String expected = sb.toString();
+        try (Response resp = get("/app/auto-gzip", "Accept-Encoding", "gzip")) {
+            assertEquals(200, resp.code());
+            // networkResponse carries the raw Content-Encoding header (before OkHttp transparent decompression)
+            assertEquals("gzip", resp.networkResponse().header("Content-Encoding"),
+                    "auto-gzip should set Content-Encoding: gzip");
+            // We passed Accept-Encoding manually, so OkHttp does NOT transparently decompress;
+            // decompress the gzip payload ourselves to verify the original body survived.
+            byte[] raw = resp.body().bytes();
+            ByteArrayInputStream bais = new ByteArrayInputStream(raw);
+            try (GZIPInputStream gzis = new GZIPInputStream(bais)) {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = gzis.read(buf)) != -1) out.write(buf, 0, n);
+                String decoded = new String(out.toByteArray(), StandardCharsets.UTF_8);
+                assertEquals(expected, decoded);
+            }
         }
     }
 

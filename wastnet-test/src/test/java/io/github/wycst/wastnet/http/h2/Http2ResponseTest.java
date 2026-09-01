@@ -1,18 +1,26 @@
 package io.github.wycst.wastnet.http.h2;
 
-import io.github.wycst.wastnet.http.*;
+import io.github.wycst.wastnet.http.HttpBuf;
+import io.github.wycst.wastnet.http.HttpConf;
+import io.github.wycst.wastnet.http.HttpHeaderNames;
+import io.github.wycst.wastnet.http.HttpOptions;
+import io.github.wycst.wastnet.http.HttpVersion;
+import io.github.wycst.wastnet.socket.tcp.NioConfig;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.*;
 import java.nio.ByteBuffer;
-import java.util.*;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
-import org.mockito.ArgumentCaptor;
-
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
@@ -43,8 +51,68 @@ public class Http2ResponseTest {
         }
     }
 
+    /**
+     * Returns a real {@link ChannelContext} bound to a {@link NioConfig} that mirrors the
+     * live {@link HttpConf} values, so tests that reflectively tweak HttpConf still behave
+     * as before the config-isolation refactor. (Mockito cannot stub {@code ChannelContext#option}
+     * because it is final, so we use a real context + real NioConfig overrides instead.)
+     */
+    private static ChannelContext mockChannelContext() {
+        return mockChannelContext(HttpConf.EXPOSE_SERVER_HEADER);
+    }
+
+    private static ChannelContext mockChannelContext(boolean exposeServerHeader) {
+        ChannelContext ctx;
+        try {
+            java.lang.reflect.Constructor<ChannelContext> ctor =
+                    ChannelContext.class.getDeclaredConstructor(long.class, java.nio.channels.SocketChannel.class, int.class);
+            ctor.setAccessible(true);
+            ctx = ctor.newInstance(0L, null, 0);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        NioConfig nioConfig = new NioConfig();
+        nioConfig.option(HttpOptions.EXPOSE_SERVER_HEADER, exposeServerHeader);
+        nioConfig.option(HttpOptions.BODY_MEMORY_THRESHOLD, HttpConf.BODY_MEMORY_THRESHOLD);
+        nioConfig.option(HttpOptions.GZIP, HttpConf.GZIP);
+        nioConfig.option(HttpOptions.GZIP_MIN_SIZE, HttpConf.GZIP_MIN_SIZE);
+        ctx.attachNioConfig(nioConfig);
+        return ctx;
+    }
+
+    /**
+     * Build a real {@link ChannelContext} whose {@link NioConfig} starts from the live
+     * HttpConf defaults and applies the given overrides. Used to cover per-context config
+     * branches without any reflective/Unsafe mutation of HttpConf static fields.
+     */
+    private static ChannelContext mockChannelContext(NioConfig overrides) {
+        ChannelContext ctx;
+        try {
+            java.lang.reflect.Constructor<ChannelContext> ctor =
+                    ChannelContext.class.getDeclaredConstructor(long.class, java.nio.channels.SocketChannel.class, int.class);
+            ctor.setAccessible(true);
+            ctx = ctor.newInstance(0L, null, 0);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        // Per-test overrides are applied on top of each option's default value (option.value,
+        // which mirrors the live HttpConf). Unset keys fall back to the default automatically.
+        NioConfig nioConfig = new NioConfig();
+        if (overrides != null) {
+            nioConfig.option(HttpOptions.EXPOSE_SERVER_HEADER, overrides.option(HttpOptions.EXPOSE_SERVER_HEADER));
+            nioConfig.option(HttpOptions.BODY_MEMORY_THRESHOLD, overrides.option(HttpOptions.BODY_MEMORY_THRESHOLD));
+            nioConfig.option(HttpOptions.GZIP, overrides.option(HttpOptions.GZIP));
+            nioConfig.option(HttpOptions.GZIP_MIN_SIZE, overrides.option(HttpOptions.GZIP_MIN_SIZE));
+        }
+        ctx.attachNioConfig(nioConfig);
+        return ctx;
+    }
+
     private static MockFixture createMockFixture() {
-        ChannelContext ctx = mock(ChannelContext.class);
+        return createMockFixture(mockChannelContext());
+    }
+
+    private static MockFixture createMockFixture(ChannelContext ctx) {
         Http2ServerStream stream = mock(Http2ServerStream.class);
         when(stream.sendChunkSize()).thenReturn(16384);
         when(stream.createFrameBuffer(anyInt(), anyInt(), anyInt(), anyInt())).thenAnswer(inv -> {
@@ -103,44 +171,6 @@ public class Http2ResponseTest {
         Map<String, Object> headers = new HashMap<>();
         new Http2HpackCodec().client().decodeTo(block, 0, block.length, headers);
         return headers;
-    }
-
-    // ==================== Reflection helper ====================
-
-    private static final Object UNSAFE;
-
-    static {
-        try {
-            Field f = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe");
-            f.setAccessible(true);
-            UNSAFE = f.get(null);
-        } catch (Exception e) {
-            throw new RuntimeException("Cannot get Unsafe instance", e);
-        }
-    }
-
-    /**
-     * Temporarily set a static final int field using Unsafe (works on JDK 8-23).
-     * Returns the original value for restoration in finally block.
-     */
-    private static int setFinalStaticInt(Field field, int value) throws Exception {
-        long offset = (long) UNSAFE.getClass().getMethod("staticFieldOffset", Field.class).invoke(UNSAFE, field);
-        Object base = UNSAFE.getClass().getMethod("staticFieldBase", Field.class).invoke(UNSAFE, field);
-        int original = (int) UNSAFE.getClass().getMethod("getInt", Object.class, long.class).invoke(UNSAFE, base, offset);
-        UNSAFE.getClass().getMethod("putInt", Object.class, long.class, int.class).invoke(UNSAFE, base, offset, value);
-        return original;
-    }
-
-    /**
-     * Temporarily set a static final boolean field using Unsafe (works on JDK 8-23).
-     * Returns the original value for restoration in finally block.
-     */
-    private static boolean setFinalStaticBoolean(Field field, boolean value) throws Exception {
-        long offset = (long) UNSAFE.getClass().getMethod("staticFieldOffset", Field.class).invoke(UNSAFE, field);
-        Object base = UNSAFE.getClass().getMethod("staticFieldBase", Field.class).invoke(UNSAFE, field);
-        boolean original = (boolean) UNSAFE.getClass().getMethod("getBoolean", Object.class, long.class).invoke(UNSAFE, base, offset);
-        UNSAFE.getClass().getMethod("putBoolean", Object.class, long.class, boolean.class).invoke(UNSAFE, base, offset, value);
-        return original;
     }
 
     // ==================== getHttpVersion ====================
@@ -463,17 +493,10 @@ public class Http2ResponseTest {
 
     @Test
     void testServerHeaderExposed() throws Exception {
-        Field exposeField = HttpConf.class.getDeclaredField("EXPOSE_SERVER_HEADER");
-        exposeField.setAccessible(true);
-        boolean origExpose = setFinalStaticBoolean(exposeField, true);
-        try {
-            MockFixture f = createMockFixture();
-            f.response.commit();
-            Map<String, Object> headers = decodeSentHeaders(f);
-            assertTrue(headers.containsKey("server"), "server header should be exposed");
-        } finally {
-            setFinalStaticBoolean(exposeField, origExpose);
-        }
+        MockFixture f = createMockFixture(mockChannelContext(true));
+        f.response.commit();
+        Map<String, Object> headers = decodeSentHeaders(f);
+        assertTrue(headers.containsKey("server"), "server header should be exposed");
     }
 
     @Test
@@ -577,86 +600,39 @@ public class Http2ResponseTest {
     }
 
     @Test
-    void testWriteLargeDataExceedingThreshold() throws Exception {
-        // Temporarily lower BODY_MEMORY_THRESHOLD so we can test the large data path
-        // without sending hundreds of KB of data
-        Field thresholdField = HttpConf.class.getDeclaredField("BODY_MEMORY_THRESHOLD");
-        thresholdField.setAccessible(true);
-        int original = setFinalStaticInt(thresholdField, 16);
-        try {
-            MockFixture f = createMockFixture();
-            byte[] initial = "helloworld".getBytes();
-            f.response.write(initial, 0, initial.length);
-            // bodyBuf now has 10 bytes
-            // Write 10 more bytes - total would be 20 > 16 → triggers threshold path
-            byte[] more = "bufdatahere".getBytes();
-            f.response.write(more, 0, more.length);
-            verify(f.stream, atLeastOnce()).writeFrame(any(ByteBuffer.class), anyBoolean());
-        } finally {
-            setFinalStaticInt(thresholdField, original);
-        }
+    void testWriteLargeDataExceedingThreshold() throws IOException {
+        // Lower BODY_MEMORY_THRESHOLD via per-context config so we can test the large
+        // data path without sending hundreds of KB of data.
+        NioConfig cfg = new NioConfig();
+        cfg.option(HttpOptions.BODY_MEMORY_THRESHOLD, 16);
+        MockFixture f = createMockFixture(mockChannelContext(cfg));
+        byte[] initial = "helloworld".getBytes();
+        f.response.write(initial, 0, initial.length);
+        // bodyBuf now has 10 bytes
+        // Write 10 more bytes - total would be 20 > 16 → triggers threshold path
+        byte[] more = "bufdatahere".getBytes();
+        f.response.write(more, 0, more.length);
+        verify(f.stream, atLeastOnce()).writeFrame(any(ByteBuffer.class), anyBoolean());
     }
 
     // ==================== Auto GZIP via complete() ====================
 
     @Test
     void testAutoGzipTriggersDoSendCompressedResponse() throws Exception {
-        // Need to mock request.getHeader("accept-encoding", true) for isGzipSupported()
-        Http2ServerStream stream = mock(Http2ServerStream.class);
-        when(stream.sendChunkSize()).thenReturn(16384);
-        when(stream.createFrameBuffer(anyInt(), anyInt(), anyInt(), anyInt())).thenAnswer(inv -> {
-            int capacity = inv.getArgument(0);
-            return ByteBuffer.allocate(capacity);
-        });
-        try {
-            when(stream.acquirePartialSendWindow(anyInt())).thenAnswer(inv -> (Integer) inv.getArgument(0));
-        } catch (IOException e) {
-            // never thrown on a mock
-        }
-        try {
-            java.lang.reflect.Field f = Http2Stream.class.getDeclaredField("frameBuf");
-            f.setAccessible(true);
-            f.set(stream, HttpBuf.of(256));
-        } catch (Exception ignored) {
-        }
-        // Http2Stream.ctx / reader are set by the real constructor; mock skips it, so inject them.
-        try {
-            ChannelContext gzipCtx = mock(ChannelContext.class);
-            Http2ServerReader reader = spy(new Http2ServerReader());
-            when(reader.indexOfValue(anyString())).thenReturn(-1);
-            java.lang.reflect.Field cf = Http2Stream.class.getDeclaredField("ctx");
-            cf.setAccessible(true);
-            cf.set(stream, gzipCtx);
-            java.lang.reflect.Field rf = Http2Stream.class.getDeclaredField("reader");
-            rf.setAccessible(true);
-            rf.set(stream, reader);
-        } catch (Exception ignored) {
-        }
-        Http2Request req = mock(Http2Request.class);
-        when(req.stream()).thenReturn(stream);
-        when(req.getHttpVersion()).thenReturn(HttpVersion.HTTP_2);
+        // Enable GZIP and set min size to 1 via per-context config so the real
+        // ChannelContext reports gzipEnabled()==true and gzipMinSize()==1.
+        NioConfig cfg = new NioConfig();
+        cfg.option(HttpOptions.GZIP, true);
+        cfg.option(HttpOptions.GZIP_MIN_SIZE, 1);
+        MockFixture f = createMockFixture(mockChannelContext(cfg));
         // Return "gzip" for Accept-Encoding check
-        when(req.getHeader(anyString(), anyBoolean())).thenReturn("gzip");
+        when(f.request.getHeader(anyString(), anyBoolean())).thenReturn("gzip");
 
-        Http2Response resp = new Http2Response(req, stream, mock(ChannelContext.class));
-
-        // Temporarily enable GZIP and set min size to 1
-        Field gzipField = HttpConf.class.getDeclaredField("GZIP");
-        Field minSizeField = HttpConf.class.getDeclaredField("GZIP_MIN_SIZE");
-        gzipField.setAccessible(true);
-        minSizeField.setAccessible(true);
-        boolean origGzip = setFinalStaticBoolean(gzipField, true);
-        int origMinSize = setFinalStaticInt(minSizeField, 1);
-        try {
-            // Write enough body data to trigger GZIP (size >= 1)
-            resp.body("compress_me".getBytes());
-            resp.complete();
-            // Auto GZIP should have sent compressed data via writeFrame
-            verify(stream, atLeastOnce()).writeFrame(any(ByteBuffer.class), anyBoolean());
-        } finally {
-            setFinalStaticBoolean(gzipField, origGzip);
-            setFinalStaticInt(minSizeField, origMinSize);
-        }
+        // Write enough body data to trigger GZIP (size >= 1)
+        f.response.body("compress_me".getBytes());
+        f.response.complete();
+        // Auto GZIP should have sent compressed data via writeFrame
+        verify(f.stream, atLeastOnce()).writeFrame(any(ByteBuffer.class), anyBoolean());
     }
 
     @Test
@@ -668,107 +644,135 @@ public class Http2ResponseTest {
         assertEquals("200", decodeSentHeaders(f).get(":status"));
     }
 
+    @Test
+    void testResetInternalViaCompleteWhenAutoCommitFalse() throws Exception {
+        MockFixture f = createMockFixture();
+        // h2Headers populated so resetInternal's h2Headers.clear() has something to clear
+        f.response.addHeader("x-test", "value");
+        assertNotNull(f.response.getHeader("x-test"));
+        // handover() flips autoCommit to false; complete() then takes the flush()+resetInternal() branch
+        f.response.handover();
+        f.response.complete();
+        // h2Headers cleared by resetInternal (super.resetInternal clears bodyBuf, subclass clears h2Headers)
+        assertNull(f.response.getHeader("x-test"));
+    }
+
+    @Test
+    void testBuildStaticHeaderBlockEncodesMultiValueHeader() throws Exception {
+        MockFixture f = createMockFixture();
+        // Adding the same header twice converts the value from String to List<String>
+        // (doAddHeader L81-85), which drives buildStaticHeaderBlock into its multi-value
+        // branch (L452-456) instead of the plain String branch.
+        // Short name/values stay under the 5-byte Huffman threshold, so both entries are
+        // written verbatim into the HPACK block and can be asserted on.
+        f.response.addHeader("xmv", "p");
+        f.response.addHeader("xmv", "q");
+        assertEquals(Arrays.asList("p", "q"), f.response.getHeaders("xmv"));
+
+        // commit() -> writeFullResponse() -> buildStaticHeaderBlock()
+        f.response.commit();
+
+        ArgumentCaptor<byte[]> captor = ArgumentCaptor.forClass(byte[].class);
+        verify(f.stream).writeHeadersFrame(captor.capture(), anyBoolean(), anyBoolean());
+        String block = new String(captor.getValue(), StandardCharsets.ISO_8859_1);
+        int occurrences = 0;
+        for (int idx = block.indexOf("xmv"); idx >= 0; idx = block.indexOf("xmv", idx + 3)) {
+            occurrences++;
+        }
+        // the header name is emitted once per value -> proves the List branch ran
+        assertEquals(2, occurrences, "multi-value header must be encoded once per value");
+    }
+
+    @Test
+    void testBuildStaticHeaderBlockKeepsCustomServerHeader() throws Exception {
+        // EXPOSE_SERVER_HEADER=true combined with an application-supplied Server header makes the
+        // second half of the L439 condition short-circuit -- the last uncovered branch of
+        // buildStaticHeaderBlock (the framework default must then NOT be appended).
+        // "zsrv" is <= 5 bytes so it is written verbatim (Huffman only kicks in above 5 bytes).
+        MockFixture f = createMockFixture(mockChannelContext(true));
+        f.response.addHeader(HttpHeaderNames.SERVER, "zsrv");
+        f.response.commit();
+
+        ArgumentCaptor<byte[]> captor = ArgumentCaptor.forClass(byte[].class);
+        verify(f.stream).writeHeadersFrame(captor.capture(), anyBoolean(), anyBoolean());
+        byte[] block = captor.getValue();
+        assertTrue(new String(block, StandardCharsets.ISO_8859_1).contains("zsrv"),
+                "application Server header must be encoded");
+        // the framework default is 13 bytes -> Huffman encoded, so match its encoded form
+        byte[] defaultEncoded = HuffmanByteCodec.encodeData(
+                Http2Response.SERVER_VALUE.getBytes(StandardCharsets.UTF_8));
+        assertFalse(indexOfBytes(block, defaultEncoded) >= 0,
+                "framework Server value must not be sent when the app already set one");
+    }
+
+    /** Returns the index of {@code pattern} within {@code data}, or -1 when absent. */
+    private static int indexOfBytes(byte[] data, byte[] pattern) {
+        outer:
+        for (int i = 0; i <= data.length - pattern.length; i++) {
+            for (int j = 0; j < pattern.length; j++) {
+                if (data[i + j] != pattern[j]) continue outer;
+            }
+            return i;
+        }
+        return -1;
+    }
+
     // ==================== doStreamingCompressAndSend (sendFile with compression) ====================
 
     @Test
     void testSendFileCompressSmallFile() throws Exception {
-        // Enable GZIP and set small threshold
-        Field gzipField = HttpConf.class.getDeclaredField("GZIP");
-        Field minSizeField = HttpConf.class.getDeclaredField("GZIP_MIN_SIZE");
-        Field thresholdField = HttpConf.class.getDeclaredField("BODY_MEMORY_THRESHOLD");
-        gzipField.setAccessible(true);
-        minSizeField.setAccessible(true);
-        thresholdField.setAccessible(true);
-        boolean origGzip = setFinalStaticBoolean(gzipField, true);
-        int origMinSize = setFinalStaticInt(minSizeField, 1);
-        int origThreshold = setFinalStaticInt(thresholdField, 1024 * 1024);
-        try {
-            MockFixture f = createMockFixture();
-            // Mock Accept-Encoding header
-            when(f.request.getHeader(anyString(), anyBoolean())).thenReturn("gzip");
+        // Enable GZIP and set small threshold via per-context config
+        NioConfig cfg = new NioConfig();
+        cfg.option(HttpOptions.GZIP, true);
+        cfg.option(HttpOptions.GZIP_MIN_SIZE, 1);
+        cfg.option(HttpOptions.BODY_MEMORY_THRESHOLD, 1024 * 1024);
+        MockFixture f = createMockFixture(mockChannelContext(cfg));
+        // Mock Accept-Encoding header
+        when(f.request.getHeader(anyString(), anyBoolean())).thenReturn("gzip");
 
-            File tempFile = File.createTempFile("test-", ".html");
-            try {
-                byte[] content = "Hello World, this is compressible data! ".getBytes();
-                java.nio.file.Files.write(tempFile.toPath(), content);
-                f.response.sendFile(tempFile, true, -1);
-                // Small file (< BODY_MEMORY_THRESHOLD) → in-memory GZIP → doSendCompressedResponse → writeFrame
-                verify(f.stream, atLeastOnce()).writeFrame(any(ByteBuffer.class), anyBoolean());
-            } finally {
-                tempFile.delete();
-            }
+        File tempFile = File.createTempFile("test-", ".html");
+        try {
+            byte[] content = "Hello World, this is compressible data! ".getBytes();
+            java.nio.file.Files.write(tempFile.toPath(), content);
+            f.response.sendFile(tempFile, true, -1);
+            // Small file (< BODY_MEMORY_THRESHOLD) → in-memory GZIP → doSendCompressedResponse → writeFrame
+            verify(f.stream, atLeastOnce()).writeFrame(any(ByteBuffer.class), anyBoolean());
         } finally {
-            setFinalStaticBoolean(gzipField, origGzip);
-            setFinalStaticInt(minSizeField, origMinSize);
-            setFinalStaticInt(thresholdField, origThreshold);
+            tempFile.delete();
         }
     }
 
     @Test
     void testSendFileCompressLargeFile() throws Exception {
-        // Enable GZIP and lower threshold to force streaming path
-        Field gzipField = HttpConf.class.getDeclaredField("GZIP");
-        Field minSizeField = HttpConf.class.getDeclaredField("GZIP_MIN_SIZE");
-        Field thresholdField = HttpConf.class.getDeclaredField("BODY_MEMORY_THRESHOLD");
-        gzipField.setAccessible(true);
-        minSizeField.setAccessible(true);
-        thresholdField.setAccessible(true);
-        boolean origGzip = setFinalStaticBoolean(gzipField, true);
-        int origMinSize = setFinalStaticInt(minSizeField, 1);
-        int origThreshold = setFinalStaticInt(thresholdField, 16); // file > 16 bytes triggers streaming
+        // Enable GZIP and lower threshold to force streaming path via per-context config
+        NioConfig cfg = new NioConfig();
+        cfg.option(HttpOptions.GZIP, true);
+        cfg.option(HttpOptions.GZIP_MIN_SIZE, 1);
+        cfg.option(HttpOptions.BODY_MEMORY_THRESHOLD, 16); // file > 16 bytes triggers streaming
+        MockFixture f = createMockFixture(mockChannelContext(cfg));
+        when(f.request.getHeader(anyString(), anyBoolean())).thenReturn("gzip");
+
+        File tempFile = File.createTempFile("test-", ".html");
         try {
-            Http2ServerStream stream = mock(Http2ServerStream.class);
-            when(stream.sendChunkSize()).thenReturn(16384);
-            when(stream.createFrameBuffer(anyInt(), anyInt(), anyInt(), anyInt())).thenAnswer(inv -> {
-                int capacity = inv.getArgument(0);
-                return ByteBuffer.allocate(capacity);
-            });
-            doNothing().when(stream).writeFrame(any(ByteBuffer.class), anyBoolean());
-            doNothing().when(stream).writeDataFrame(any(ByteBuffer.class), anyInt());
-            try {
-                java.lang.reflect.Field f = Http2Stream.class.getDeclaredField("frameBuf");
-                f.setAccessible(true);
-                f.set(stream, HttpBuf.of(256));
-            } catch (Exception ignored) {
-            }
-            Http2Request req = mock(Http2Request.class);
-            when(req.stream()).thenReturn(stream);
-            when(req.getHttpVersion()).thenReturn(HttpVersion.HTTP_2);
-            when(req.getHeader(anyString(), anyBoolean())).thenReturn("gzip");
-
-            Http2Response resp = new Http2Response(req, stream, mock(ChannelContext.class));
-
-            File tempFile = File.createTempFile("test-", ".html");
-            try {
-                byte[] content = "This is a larger file that should trigger streaming GZIP compression path in Http2Response!".getBytes();
-                java.nio.file.Files.write(tempFile.toPath(), content);
-                resp.sendFile(tempFile, true, -1);
-                // Large file → streaming GZIP → writeFrame (headers) + writeDataFrame (compressed data)
-                verify(stream, atLeastOnce()).writeDataFrame(any(ByteBuffer.class), anyInt());
-            } finally {
-                tempFile.delete();
-            }
+            byte[] content = "This is a larger file that should trigger streaming GZIP compression path in Http2Response!".getBytes();
+            java.nio.file.Files.write(tempFile.toPath(), content);
+            f.response.sendFile(tempFile, true, -1);
+            // Large file → streaming GZIP → writeFrame (headers) + writeDataFrame (compressed data)
+            verify(f.stream, atLeastOnce()).writeDataFrame(any(ByteBuffer.class), anyInt());
         } finally {
-            setFinalStaticBoolean(gzipField, origGzip);
-            setFinalStaticInt(minSizeField, origMinSize);
-            setFinalStaticInt(thresholdField, origThreshold);
+            tempFile.delete();
         }
     }
 
     @Test
     void testAutoGzipSkippedWhenBodyTooSmall() throws Exception {
         // With GZIP enabled but body < GZIP_MIN_SIZE (default 2048), auto-gzip is skipped
-        Field gzipField = HttpConf.class.getDeclaredField("GZIP");
-        gzipField.setAccessible(true);
-        boolean origGzip = setFinalStaticBoolean(gzipField, true);
-        try {
-            MockFixture f = createMockFixture();
-            when(f.request.getHeader(anyString(), anyBoolean())).thenReturn("gzip");
-            f.response.body("tiny".getBytes()); // 4 bytes < 2048 GZIP_MIN_SIZE
-            f.response.complete();
-            assertEquals("200", decodeSentHeaders(f).get(":status"));
-        } finally {
-            setFinalStaticBoolean(gzipField, origGzip);
-        }
+        NioConfig cfg = new NioConfig();
+        cfg.option(HttpOptions.GZIP, true);
+        MockFixture f = createMockFixture(mockChannelContext(cfg));
+        when(f.request.getHeader(anyString(), anyBoolean())).thenReturn("gzip");
+        f.response.body("tiny".getBytes()); // 4 bytes < 2048 GZIP_MIN_SIZE
+        f.response.complete();
+        assertEquals("200", decodeSentHeaders(f).get(":status"));
     }
 }

@@ -174,10 +174,6 @@ public final class HttpUnsafe {
         return UNSAFE.getInt(buf, BYTE_ARRAY_OFFSET + offset);
     }
 
-    static void putLong(byte[] target, int offset, long value) {
-        UNSAFE.putLong(target, BYTE_ARRAY_OFFSET + offset, value);
-    }
-
     static Object getStringValue(String value) {
         return UNSAFE.getObject(value, STRING_VALUE_OFFSET);
     }

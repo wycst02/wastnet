@@ -44,12 +44,8 @@ class MultipartFieldData extends MultipartField {
                     "transferTo() is only supported for file fields. " +
                             "This is a regular form field, use getData() or getInputStream() instead.");
         }
-        FileOutputStream fos = null;
-        try {
-            fos = new FileOutputStream(file, append);
+        try (FileOutputStream fos = new FileOutputStream(file, append)) {
             fos.write(data.getBuf(), data.getBegin(), data.size());
-        } finally {
-            if (fos != null) fos.close();
         }
     }
 

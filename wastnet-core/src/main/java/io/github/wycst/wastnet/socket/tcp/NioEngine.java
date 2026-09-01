@@ -21,7 +21,8 @@ import io.github.wycst.wastnet.log.LogFactory;
 import io.github.wycst.wastnet.socket.channel.ChannelCodec;
 import io.github.wycst.wastnet.socket.channel.ChannelReader;
 import io.github.wycst.wastnet.socket.channel.ChannelReaderFactory;
-import io.github.wycst.wastnet.socket.conf.SocketConf;
+import io.github.wycst.wastnet.socket.conf.Option;
+import io.github.wycst.wastnet.socket.conf.SocketOptions;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import io.github.wycst.wastnet.socket.handler.IdleStateHandler;
 import io.github.wycst.wastnet.util.Utils;
@@ -45,11 +46,9 @@ public class NioEngine<E extends NioEngine<E>> {
     final ExecutorService executorService;
     final ExecutorService runnerExecutor;
     protected final int port;
-    protected NioConfig nioConfig;
+    protected final NioConfig nioConfig;
     volatile boolean engineRunFlag = false;
     boolean shutdown = false;
-    /** Graceful shutdown timeout in milliseconds, read from config, default 10s */
-    final long gracefulShutdownTimeout = SocketConf.GRACEFUL_SHUTDOWN_TIMEOUT_MS;
     /** Latch for waiting on worker threads during startup. */
     volatile CountDownLatch startLatch;
     // ssl
@@ -82,11 +81,6 @@ public class NioEngine<E extends NioEngine<E>> {
     }
 
     // ==================== Configuration (fluent, returns E for chaining) ====================
-
-    public E config(NioConfig nioConfig) {
-        this.nioConfig = nioConfig.self();
-        return self();
-    }
 
     public final NioConfig config() {
         return nioConfig;
@@ -174,7 +168,7 @@ public class NioEngine<E extends NioEngine<E>> {
     }
 
     public E sslHandshakeTimeout(long timeoutMs) {
-        nioConfig.setSslHandshakeTimeoutMs(timeoutMs);
+        nioConfig.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS, timeoutMs);
         return self();
     }
 
@@ -186,6 +180,11 @@ public class NioEngine<E extends NioEngine<E>> {
     /** Set codec for reading (server-side). Override in TCPClient for write support. */
     public E channelCodec(ChannelCodec<?> codec) {
         nioConfig.setChannelReader(codec);
+        return self();
+    }
+
+    public <T> E option(Option<T> option, T value) {
+        nioConfig.option(option, value);
         return self();
     }
 
@@ -251,7 +250,7 @@ public class NioEngine<E extends NioEngine<E>> {
 
     ExecutorService createExecutor() {
         ExecutorService executorService;
-        if (SocketConf.ENABLE_VIRTUAL_THREAD) {
+        if (nioConfig.option(SocketOptions.ENABLE_VIRTUAL_THREAD)) {
             try {
                 Method method = Executors.class.getMethod("newVirtualThreadPerTaskExecutor");
                 method.setAccessible(true);
@@ -264,7 +263,7 @@ public class NioEngine<E extends NioEngine<E>> {
             }
         }
         int corePoolSize = Runtime.getRuntime().availableProcessors();
-        int maxPoolSize = SocketConf.MAX_CONCURRENT;
+        int maxPoolSize = nioConfig.option(SocketOptions.MAX_CONCURRENT);
         if (maxPoolSize == -1) {
             LOG.warn("cached thread pool executor enabled (unbounded max concurrent)");
             return Executors.newCachedThreadPool(); // -1: unbounded
@@ -275,7 +274,7 @@ public class NioEngine<E extends NioEngine<E>> {
                 corePoolSize,
                 maxPoolSize,
                 60L, TimeUnit.SECONDS,
-                new SynchronousQueue<Runnable>(),
+                new SynchronousQueue<>(),
                 new ThreadPoolExecutor.CallerRunsPolicy()
         );
     }

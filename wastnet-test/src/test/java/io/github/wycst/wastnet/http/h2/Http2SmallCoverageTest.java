@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.channels.SocketChannel;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Coverage tests for Http2ServerStream, Http2ClientStream, Http2ClientReader, Http2Request.

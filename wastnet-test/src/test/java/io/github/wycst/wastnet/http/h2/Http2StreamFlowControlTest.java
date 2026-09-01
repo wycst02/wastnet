@@ -1,5 +1,6 @@
 package io.github.wycst.wastnet.http.h2;
 
+import io.github.wycst.wastnet.http.HttpConf;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,7 +35,7 @@ class Http2StreamFlowControlTest {
         mockReader = mock(Http2ServerReader.class);
         H2TestHelper.initMockReader(mockReader);
         mockReader.valid = true; // simulate a live connection (mocks skip the constructor init)
-        mockReader.connectSendWindow = Http2ServerReader.CONNECT_RECEIVE_WINDOW_SIZE;
+        mockReader.connectSendWindow = HttpConf.HTTP2_INITIAL_SEND_WINDOW_SIZE << 4;
         streamCtx = new Http2ServerStream(mockReader, 1, mockCtx);
     }
 
@@ -49,7 +50,7 @@ class Http2StreamFlowControlTest {
         streamCtx.writeDataFrame(frame, 50);
 
         assertEquals(65535 - 50, streamCtx.sendWindow);
-        assertEquals(Http2ServerReader.CONNECT_RECEIVE_WINDOW_SIZE - 50, mockReader.connectSendWindow);
+        assertEquals((HttpConf.HTTP2_INITIAL_SEND_WINDOW_SIZE << 4) - 50, mockReader.connectSendWindow);
         verify(mockCtx).write(any(ByteBuffer.class));
     }
 
@@ -60,7 +61,7 @@ class Http2StreamFlowControlTest {
         streamCtx.writeDataFrame(frame, 0);
 
         assertEquals(100, streamCtx.sendWindow);
-        assertEquals(Http2ServerReader.CONNECT_RECEIVE_WINDOW_SIZE, mockReader.connectSendWindow);
+        assertEquals(HttpConf.HTTP2_INITIAL_SEND_WINDOW_SIZE << 4, mockReader.connectSendWindow);
     }
 
     @Test

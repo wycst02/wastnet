@@ -30,7 +30,7 @@ public class PackageScanner {
      */
     public static List<Class<?>> scan(String packageName) {
         Set<Class<?>> result = scan(packageName, FILTER_ACCEPT_ALL);
-        return new ArrayList<Class<?>>(result);
+        return new ArrayList<>(result);
     }
 
     /**
@@ -46,7 +46,7 @@ public class PackageScanner {
      * @throws RuntimeException if classpath enumeration fails
      */
     public static Set<Class<?>> scan(String packageName, AnnotationFilter filter) {
-        Set<Class<?>> classes = new LinkedHashSet<Class<?>>();
+        Set<Class<?>> classes = new LinkedHashSet<>();
         String path = packageName.replace('.', '/');
         try {
             ClassLoader cl = Thread.currentThread().getContextClassLoader();
@@ -77,11 +77,8 @@ public class PackageScanner {
     private static void scanJarResource(URL resource, String packagePath,
                                         Set<Class<?>> classes, AnnotationFilter filter, ClassLoader cl) throws IOException {
         JarURLConnection conn = (JarURLConnection) resource.openConnection();
-        JarFile jar = conn.getJarFile();
-        try {
+        try (JarFile jar = conn.getJarFile()) {
             scanJar(jar, packagePath, classes, filter, cl);
-        } finally {
-            jar.close();
         }
     }
 

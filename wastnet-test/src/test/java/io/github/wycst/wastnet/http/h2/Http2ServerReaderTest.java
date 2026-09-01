@@ -1,7 +1,8 @@
 package io.github.wycst.wastnet.http.h2;
 
-import io.github.wycst.wastnet.http.*;
+import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
+import io.github.wycst.wastnet.socket.tcp.NioConfig;
 import org.junit.jupiter.api.Test;
 
 import java.net.InetSocketAddress;
@@ -16,7 +17,7 @@ import static org.mockito.Mockito.*;
  * Unit tests for {@link Http2ServerReader}.
  * <p>
  * Note: {@code ChannelContext.readFully(byte[])} is a final method and cannot be mocked,
- * so {@link #init} / {@code receiveClientPreface} are tested via integration tests only.
+ * so {@link Http2ServerReader#init} / {@code receiveClientPreface} are tested via integration tests only.
  *
  * @author wangyc
  */
@@ -32,6 +33,36 @@ public class Http2ServerReaderTest {
         Http2ServerReader result = reader.replyServerSettings(ctx);
         assertSame(reader, result);
         verify(ctx).writeFlush(Http2ServerReader.SERVER_REPLY_FRAMES);
+    }
+
+    /** True branch (L136): configured initialReceiveWindowSize OR maxConcurrentStreams differ from defaults
+     *  -> replyServerSettings builds a custom SERVER_REPLY_FRAMES via buildServerReplyFrames.
+     *  Isolation is achieved via a per-instance NioConfig (no global change). */
+    @Test
+    public void testReplyServerSettingsCustomWindowTriggersBuild() throws Exception {
+        // real ctx with no-op write/flush so the final writeFlush() doesn't touch a real socket
+        ChannelContext ctx = new ChannelContext(SocketChannel.open(), 0) {
+            @Override
+            public int write(ByteBuffer buf) {
+                return buf.remaining();
+            }
+            @Override
+            public void flush() {
+            }
+            @Override
+            public void close() {
+            }
+        };
+        // per-instance NioConfig isolation (no global change); attachNioConfig is public
+        NioConfig nioConfig = new NioConfig();
+        nioConfig.option(HttpOptions.HTTP2_INITIAL_SEND_WINDOW_SIZE, 123456);
+        nioConfig.option(HttpOptions.HTTP2_MAX_CONCURRENT_STREAMS, 777);
+        ctx.attachNioConfig(nioConfig);
+
+        Http2ServerReader reader = new Http2ServerReader(ctx);
+        Http2ServerReader result = reader.replyServerSettings(ctx);
+        // true branch executed: replyServerSettings built custom frames and flushed without touching a real socket
+        assertSame(reader, result);
     }
 
     // ==================== getStream ====================
@@ -85,29 +116,29 @@ public class Http2ServerReaderTest {
 
     @Test
     public void testGetStreamReturnsNullForRefusedStreamWhenMaxConcurrentExceeded() throws Exception {
-        // Lower MAX_SERVER_CONCURRENT_STREAMS temporarily via Unsafe
-        java.lang.reflect.Field maxField = Http2ServerReader.class.getDeclaredField("MAX_SERVER_CONCURRENT_STREAMS");
+        // Lower maxServerConcurrentStreams on the reader instance temporarily via Unsafe
+        java.lang.reflect.Field maxField = Http2ServerReader.class.getDeclaredField("maxServerConcurrentStreams");
         maxField.setAccessible(true);
         java.lang.reflect.Field unsafeField = Class.forName("sun.misc.Unsafe").getDeclaredField("theUnsafe");
         unsafeField.setAccessible(true);
         Object unsafe = unsafeField.get(null);
-        long offset = (long) unsafe.getClass().getMethod("staticFieldOffset", java.lang.reflect.Field.class).invoke(unsafe, maxField);
-        Object base = unsafe.getClass().getMethod("staticFieldBase", java.lang.reflect.Field.class).invoke(unsafe, maxField);
-        int original = (int) unsafe.getClass().getMethod("getInt", Object.class, long.class).invoke(unsafe, base, offset);
-        unsafe.getClass().getMethod("putInt", Object.class, long.class, int.class).invoke(unsafe, base, offset, 1);
+        long offset = (long) unsafe.getClass().getMethod("objectFieldOffset", java.lang.reflect.Field.class).invoke(unsafe, maxField);
+
+        ChannelContext ctx = mock(ChannelContext.class);
+        when(ctx.getWriteBufferSize()).thenReturn(65536);
+        Http2ServerReader reader = new Http2ServerReader();
+        reader.streamInitSendWindowSize = 65535;
+
+        int original = (int) unsafe.getClass().getMethod("getInt", Object.class, long.class).invoke(unsafe, reader, offset);
+        unsafe.getClass().getMethod("putInt", Object.class, long.class, int.class).invoke(unsafe, reader, offset, 1);
 
         try {
-            ChannelContext ctx = mock(ChannelContext.class);
-            when(ctx.getWriteBufferSize()).thenReturn(65536);
-            Http2ServerReader reader = new Http2ServerReader();
-            reader.streamInitSendWindowSize = 65535;
-
             // First stream succeeds
             assertNotNull(reader.getStream(1, ctx));
             // Second stream should be refused (max=1)
             assertNull(reader.getStream(3, ctx));
         } finally {
-            unsafe.getClass().getMethod("putInt", Object.class, long.class, int.class).invoke(unsafe, base, offset, original);
+            unsafe.getClass().getMethod("putInt", Object.class, long.class, int.class).invoke(unsafe, reader, offset, original);
         }
     }
 

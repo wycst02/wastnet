@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Test;
 import java.io.InputStream;
 
 /**
- * Covers the JaCoCo gaps of {@link HTTPServer}: onStarted/onStopped startup banner
+ * onStarted/onStopped startup banner
  * branches, the private logNetworkAddresses enumeration, and pemSSL(InputStream, InputStream).
  */
 public class HTTPServerTest {

@@ -131,6 +131,26 @@ public class Http2OverTlsIntegrationTest {
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
                 .build();
+
+        // Wait until the server is fully ready for h2 (SETTINGS exchanged) to avoid
+        // intermittent REFUSED_STREAM on the first request right after startup.
+        long readyDeadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < readyDeadline) {
+            try {
+                Request probe = new Request.Builder()
+                        .url("https://localhost:" + port + "/api/test")
+                        .get()
+                        .build();
+                try (Response r = h2Client.newCall(probe).execute()) {
+                    if (r.code() == 200) {
+                        break;
+                    }
+                }
+            } catch (Exception ignored) {
+                // server not ready yet; retry
+            }
+            Thread.sleep(50);
+        }
     }
 
     @AfterAll

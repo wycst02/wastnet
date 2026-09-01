@@ -15,6 +15,7 @@
  */
 package io.github.wycst.wastnet.http.h2;
 
+import io.github.wycst.wastnet.http.HttpConf;
 import io.github.wycst.wastnet.http.HttpDecodedResponse;
 import io.github.wycst.wastnet.http.HttpVersion;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
@@ -31,22 +32,26 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class Http2ClientReader extends Http2MessageReader {
 
     /**
-     * Client preface settings: no push, default initial window, large header table.
+     * Client preface settings: push disabled, initial per-stream window, and a
+     * connection-level WINDOW_UPDATE that enlarges the receive window to ~1MB.
      */
-    static final byte[] INIT_CLIENT_SETTINGS;
-
-    static {
-        int initialRecvWindow = CONNECT_RECEIVE_WINDOW_SIZE;
-        // Build SETTINGS frame: SETTINGS_ENABLE_PUSH(0) + SETTINGS_INITIAL_WINDOW_SIZE = 21 bytes
+    static final byte[] INIT_CLIENT_SETTINGS = buildInitClientSettings(HttpConf.HTTP2_INITIAL_SEND_WINDOW_SIZE);
+    static byte[] buildInitClientSettings(int initialRecvWindow) {
+        int connWu = (initialRecvWindow << 4) - 0xFFFF;
+        // Build: SETTINGS frame (21 bytes: ENABLE_PUSH=0 + INITIAL_WINDOW_SIZE) followed by a
+        // connection-level WINDOW_UPDATE (13 bytes) = 34 bytes total.
         // id=2 (ENABLE_PUSH), value=0 (disabled)
         // id=4 (INITIAL_WINDOW_SIZE), value=initialRecvWindow
-        INIT_CLIENT_SETTINGS = new byte[]{
+        return new byte[]{
                 0, 0, 12, 4, 0, 0, 0, 0, 0,
                 0, 2,
                 0, 0, 0, 0,   // ENABLE_PUSH = 0
                 0, 4,
                 (byte) (initialRecvWindow >> 24), (byte) (initialRecvWindow >> 16),
-                (byte) (initialRecvWindow >> 8), (byte) initialRecvWindow
+                (byte) (initialRecvWindow >> 8), (byte) initialRecvWindow,
+                0, 0, 4, 8, 0, 0, 0, 0, 0,     // WINDOW_UPDATE header: len=4, type=8, flags=0, stream=0
+                (byte) (connWu >> 24), (byte) (connWu >> 16),
+                (byte) (connWu >> 8), (byte) connWu
         };
     }
 
@@ -57,6 +62,10 @@ public class Http2ClientReader extends Http2MessageReader {
     private final AtomicInteger nextStreamId = new AtomicInteger(1);
 
     public Http2ClientReader() {
+    }
+
+    public Http2ClientReader(ChannelContext ctx) {
+        super(ctx);
         // Switch the codec to client (response) decoding mode so that the
         // :status pseudo-header from upstream servers is accepted (RFC 7541 §8.1.2.1).
         http2HpackCodec.client();
@@ -86,8 +95,13 @@ public class Http2ClientReader extends Http2MessageReader {
         try {
             // 1. Send client preface magic
             ctx.writeFlush(CLIENT_CONNECTION_PREFACE);
+
             // 2. Send client SETTINGS
-            ctx.writeFlush(INIT_CLIENT_SETTINGS);
+            byte[] initClientSettings = INIT_CLIENT_SETTINGS;
+            if(initialReceiveWindowSize != HttpConf.HTTP2_INITIAL_SEND_WINDOW_SIZE) {
+                initClientSettings = buildInitClientSettings(initialReceiveWindowSize);
+            }
+            ctx.writeFlush(initClientSettings);
         } catch (IOException e) {
             ctx.close();
             throw e;
@@ -97,14 +111,14 @@ public class Http2ClientReader extends Http2MessageReader {
     // ==================== Stream context management ====================
 
     @Override
-    protected Http2Stream getStream(int streamId, ChannelContext ctx) throws IOException {
+    protected Http2Stream getStream(int streamId, ChannelContext ctx) {
         return getOrCreateStream(streamId, ctx);
     }
 
     /**
      * Get or create stream for the given stream ID.
      */
-    public Http2ClientStream getOrCreateStream(int streamId, ChannelContext ctx) throws IOException {
+    public Http2ClientStream getOrCreateStream(int streamId, ChannelContext ctx) {
         Http2Stream stream = streamMap.get(streamId);
         if (stream == null && streamId > currentMaxStreamId) {
             stream = new Http2ClientStream(this, streamId, ctx);

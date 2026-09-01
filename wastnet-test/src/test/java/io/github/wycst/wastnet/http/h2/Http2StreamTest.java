@@ -1,6 +1,7 @@
 package io.github.wycst.wastnet.http.h2;
 
 import io.github.wycst.wastnet.http.HttpBuf;
+import io.github.wycst.wastnet.http.HttpConf;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
@@ -342,7 +343,7 @@ public class Http2StreamTest {
     public void testRestoreConnectionWindowWhenBelowStreamWindow() throws Exception {
         ChannelContext mockCtx = mock(ChannelContext.class);
         Http2ServerReader mockReader = newMockReader();
-        mockReader.connectRecvWindow = new java.util.concurrent.atomic.AtomicLong(Http2MessageReader.CONNECT_RECEIVE_WINDOW_SIZE);
+        H2TestHelper.setConnectRecvWindow(mockReader, HttpConf.HTTP2_INITIAL_SEND_WINDOW_SIZE << 4);
         Http2Stream ctx = new Http2ServerStream(mockReader, 1, mockCtx);
 
         ctx.receiveWindow = 30000;
@@ -356,7 +357,7 @@ public class Http2StreamTest {
     public void testRestoreConnectionWindowWhenAboveStreamWindow() throws Exception {
         ChannelContext mockCtx = mock(ChannelContext.class);
         Http2ServerReader mockReader = newMockReader();
-        mockReader.connectRecvWindow = new java.util.concurrent.atomic.AtomicLong(Http2MessageReader.CONNECT_RECEIVE_WINDOW_SIZE);
+        H2TestHelper.setConnectRecvWindow(mockReader, HttpConf.HTTP2_INITIAL_SEND_WINDOW_SIZE << 4);
         Http2Stream ctx = new Http2ServerStream(mockReader, 1, mockCtx);
 
         ctx.receiveWindow = 10000;

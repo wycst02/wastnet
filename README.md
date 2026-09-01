@@ -792,6 +792,7 @@ server.ssl(true).sslContext(sslContext);
 
 - [HTTP 配置参考](docs/03-reference/http-conf-reference.md)
 - [Socket 配置参考](docs/03-reference/socket-conf-reference.md)
+- [配置 Option 使用指南](docs/03-reference/option-guide.md)（运行期实例级配置隔离，多服务实例场景）
 
 ### NioConfig
 
@@ -1115,6 +1116,7 @@ wastnet/                               ← 父工程 (pom)
 │   ├── 03-reference/                   # 配置/协议参考
 │   │   ├── http-conf-reference.md
 │   │   ├── socket-conf-reference.md
+│   │   ├── option-guide.md
 │   │   ├── HTTP2_PROTOCOL.md
 │   │   ├── huffman-table-design.md
 │   │   ├── websocket-*.md
@@ -1141,6 +1143,7 @@ wastnet/                               ← 父工程 (pom)
 | `docs/02-guide/http-interceptor-guide.md` | HTTP 拦截器：请求前置处理 |
 | `docs/03-reference/http-conf-reference.md` | HTTP 配置项参考（含调优建议） |
 | `docs/03-reference/socket-conf-reference.md` | Socket 配置项参考 |
+| `docs/03-reference/option-guide.md` | 配置 Option 使用指南：运行期实例级隔离、可隔离配置清单 |
 | `docs/03-reference/HTTP2_PROTOCOL.md` | H2 连接建立、帧结构、HPACK、流控 |
 | `docs/03-reference/websocket-cheatsheet.md` | WebSocket 帧类型速查 |
 | `docs/03-reference/websocket-implementation-guide.md` | WebSocket 实现细节 |

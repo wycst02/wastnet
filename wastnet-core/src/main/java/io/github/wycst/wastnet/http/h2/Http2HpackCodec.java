@@ -46,10 +46,10 @@ public final class Http2HpackCodec {
     private final Charset charset;
 
     // RFC 7540 §8.1.2.1: valid request pseudo-header fields (decoded by a server)
-    private static final Set<String> SERVER_PSEUDO_HEADERS = new HashSet<String>(Arrays.asList(
+    private static final Set<String> SERVER_PSEUDO_HEADERS = new HashSet<>(Arrays.asList(
             ":method", ":scheme", ":path", ":authority"));
     // RFC 7540 §8.1.2.1: valid response pseudo-header fields (decoded by a client)
-    private static final Set<String> CLIENT_PSEUDO_HEADERS = new HashSet<String>(Arrays.asList(
+    private static final Set<String> CLIENT_PSEUDO_HEADERS = new HashSet<>(Collections.singletonList(
             ":status"));
 
     // Pseudo-header fields accepted for the current direction; defaults to server (request) side.
@@ -186,7 +186,7 @@ public final class Http2HpackCodec {
     }
 
     public Map<String, Object> decode(byte[] buf, int offset, int len) {
-        Map<String, Object> headers = new LinkedHashMap<String, Object>();
+        Map<String, Object> headers = new LinkedHashMap<>();
         try {
             decodeTo(buf, offset, len, headers);
         } catch (Throwable throwable) {
@@ -347,7 +347,7 @@ public final class Http2HpackCodec {
                     }
                     // RFC 7541 §4.2: a dynamic table size update MUST appear at the
                     // beginning of the header block, before any header field representation.
-                    if (headers.size() > 0) {
+                    if (!headers.isEmpty()) {
                         throw new Http2HpackException("Dynamic table size update MUST appear before any header field (RFC 7541 §4.2)");
                     }
                     // RFC 7541 §6.3: the new maximum size MUST NOT exceed the protocol
@@ -405,7 +405,7 @@ public final class Http2HpackCodec {
         Object oldVal = headers.get(name);
         if (oldVal != null) {
             if (oldVal instanceof String) {
-                List<String> values = new ArrayList<String>();
+                List<String> values = new ArrayList<>();
                 values.add((String) oldVal);
                 values.add(value);
                 headers.put(name, values);

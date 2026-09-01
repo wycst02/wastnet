@@ -4,7 +4,6 @@ import io.github.wycst.wastnet.socket.channel.ChannelCodec;
 import io.github.wycst.wastnet.socket.channel.ChannelReader;
 import io.github.wycst.wastnet.socket.channel.LengthFrameCodec;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
-import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -92,8 +91,7 @@ public class NioEngineTest {
     @Test
     public void testConfigSetter() {
         NioConfig cfg = new NioConfig();
-        TestEngine engine = new TestEngine(8080);
-        Assertions.assertSame(engine, engine.config(cfg));
+        TestEngine engine = new TestEngine(8080, cfg);
         Assertions.assertSame(cfg, engine.config());
         engine.shutdown();
     }

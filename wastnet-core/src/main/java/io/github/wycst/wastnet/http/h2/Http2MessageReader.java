@@ -18,6 +18,7 @@ package io.github.wycst.wastnet.http.h2;
 import io.github.wycst.wastnet.http.HttpConf;
 import io.github.wycst.wastnet.http.HttpHeaderValues;
 import io.github.wycst.wastnet.http.HttpMessage;
+import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.http.reader.HttpMessageReader;
 import io.github.wycst.wastnet.log.Log;
 import io.github.wycst.wastnet.log.LogFactory;
@@ -42,6 +43,14 @@ import java.util.concurrent.atomic.AtomicLong;
  * @author wangyc
  */
 public abstract class Http2MessageReader extends HttpMessageReader<HttpMessage> {
+
+    /**
+     * Debug switch (-Dwastnet.http2.debug=true);
+     * needs logger level DEBUG (LogFactory.setLevel or -Dwastnet.log.level=DEBUG, default INFO).
+     */
+    static final boolean DEBUG = Boolean.getBoolean("wastnet.http2.debug");
+    // Logger
+    final Log LOG = LogFactory.getLog(getClass());
 
     /** HTTP/2 connection preface length (RFC 7540 §3.5) */
     static final int PREFACE_MAGIC_LEN = 24;
@@ -75,28 +84,31 @@ public abstract class Http2MessageReader extends HttpMessageReader<HttpMessage> 
     static final int MAX_DATA_PAYLOAD_SIZE = 16384;
 
     // Default initial send window (65535), used before remote SETTINGS arrives
-    static final int INITIAL_RECEIVE_WINDOW_SIZE; // 65535
     static final int INITIAL_SEND_WINDOW_SIZE = 0xFFFF;
+    final int initialReceiveWindowSize; // default 65535, overridable via HttpOptions.HTTP2_INITIAL_SEND_WINDOW_SIZE
+
     /**
-     * Connection-level window size (INITIAL_RECEIVE_WINDOW_SIZE * 16 = 1MB)
+     * Connection-level window size (initialReceiveWindowSize * 16 = 1MB)
      */
-    static final int CONNECT_RECEIVE_WINDOW_SIZE;
+    final int initConnectReceiveWindowSize;
+
+    /**
+     * Maximum bodyData capacity before switching to streaming mode.
+     * Equals max(initialReceiveWindowSize * 2, MAX_BODY_IN_MEMORY).
+     */
+    final int maxStreamCapacitySize;
+
+    /** Enter streaming at first window exhaustion when {@link HttpConf#HTTP2_STREAM_EARLY} is set. */
+    final boolean streamEarly;
+
+    /** Max allowed header-block size (initial + trailer), overridable via HttpOptions.MAX_HTTP_HEADER_SIZE. */
+    final int maxHttpHeaderSize;
+
+    /** Max time (ms) a sender blocks waiting for flow-control credit, overridable via HttpOptions.HTTP2_FLOW_CONTROL_WAIT_TIMEOUT_MS. */
+    final int flowControlWaitTimeoutMs;
 
     // SETTINGS ACK (9 bytes) shared by both sides
     static final byte[] SETTINGS_ACK = {0, 0, 0, 4, 1, 0, 0, 0, 0};
-
-    static {
-        INITIAL_RECEIVE_WINDOW_SIZE = HttpConf.HTTP2_INITIAL_SEND_WINDOW_SIZE;
-        CONNECT_RECEIVE_WINDOW_SIZE = INITIAL_RECEIVE_WINDOW_SIZE << 4;
-    }
-
-    /**
-     * Debug switch: enable by -Dwastnet.http2.debug=true
-     */
-    static final boolean DEBUG = Boolean.getBoolean("wastnet.http2.debug");
-
-    // Logger
-    final Log LOG = LogFactory.getLog(getClass());
 
     /**
      * Connection-level send window. Initialized to the RFC 7540 §6.9.2
@@ -155,7 +167,7 @@ public abstract class Http2MessageReader extends HttpMessageReader<HttpMessage> 
     volatile boolean valid = true;
 
     /** Channel context reference, set at handshake (init); used only for monitoring snapshots. */
-    transient ChannelContext ctx;
+    transient final ChannelContext ctx;
 
     // ==================== diagnostic state (monitoring only, no logic impact) ====================
     /** Connection creation timestamp (set at init), used to compute connection age on demand. */
@@ -169,8 +181,23 @@ public abstract class Http2MessageReader extends HttpMessageReader<HttpMessage> 
     /**
      * Connection-level receive window
      */
-    AtomicLong connectRecvWindow = new AtomicLong(CONNECT_RECEIVE_WINDOW_SIZE);
-    final Map<Integer, Http2Stream> streamMap = new ConcurrentHashMap<Integer, Http2Stream>();
+    final AtomicLong connectRecvWindow;
+    final Map<Integer, Http2Stream> streamMap = new ConcurrentHashMap<>();
+
+    public Http2MessageReader() {
+        this(ChannelContext.EMPTY_CONTEXT);
+    }
+
+    public Http2MessageReader(ChannelContext ctx) {
+        this.ctx = ctx;
+        this.initialReceiveWindowSize = ctx.option(HttpOptions.HTTP2_INITIAL_SEND_WINDOW_SIZE);
+        this.initConnectReceiveWindowSize = initialReceiveWindowSize << 4;
+        this.connectRecvWindow = new AtomicLong(initConnectReceiveWindowSize);
+        this.maxStreamCapacitySize = Math.max(initialReceiveWindowSize << 1, ctx.option(HttpOptions.MAX_BODY_IN_MEMORY));
+        this.streamEarly = ctx.option(HttpOptions.HTTP2_STREAM_EARLY);
+        this.maxHttpHeaderSize = ctx.option(HttpOptions.MAX_HTTP_HEADER_SIZE);
+        this.flowControlWaitTimeoutMs = ctx.option(HttpOptions.HTTP2_FLOW_CONTROL_WAIT_TIMEOUT_MS);
+    }
 
     // ==================== Big-endian byte reading utilities ====================
 
@@ -376,7 +403,7 @@ public abstract class Http2MessageReader extends HttpMessageReader<HttpMessage> 
                 }
                 // RFC 7540 §6.7: only echo a PING with ACK unset; an ACK-set PING was not originated here, ignore it.
                 if ((frame.flags & Http2Frame.PING_ACK) == 0) {
-                    frame.setFrameByteAt(4, (byte) Http2Frame.PING_ACK);
+                    frame.setFlags(Http2Frame.PING_ACK);
                     ctx.writeFlush(frame.toByteBuffer());
                 }
                 return;

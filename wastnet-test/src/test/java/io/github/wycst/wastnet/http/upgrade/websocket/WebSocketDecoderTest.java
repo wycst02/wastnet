@@ -305,6 +305,17 @@ class WebSocketDecoderTest {
     }
 
     @Test
+    void testFragmentedControlFrameReturns1002() throws Exception {
+        // RFC 6455 §5.5: control frames MUST NOT be fragmented.
+        // A control frame with fin=0 followed by a continuation frame must be
+        // rejected (1002) and must NOT be merged into a control frame.
+        byte[] all = concat(frame(false, 0x9, "p".getBytes()), frame(true, 0x0, "q".getBytes()));
+        decoder.decode(all, 0, all.length, ctx);
+        assertTrue(closeCalled);
+        assertEquals(0, capturedFrames.size());
+    }
+
+    @Test
     void testWrongOpcodeAfterFin0Returns1002() throws Exception {
         byte[] all = concat(frame(false, 0x1, "first".getBytes()), frame(true, 0x2, "bad".getBytes()));
         decoder.decode(all, 0, all.length, ctx);

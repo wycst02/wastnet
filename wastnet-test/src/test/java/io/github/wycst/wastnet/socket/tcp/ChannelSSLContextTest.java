@@ -13,6 +13,8 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -409,10 +411,18 @@ public class ChannelSSLContextTest {
             Thread.sleep(200);
             SocketChannel ch = SocketChannel.open();
             ch.connect(new InetSocketAddress("127.0.0.1", sslPort));
+            while (!ch.finishConnect()) {
+                Thread.sleep(1);
+            }
             ch.configureBlocking(false);
             ChannelSSLContext ctx = ChannelSSLContext.createClientContext(600L, ch, (String[]) null);
-            // Write 128KB — exceeds SSL packet buffer capacity, triggers flush mid-wrap
+            // Write 128KB — exceeds SSL packet buffer capacity, triggers flush mid-wrap.
+            // Send a valid HTTP request first so the HTTPServer keeps the connection open:
+            // otherwise it parses the raw 128KB as a malformed request and closes the
+            // connection, making write() observe a CLOSED engine and return -1.
             byte[] bigData = new byte[128 * 1024];
+            String header = "POST / HTTP/1.1\r\nHost: localhost\r\nContent-Length: " + bigData.length + "\r\n\r\n";
+            ctx.write(ByteBuffer.wrap(header.getBytes("UTF-8")));
             ByteBuffer buf = ByteBuffer.wrap(bigData);
             int result = ctx.write(buf);
             // write returns the number of plaintext bytes accepted for encryption
@@ -496,7 +506,7 @@ public class ChannelSSLContextTest {
                 .requestHandler((req, res) -> {
                     try { res.body("OK".getBytes()); } catch (Exception ignored) {}
                 });
-        sslServer.start();
+        sslServer.startupBannerEnabled(false).start();
         try {
             Thread.sleep(200);
             SocketChannel ch = SocketChannel.open();
@@ -530,6 +540,41 @@ public class ChannelSSLContextTest {
                 ChannelSSLContext.getTrustAllManagers());
     }
 
+    // ==================== fillTlsDiagnostic (monitoring snapshot, L78-86) ====================
+
+    /** disabled=false branch (L79): ssl = true and TLS buffer stats are populated. */
+    @Test
+    public void testFillTlsDiagnosticEnabled() throws Exception {
+        SSLContext ssl = SSLContext.getInstance("TLS");
+        ssl.init(null, null, new java.security.SecureRandom());
+        SSLEngineContext enabledCtx = new SSLEngineContext(ssl, null, new String[]{"h2"}, false);
+        ChannelSSLContext ctx = new ChannelSSLContext(SocketChannel.open(), enabledCtx);
+        Map<String, Object> m = new HashMap<>();
+        ctx.fillTlsDiagnostic(m);
+        Assertions.assertTrue((Boolean) m.get("ssl"));
+        Assertions.assertTrue(m.containsKey("packetInBufRemaining"));
+        Assertions.assertTrue(m.containsKey("applicationInBufRemaining"));
+        Assertions.assertTrue(m.containsKey("readFullyRemaining"));
+        Assertions.assertTrue(m.containsKey("closed"));
+        Assertions.assertTrue(m.containsKey("socketOpen"));
+        ctx.close();
+    }
+
+    /** disabled=true branch (L79): ssl = false. */
+    @Test
+    public void testFillTlsDiagnosticDisabled() throws Exception {
+        ChannelSSLContext ctx = new ChannelSSLContext(SocketChannel.open(), createDisabledEngineCtx());
+        Map<String, Object> m = new HashMap<>();
+        ctx.fillTlsDiagnostic(m);
+        Assertions.assertFalse((Boolean) m.get("ssl"));
+        Assertions.assertTrue(m.containsKey("packetInBufRemaining"));
+        Assertions.assertTrue(m.containsKey("applicationInBufRemaining"));
+        Assertions.assertTrue(m.containsKey("readFullyRemaining"));
+        Assertions.assertTrue(m.containsKey("closed"));
+        Assertions.assertTrue(m.containsKey("socketOpen"));
+        ctx.close();
+    }
+
     // ==================== createClientContext with SSLEngineContext arg ====================
 
     @Test
@@ -556,7 +601,7 @@ public class ChannelSSLContextTest {
                 .requestHandler((req, res) -> {
                     try { res.body("OK".getBytes()); } catch (Exception ignored) {}
                 });
-        sslServer.start();
+        sslServer.startupBannerEnabled(false).start();
         try {
             Thread.sleep(200);
             SocketChannel ch = SocketChannel.open();

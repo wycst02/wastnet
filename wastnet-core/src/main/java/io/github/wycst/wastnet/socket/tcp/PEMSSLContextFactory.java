@@ -4,6 +4,7 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManagerFactory;
 import java.io.*;
+import java.nio.file.Files;
 import java.security.KeyFactory;
 import java.security.KeyStore;
 import java.security.PrivateKey;
@@ -104,7 +105,7 @@ public class PEMSSLContextFactory implements SSLContextFactory {
     }
 
     private static Certificate[] loadCertificates(InputStream in) throws Exception {
-        List<Certificate> certs = new ArrayList<Certificate>();
+        List<Certificate> certs = new ArrayList<>();
         List<byte[]> pemBlocks = parsePEM(in);
         CertificateFactory cf = CertificateFactory.getInstance("X.509");
         for (byte[] der : pemBlocks) {
@@ -168,7 +169,7 @@ public class PEMSSLContextFactory implements SSLContextFactory {
         if (!isClasspath) {
             File file = new File(path);
             if (file.isFile()) {
-                return new FileInputStream(file);
+                return Files.newInputStream(file.toPath());
             }
         }
         String resource = isClasspath ? path.substring("classpath:".length()) : path;
@@ -187,9 +188,8 @@ public class PEMSSLContextFactory implements SSLContextFactory {
      * @throws IOException if read fails
      */
     private static List<byte[]> parsePEM(InputStream in) throws IOException {
-        List<byte[]> blocks = new ArrayList<byte[]>();
-        BufferedReader reader = new BufferedReader(new InputStreamReader(in, "UTF-8"));
-        try {
+        List<byte[]> blocks = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(in, "UTF-8"))) {
             String line;
             StringBuilder base64 = null;
             while ((line = reader.readLine()) != null) {
@@ -204,8 +204,6 @@ public class PEMSSLContextFactory implements SSLContextFactory {
                     base64.append(line.trim());
                 }
             }
-        } finally {
-            reader.close();
         }
         return blocks;
     }

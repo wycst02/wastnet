@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -262,7 +263,7 @@ public class HttpBodyDecoderCoverageTest {
         when(mockReq.getContentType()).thenReturn("application/json");
         when(mockReq.isStream()).thenReturn(true);
         when(mockReq.bodyStream()).thenReturn(new ByteArrayInputStream("{}".getBytes()));
-        HttpBodyDecoder decoder = HttpBodyDecoder.of(mockReq);
+        HttpBodyDecoder decoder = HttpBodyDecoder.of(mockReq, ChannelContext.EMPTY_CONTEXT);
         assertNotNull(decoder);
         assertTrue(decoder instanceof HttpBodyStreamDecoder);
     }
@@ -435,4 +436,61 @@ public class HttpBodyDecoderCoverageTest {
         int pos = HttpBodyDecoder.findNewlineGuaranteed(data, 0);
         assertEquals(5, pos); // position of \n (since no \r)
     }
+
+    // ==================== getOrderedMultipartFields (L351-370) ====================
+
+    /** Non-multipart branch (L358): returns empty list, no decode. */
+    @Test
+    public void testGetOrderedMultipartFieldsNotMultipart() {
+        HttpBodyDefaultDecoder decoder = new HttpBodyDefaultDecoder("text/plain", "hello".getBytes());
+        List<MultipartField> fields = decoder.getOrderedMultipartFields();
+        assertNotNull(fields);
+        assertTrue(fields.isEmpty());
+    }
+
+    /** Single multipart field: triggers decode (L361), loop (L365), and the size<=1 no-sort branch (L368 false). */
+    @Test
+    public void testGetOrderedMultipartFieldsSingleField() {
+        String boundary = "--78a9b0c1d2e3f4";
+        byte[] body = (
+                boundary + "\r\n" +
+                "Content-Disposition: form-data; name=\"field1\"\r\n" +
+                "\r\n" +
+                "value1\r\n" +
+                boundary + "--\r\n"
+        ).getBytes();
+        HttpBodyDefaultDecoder decoder = new HttpBodyDefaultDecoder("multipart/form-data; boundary=78a9b0c1d2e3f4", body);
+        List<MultipartField> fields = decoder.getOrderedMultipartFields();
+        assertEquals(1, fields.size());
+        assertEquals("field1", fields.get(0).getName());
+        assertEquals("value1", fields.get(0).getDataAsString());
+    }
+
+    /** Multiple multipart fields: triggers decode + loop + the size>1 sort branch (L368 true). */
+    @Test
+    public void testGetOrderedMultipartFieldsMultipleFieldsSorted() {
+        String boundary = "--78a9b0c1d2e3f4";
+        // second field listed first in body so the comparator actually reorders by index
+        byte[] body = (
+                boundary + "\r\n" +
+                "Content-Disposition: form-data; name=\"fieldB\"\r\n" +
+                "\r\n" +
+                "valB\r\n" +
+                boundary + "\r\n" +
+                "Content-Disposition: form-data; name=\"fieldA\"\r\n" +
+                "\r\n" +
+                "valA\r\n" +
+                boundary + "--\r\n"
+        ).getBytes();
+        HttpBodyDefaultDecoder decoder = new HttpBodyDefaultDecoder("multipart/form-data; boundary=78a9b0c1d2e3f4", body);
+        List<MultipartField> fields = decoder.getOrderedMultipartFields();
+        assertEquals(2, fields.size());
+        // fields are ordered by index (occurrence order in body): fieldB first, then fieldA
+        assertEquals("fieldB", fields.get(0).getName());
+        assertEquals("fieldA", fields.get(1).getName());
+        // both values present -> loop (L365) executed for both entries
+        assertEquals("valB", fields.get(0).getDataAsString());
+        assertEquals("valA", fields.get(1).getDataAsString());
+    }
+
 }

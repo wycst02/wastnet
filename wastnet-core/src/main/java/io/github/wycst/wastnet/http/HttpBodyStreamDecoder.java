@@ -15,6 +15,8 @@
  */
 package io.github.wycst.wastnet.http;
 
+import io.github.wycst.wastnet.socket.tcp.ChannelContext;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -33,14 +35,22 @@ import java.util.*;
  */
 final class HttpBodyStreamDecoder extends HttpBodyDecoder {
     private final InputStream bodyStream;
-
-    private static final int BUFFER_SIZE = Math.max(8192, HttpConf.MAX_BODY_IN_MEMORY);
-    private static final int COMPACT_THRESHOLD = BUFFER_SIZE >> 1;
-    private static final int MAX_BUFFER_SIZE = BUFFER_SIZE << 1;
+    private final ChannelContext ctx;
+    private final int bufferSize;
+    private final int compactThreshold;
+    private final int maxBufferSize;
 
     HttpBodyStreamDecoder(String contentType, InputStream bodyStream) {
+        this(contentType, bodyStream, ChannelContext.EMPTY_CONTEXT);
+    }
+
+    HttpBodyStreamDecoder(String contentType, InputStream bodyStream, ChannelContext ctx) {
         super(contentType);
         this.bodyStream = bodyStream;
+        this.ctx = ctx;
+        this.bufferSize = Math.max(8192, ctx.option(HttpOptions.MAX_BODY_IN_MEMORY));
+        this.compactThreshold = this.bufferSize >> 1;
+        this.maxBufferSize = this.bufferSize << 1;
     }
 
     @Override
@@ -50,10 +60,10 @@ final class HttpBodyStreamDecoder extends HttpBodyDecoder {
             return;
         }
 
-        Map<String, List<MultipartField>> result = new HashMap<String, List<MultipartField>>(8);
+        Map<String, List<MultipartField>> result = new HashMap<>(8);
         int fieldIndex = 0;
         try {
-            byte[] buffer = new byte[BUFFER_SIZE];
+            byte[] buffer = new byte[bufferSize];
             int pos, limit;
             int[] badChar = buildBadCharTable(boundaryBytes);
 
@@ -78,10 +88,10 @@ final class HttpBodyStreamDecoder extends HttpBodyDecoder {
                 if (headerEnd == -1) {
                     // Multipart headers are typically small. If CRLFCRLF not found in a full buffer,
                     // it's likely malformed data. We expand buffer once as a fallback.
-                    if (limit < buffer.length || buffer.length == MAX_BUFFER_SIZE) break;
+                    if (limit < buffer.length || buffer.length == maxBufferSize) break;
                     int oldLimit = limit;
-                    buffer = Arrays.copyOf(buffer, MAX_BUFFER_SIZE);
-                    int n = bodyStream.read(buffer, oldLimit, MAX_BUFFER_SIZE - oldLimit);
+                    buffer = Arrays.copyOf(buffer, maxBufferSize);
+                    int n = bodyStream.read(buffer, oldLimit, maxBufferSize - oldLimit);
                     if (n == -1) break;
                     limit += n;
                     // Search from oldLimit - 3 (CRLFCRLF may cross boundary)
@@ -100,7 +110,7 @@ final class HttpBodyStreamDecoder extends HttpBodyDecoder {
                 // This ensures the in-memory field size threshold is between BUFFER_SIZE/2 and BUFFER_SIZE:
                 // - When pos <= half: no compact, search range is ~half buffer -> threshold ~BUFFER_SIZE/2
                 // - When pos > half: compact + refill, search range is full buffer -> threshold ~BUFFER_SIZE
-                if (pos > COMPACT_THRESHOLD) {
+                if (pos > compactThreshold) {
                     limit -= pos;
                     if (limit > 0) {
                         System.arraycopy(buffer, pos, buffer, 0, limit);
@@ -191,9 +201,8 @@ final class HttpBodyStreamDecoder extends HttpBodyDecoder {
         File tempFile = null;
         FileChannel channel = null;
         boolean success = false;
-        boolean skipContent = fieldName == null || !HttpConf.ENABLE_TEMP_FILE;
+        boolean skipContent = fieldName == null || !ctx.option(HttpOptions.ENABLE_TEMP_FILE);
         int boundaryLen = boundaryBytes.length;
-
         try {
             if (!skipContent) {
                 tempFile = createTempFile();
@@ -290,8 +299,8 @@ final class HttpBodyStreamDecoder extends HttpBodyDecoder {
                 Arrays.copyOfRange(buffer, start, start + len), charset);
     }
 
-    private static File createTempFile() throws IOException {
-        return File.createTempFile(HttpConf.TEMP_FILE_PREFIX, ".tmp", new File(HttpConf.TEMP_FILE_DIR));
+    private File createTempFile() throws IOException {
+        return File.createTempFile(ctx.option(HttpOptions.TEMP_FILE_PREFIX), ".tmp", new File(ctx.option(HttpOptions.TEMP_FILE_DIR)));
     }
 
     /**
@@ -319,14 +328,14 @@ final class HttpBodyStreamDecoder extends HttpBodyDecoder {
 
         // Non-chunked stream: content-length already exceeds MAX_BODY_IN_MEMORY, reject immediately
         if (!(bodyStream instanceof HttpChunkedStream)) {
-            throw new IllegalStateException("Form data exceeds maximum size: " + HttpConf.MAX_BODY_IN_MEMORY);
+            throw new IllegalStateException("Form data exceeds maximum size: " + ctx.option(HttpOptions.MAX_BODY_IN_MEMORY));
         }
 
         // Chunked stream: read incrementally and check size limit
         HttpUriDecoder decoder = new HttpUriDecoder(false, true);
         byte[] tmp = new byte[8192];
         int n, total = 0;
-        int maxSize = HttpConf.MAX_BODY_IN_MEMORY;
+        int maxSize = ctx.option(HttpOptions.MAX_BODY_IN_MEMORY);
         try {
             while ((n = bodyStream.read(tmp)) != -1) {
                 total += n;

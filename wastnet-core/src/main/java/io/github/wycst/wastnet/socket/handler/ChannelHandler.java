@@ -4,7 +4,7 @@ import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 
 import java.io.IOException;
 
-public abstract class ChannelHandler<T> {
+public interface ChannelHandler<T> {
 
     /**
      * Called when channel is connected (accept)
@@ -12,7 +12,7 @@ public abstract class ChannelHandler<T> {
      * @param ctx channel context
      * @throws IOException if connection handling fails
      */
-    public void onConnected(ChannelContext ctx) throws IOException {
+    default void onConnected(ChannelContext ctx) throws IOException {
     }
 
     /**
@@ -22,7 +22,7 @@ public abstract class ChannelHandler<T> {
      * @param message encoded or aggregated object
      * @throws IOException if message handling fails
      */
-    public abstract void onHandle(ChannelContext ctx, T message) throws IOException;
+    void onHandle(ChannelContext ctx, T message) throws IOException;
 
     /**
      * Called when channel is closed
@@ -30,7 +30,7 @@ public abstract class ChannelHandler<T> {
      * @param ctx channel context
      * @throws IOException if close handling fails
      */
-    public void onClosed(ChannelContext ctx) throws IOException {
+    default void onClosed(ChannelContext ctx) throws IOException {
     }
 
     /**
@@ -40,6 +40,6 @@ public abstract class ChannelHandler<T> {
      * @param cause   the caught exception
      * @throws IOException if exception handling fails
      */
-    public void onException(ChannelContext context, Throwable cause) throws IOException {
+    default void onException(ChannelContext context, Throwable cause) throws IOException {
     }
 }

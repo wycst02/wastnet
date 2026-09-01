@@ -1,13 +1,18 @@
 package io.github.wycst.wastnet.http.h2;
 
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
+import io.github.wycst.wastnet.socket.tcp.ChannelSSLContext;
+import io.github.wycst.wastnet.socket.tcp.SSLEngineContext;
 import org.junit.jupiter.api.Test;
 
+import javax.net.ssl.SSLContext;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.util.HashMap;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -21,6 +26,8 @@ import static org.junit.jupiter.api.Assertions.*;
 public class Http2MessageReaderTest {
 
     static class TestHttp2MessageReader extends Http2MessageReader {
+        TestHttp2MessageReader() { super(ChannelContext.EMPTY_CONTEXT); }
+        TestHttp2MessageReader(ChannelContext ctx) { super(ctx); }
         @Override
         public void init(ChannelContext ctx) {}
         @Override
@@ -902,6 +909,37 @@ public class Http2MessageReaderTest {
         Http2Frame frame = new Http2Frame(data, 0, 9, 8, 8, Http2FrameType.GOAWAY, 0, 0);
         safeRun(() -> reader.handleFrame(ctx(), frame));
         assertFalse(reader.valid);
+    }
+
+    // ==================== fillDiagnostic (monitoring snapshot) ====================
+
+    /** L745 false branch: non-SSL ctx -> fillTlsDiagnostic is NOT called. */
+    @Test
+    public void testFillDiagnosticNonSsl() throws Exception {
+        TestHttp2MessageReader reader = new TestHttp2MessageReader(ctx());
+        Map<String, Object> m = new HashMap<>();
+        reader.fillDiagnostic(m);
+        assertTrue(m.containsKey("valid"));
+        assertTrue(m.containsKey("createdAt"));
+        assertTrue(m.containsKey("ageMs"));
+        assertTrue(m.containsKey("lastCloseReason"));
+        assertFalse(m.containsKey("ssl"));
+    }
+
+    /** L745-746 true branch: SSL ctx -> fillTlsDiagnostic contributes TLS-layer keys. */
+    @Test
+    public void testFillDiagnosticSsl() throws Exception {
+        SSLContext ssl = SSLContext.getInstance("TLS");
+        ssl.init(null, null, new java.security.SecureRandom());
+        SSLEngineContext engineCtx = new SSLEngineContext(ssl, null, new String[]{"h2"}, false);
+        ChannelSSLContext sslCtx = new ChannelSSLContext(SocketChannel.open(), engineCtx);
+        TestHttp2MessageReader reader = new TestHttp2MessageReader(sslCtx);
+        Map<String, Object> m = new HashMap<>();
+        reader.fillDiagnostic(m);
+        assertTrue(m.containsKey("ssl"));
+        assertTrue(m.containsKey("packetInBufRemaining"));
+        assertTrue(m.containsKey("applicationInBufRemaining"));
+        assertTrue(m.containsKey("readFullyRemaining"));
     }
 
 }

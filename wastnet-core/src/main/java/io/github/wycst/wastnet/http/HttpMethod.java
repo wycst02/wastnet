@@ -70,10 +70,10 @@ public enum HttpMethod {
             try {
                 String[] parts = implementedMethods.split(",");
                 LinkedHashSet<HttpMethod> set = new LinkedHashSet<HttpMethod>();
-                for (int i = 0; i < parts.length; ++i) {
-                    set.add(valueOf(parts[i].trim().toUpperCase()));
+                for (String part : parts) {
+                    set.add(valueOf(part.trim().toUpperCase()));
                 }
-                implemented = set.toArray(new HttpMethod[set.size()]);
+                implemented = set.toArray(new HttpMethod[0]);
             } catch (Exception e) {
                 log.warn("Invalid implemented-methods config '{}', fallback to all methods: {}", implementedMethods, e.getMessage());
             }

@@ -17,7 +17,7 @@ package io.github.wycst.wastnet.socket.tcp;
 
 import io.github.wycst.wastnet.env.RuntimeEnv;
 import io.github.wycst.wastnet.exception.SocketException;
-import io.github.wycst.wastnet.socket.conf.SocketConf;
+import io.github.wycst.wastnet.socket.conf.SocketOptions;
 
 import javax.net.ssl.*;
 import java.io.IOException;
@@ -176,12 +176,15 @@ public final class ChannelSSLContext extends ChannelContext {
 
     /**
      * Get the SSL handshake deadline in milliseconds.
-     * If no deadline is set, returns {@link SocketConf#SSL_HANDSHAKE_TIMEOUT_MS}.
+     * Resolved from the connection-level NioConfig (SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS),
+     * falling back to the option's default when no NioConfig is bound.
      *
      * @return the SSL handshake deadline in milliseconds
      */
     long getSSLHandshakeDeadline() {
-        long handshakeTimeoutMs = nioConfig != null ? nioConfig.getSslHandshakeTimeoutMs() : SocketConf.SSL_HANDSHAKE_TIMEOUT_MS;
+        long handshakeTimeoutMs = nioConfig != null
+                ? nioConfig.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS)
+                : SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS.value;
         return handshakeTimeoutMs > 0 ? System.currentTimeMillis() + handshakeTimeoutMs : Long.MAX_VALUE;
     }
 

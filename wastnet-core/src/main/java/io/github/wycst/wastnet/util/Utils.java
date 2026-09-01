@@ -120,18 +120,110 @@ public final class Utils {
      * @return hex string
      */
     public static String printHexString(byte[] b, char splitChar) {
-        StringBuilder builder = new StringBuilder();
-        for (int i = 0; i < b.length; ++i) {
-            String hex = Integer.toHexString(b[i] & 255);
-            if (hex.length() == 1) {
-                builder.append('0');
-            }
-            builder.append(hex.toUpperCase());
+        StringBuilder builder = new StringBuilder(b.length * 3);
+        for (byte value : b) {
+            int v = value & 0xFF;
+            builder.append(HEX_CHARS[v >>> 4]);
+            builder.append(HEX_CHARS[v & 0xF]);
             if (splitChar > 0) {
                 builder.append(splitChar);
             }
         }
         return builder.toString();
+    }
+
+    /**
+     * Convert a region of a byte array to a lowercase hex string (2 chars per byte).
+     * <p>
+     * Used by H2 frame dumping.
+     *
+     * @param data the byte array
+     * @param off  start offset
+     * @param len  number of bytes to convert
+     * @return hex string
+     */
+    public static String toHexStringLower(byte[] data, int off, int len) {
+        StringBuilder sb = new StringBuilder(len * 2);
+        for (int i = off; i < off + len; ++i) {
+            int v = data[i] & 0xFF;
+            sb.append((char) (HEX_CHARS[v >>> 4] | 0x20));
+            sb.append((char) (HEX_CHARS[v & 0xF] | 0x20));
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Dump a byte array region [off, off + len) in a wire-shark style hex view.
+     * <p>
+     * 16 bytes/line: left=offset, middle=hex (split at 8th byte), right=ASCII (. for non-printable).
+     * <p>
+     * Example:
+     * <pre>
+     * 00000000 | 00 00 0c 01 05 00 00 00  01 83 62 61 73 69 63 2f | ....basic/      |
+     * 00000010 | 68 74 6d 6c                                      | html            |
+     * </pre>
+     *
+     * @param data byte array
+     * @param off  start offset (inclusive)
+     * @param len  number of bytes to dump
+     * @return hex dump string (empty if len <= 0)
+     */
+    public static String hexDump(byte[] data, int off, int len) {
+        if (data == null || len <= 0) {
+            return "";
+        }
+        int end = off + len;
+        int bytesPerLine = 16;
+        int half = bytesPerLine >> 1;
+        StringBuilder sb = new StringBuilder(len << 2);
+        StringBuilder ascii = new StringBuilder(bytesPerLine);
+        char[] hexChars = HEX_CHARS;
+
+        StringBuilder lineSep = new StringBuilder(9 + 1 + (bytesPerLine * 3 + 2) + 1 + (2 + bytesPerLine) + 1);
+        appendDashes(lineSep, 9);
+        lineSep.append('+');
+        appendDashes(lineSep, bytesPerLine * 3 + 2);
+        lineSep.append('+');
+        appendDashes(lineSep, 2 + bytesPerLine);
+        lineSep.append('+');
+
+        sb.append(lineSep).append('\n');
+        for (int i = 0; i < len; i += bytesPerLine) {
+            appendHex8(sb, i).append(" | ");
+            ascii.setLength(0);
+            for (int j = 0; j < bytesPerLine; ++j) {
+                int idx = off + i + j;
+                if (j == half) {
+                    sb.append(' ');
+                }
+                if (idx < end) {
+                    int b = data[idx] & 0xFF;
+                    sb.append(hexChars[b >> 4 & 0xF]).append(hexChars[b & 0xF]).append(' ');
+                    ascii.append(b >= 32 && b <= 126 ? (char) b : '.');
+                } else {
+                    sb.append("   ");
+                }
+            }
+            for (int k = ascii.length(); k < bytesPerLine; ++k) {
+                ascii.append(' ');
+            }
+            sb.append("| ").append(ascii).append(" |\n");
+        }
+        sb.append(lineSep);
+        return sb.toString();
+    }
+
+    private static void appendDashes(StringBuilder sb, int n) {
+        for (int k = 0; k < n; ++k) {
+            sb.append('-');
+        }
+    }
+
+    private static StringBuilder appendHex8(StringBuilder sb, int value) {
+        for (int shift = 28; shift >= 0; shift -= 4) {
+            sb.append(HEX_CHARS[(value >> shift) & 0xF]);
+        }
+        return sb;
     }
 
     /**

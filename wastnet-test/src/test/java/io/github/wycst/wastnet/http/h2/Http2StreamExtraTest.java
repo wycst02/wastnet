@@ -1,17 +1,7 @@
 package io.github.wycst.wastnet.http.h2;
 
-import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import io.github.wycst.wastnet.http.HttpBuf;
-import io.github.wycst.wastnet.http.h2.Http2BodyInputStream;
-import io.github.wycst.wastnet.http.h2.Http2ClientReader;
-import io.github.wycst.wastnet.http.h2.Http2FrameType;
-import io.github.wycst.wastnet.http.h2.Http2HpackCodec;
-import io.github.wycst.wastnet.http.h2.Http2MessageReader;
-import io.github.wycst.wastnet.http.h2.Http2ServerReader;
-import io.github.wycst.wastnet.http.h2.Http2ServerStream;
-import io.github.wycst.wastnet.http.h2.Http2Frame;
-import io.github.wycst.wastnet.http.h2.H2TestHelper;
-import io.github.wycst.wastnet.http.h2.TrailersListener;
+import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -22,14 +12,8 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
 
 /**
  * Supplementary coverage for {@link Http2Stream} protocol/edge paths:
@@ -46,14 +30,8 @@ public class Http2StreamExtraTest {
     private static Http2ServerReader mockReader() {
         Http2ServerReader reader = mock(Http2ServerReader.class);
         H2TestHelper.initMockReader(reader);
-        try {
-            Field f = Http2MessageReader.class.getDeclaredField("http2HpackCodec");
-            f.setAccessible(true);
-            f.set(reader, new Http2HpackCodec());
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
-        reader.connectRecvWindow = new java.util.concurrent.atomic.AtomicLong(65535);
+        H2TestHelper.installCodec(reader);
+        H2TestHelper.setConnectRecvWindow(reader, 65535);
         reader.streamInitSendWindowSize = 65535;
         reader.maxSendPayloadSize = 16384;
         return reader;

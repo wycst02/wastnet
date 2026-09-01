@@ -1,7 +1,7 @@
 package io.github.wycst.wastnet.socket.tcp;
 
 import io.github.wycst.wastnet.exception.SocketException;
-import io.github.wycst.wastnet.socket.conf.SocketConf;
+import io.github.wycst.wastnet.socket.conf.SocketOptions;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -95,7 +95,7 @@ public class TCPServer extends NioEngine<TCPServer> {
     }
 
     ChannelWorker nextWorker(int clientCnt, ChannelWorker[] workers) {
-        if (SocketConf.useLoadBalanceLeastConnections()) {
+        if (nioConfig.option(SocketOptions.LOAD_BALANCE_TYPE) == "LEAST_CONN") {
             int minIdx = 0;
             int minConn = workers[0].getConnectionCount();
             for (int i = 1; i < workers.length; ++i) {
@@ -257,7 +257,7 @@ public class TCPServer extends NioEngine<TCPServer> {
         } catch (Throwable ignored) {}
 
         // Phase 2: Wait for connections to drain naturally
-        long deadline = System.currentTimeMillis() + gracefulShutdownTimeout;
+        long deadline = System.currentTimeMillis() + nioConfig.option(SocketOptions.GRACEFUL_SHUTDOWN_TIMEOUT_MS);
         while (System.currentTimeMillis() < deadline) {
             if (!hasInflightRequests()) break;
             try {

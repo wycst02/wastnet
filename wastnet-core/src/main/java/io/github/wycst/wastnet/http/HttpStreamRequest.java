@@ -88,10 +88,10 @@ public class HttpStreamRequest extends HttpDecodedRequest {
      */
     @Override
     public byte[] getBodyData() {
-        if (contentLength > (long) HttpConf.MAX_BODY_IN_MEMORY << 1) {
+        if (contentLength > (long) ctx.option(HttpOptions.MAX_BODY_IN_MEMORY) << 1) {
             throw new IllegalStateException(
                     "Body size (" + contentLength + " bytes) exceeds maximum limit (" +
-                            (HttpConf.MAX_BODY_IN_MEMORY << 1) + " bytes). Data too large, not supported."
+                            (ctx.option(HttpOptions.MAX_BODY_IN_MEMORY) << 1) + " bytes). Data too large, not supported."
             );
         }
         return bodyStream.readFullBytes();

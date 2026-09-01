@@ -1,3 +1,18 @@
+/*
+ * Copyright 2026, wangyunchao.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.github.wycst.wastnet.http;
 
 import io.github.wycst.wastnet.http.h2.Http2Request;
@@ -39,7 +54,7 @@ public abstract class HttpInternalRequest implements HttpRequest {
 
     Map<String, Object> getAttrs() {
         if (attrs == null) {
-            attrs = new HashMap<String, Object>();
+            attrs = new HashMap<>();
         }
         return attrs;
     }
@@ -196,7 +211,7 @@ public abstract class HttpInternalRequest implements HttpRequest {
 
     private HttpBodyDecoder getBodyDecoder() {
         if (bodyDecoder == null) {
-            bodyDecoder = HttpBodyDecoder.of(this);
+            bodyDecoder = HttpBodyDecoder.of(this, ctx);
         }
         return bodyDecoder;
     }
@@ -288,7 +303,7 @@ public abstract class HttpInternalRequest implements HttpRequest {
         if (bodyValues == null) {
             return uriValues;
         }
-        List<String> result = new ArrayList<String>(uriValues.size() + bodyValues.size());
+        List<String> result = new ArrayList<>(uriValues.size() + bodyValues.size());
         result.addAll(uriValues);
         result.addAll(bodyValues);
         return result;
@@ -296,7 +311,7 @@ public abstract class HttpInternalRequest implements HttpRequest {
 
     @Override
     public final Set<String> getParameterNames() {
-        Set<String> names = new LinkedHashSet<String>();
+        Set<String> names = new LinkedHashSet<>();
         Set<String> uriNames = getUriParameterNames();
         if (uriNames != null) {
             names.addAll(uriNames);
@@ -316,7 +331,7 @@ public abstract class HttpInternalRequest implements HttpRequest {
         if (names.isEmpty()) {
             return Collections.emptyMap();
         }
-        Map<String, String[]> map = new HashMap<String, String[]>(names.size());
+        Map<String, String[]> map = new HashMap<>(names.size());
         for (String name : names) {
             List<String> values = getParameterValues(name);
             if (values != null) {

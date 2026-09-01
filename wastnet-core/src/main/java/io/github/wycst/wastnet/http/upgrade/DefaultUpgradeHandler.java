@@ -40,7 +40,7 @@ public class DefaultUpgradeHandler implements UpgradeHandler, ClearableHandler {
 
     static final Log log = LogFactory.getLog(DefaultUpgradeHandler.class);
 
-    final Map<String, UpgradeResource> resourceHashMap = new java.util.HashMap<String, UpgradeResource>();
+    final Map<String, UpgradeResource> resourceHashMap = new java.util.HashMap<>();
     static final byte[] WEBSOCKET_PONG_FRAME = new byte[]{(byte) 0x8A, 0x00};
     static final byte[] H2C_101_RESPONSE = "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n".getBytes(Utils.ISO_8859_1);
     static final WebSocketResource DEFAULT_WEBSOCKET_RESOURCE = new WebSocketResource(false);
@@ -71,7 +71,7 @@ public class DefaultUpgradeHandler implements UpgradeHandler, ClearableHandler {
         handleWebSocket(ctx, upgradeMessage);
     }
 
-    private void handleWebSocket(ChannelContext ctx, HttpUpgradeMessage upgradeMessage) throws IOException {
+    private void handleWebSocket(ChannelContext ctx, HttpUpgradeMessage upgradeMessage) {
         WebSocketFrame frame = (WebSocketFrame) upgradeMessage;
         WebSocketFrame.FrameType type = frame.getType();
 
@@ -338,7 +338,7 @@ public class DefaultUpgradeHandler implements UpgradeHandler, ClearableHandler {
         // Rationale: the payoff is negligible — in practice no client relies on it (most send a
         // standalone SETTINGS frame right after the 101 switch, which h2Reader.init applies normally),
         // so skipping it is a safe, low-cost design choice rather than a compliance gap.
-        Http2ServerReader h2Reader = new Http2ServerReader();
+        Http2ServerReader h2Reader = new Http2ServerReader(ctx);
         ((HttpChannelProtocolReader) ctx.reader()).switchTo(h2Reader);
         ctx.writeFlush(H2C_101_RESPONSE);
         h2Reader.init(ctx);

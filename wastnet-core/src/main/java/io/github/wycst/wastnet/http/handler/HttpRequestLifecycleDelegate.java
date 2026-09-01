@@ -2,6 +2,7 @@ package io.github.wycst.wastnet.http.handler;
 
 import io.github.wycst.wastnet.http.HttpRequest;
 import io.github.wycst.wastnet.http.HttpResponse;
+import io.github.wycst.wastnet.http.HttpStatus;
 import io.github.wycst.wastnet.http.extension.HttpServerInterceptor;
 import io.github.wycst.wastnet.http.extension.HttpServerObserver;
 import io.github.wycst.wastnet.log.Log;
@@ -45,7 +46,8 @@ final class HttpRequestLifecycleDelegate {
             return interceptor == null || interceptor.beforeHandle(request, response, ctx);
         } catch (Exception e) {
             // interceptor failure => short-circuit, skip the business handler
-            log.debug("Interceptor beforeHandle failed:", e);
+            log.error("Interceptor beforeHandle failed:", e);
+            response.status(HttpStatus.INTERNAL_SERVER_ERROR).body("Interceptor execution error");
             return false;
         }
     }

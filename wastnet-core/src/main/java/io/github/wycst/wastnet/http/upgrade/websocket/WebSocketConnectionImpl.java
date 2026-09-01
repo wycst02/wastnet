@@ -7,6 +7,7 @@ import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 
 import java.io.*;
 import java.nio.ByteBuffer;
+import java.nio.file.Files;
 import java.util.concurrent.ScheduledFuture;
 
 /**
@@ -70,7 +71,7 @@ final class WebSocketConnectionImpl implements WebSocketConnection {
         if (file == null) {
             throw new IllegalArgumentException("File cannot be null");
         }
-        sendInputStream(new FileInputStream(file));
+        sendInputStream(Files.newInputStream(file.toPath()));
     }
 
     @Override
@@ -86,7 +87,6 @@ final class WebSocketConnectionImpl implements WebSocketConnection {
             byte[] buf = new byte[frameLen];
             WebSocketUtils.writeServerFrameHeader(WebSocketFrame.FrameType.BINARY, chunkSize, false, buf, 0);
 
-            boolean last = false;
             int len = readGreedy(in, buf, headerLen, chunkSize);
             if (len <= 0) {
                 response.writeFlush(BINARY_EMPTY_FRAME);
@@ -94,7 +94,7 @@ final class WebSocketConnectionImpl implements WebSocketConnection {
             }
 
             // First chunk: BINARY frame (header already pre-written)
-            last = len < chunkSize;
+            boolean last = len < chunkSize;
             if (last) {
                 sendLastFrame(WebSocketFrame.FrameType.BINARY, len, buf, headerLen);
             } else {

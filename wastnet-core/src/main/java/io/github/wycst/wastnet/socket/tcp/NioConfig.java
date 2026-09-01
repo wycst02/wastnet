@@ -2,10 +2,15 @@ package io.github.wycst.wastnet.socket.tcp;
 
 import io.github.wycst.wastnet.socket.channel.ChannelReader;
 import io.github.wycst.wastnet.socket.channel.ChannelReaderFactory;
+import io.github.wycst.wastnet.socket.conf.Option;
 import io.github.wycst.wastnet.socket.conf.SocketConf;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import io.github.wycst.wastnet.socket.handler.ClearableHandler;
 import io.github.wycst.wastnet.socket.handler.IdleStateHandler;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Objects;
 
 /**
  * NIO engine configuration (shared by TCPServer and TCPClient)
@@ -36,7 +41,6 @@ public final class NioConfig {
     private boolean printSSLErrorLog;
 
     private boolean syncRunner = SocketConf.DEFAULT_SYNC_RUNNER;
-
     private boolean printReadErrorLog;
     private boolean printApplicationMessage;
     private ChannelReader<?> channelReader = ChannelReader.UNDO;
@@ -44,15 +48,57 @@ public final class NioConfig {
     private IdleStateHandler idleStateHandler;
     private ChannelReaderFactory channelReaderFactory = singletonChannelReaderFactory();
 
-    private long sslHandshakeTimeoutMs = SocketConf.SSL_HANDSHAKE_TIMEOUT_MS;
-
-    private boolean allowPlaintextWhenSslEnabled = false;
+    private boolean allowPlaintextWhenSslEnabled;
 
     private String[] applicationProtocols;
 
     private String[] enabledProtocols;
 
     private ConnectionFilter connectionFilter;
+
+    // ================= Per-instance options =================
+    // Strongly-typed per-server overrides; absent keys fall back to Option.defaultValue.
+    // Option instances are used directly as keys, so no string keys are needed.
+    private final Map<Option<?>, Object> options = new HashMap<>();
+
+    /**
+     * Get a strongly-typed configuration option value for this server instance.
+     *
+     * @param option the option to read (e.g. {@code HttpOptions.GZIP})
+     * @param <T>    value type
+     * @return the instance override if present, otherwise {@code option.defaultValue}
+     */
+    @SuppressWarnings("unchecked")
+    public <T> T option(Option<T> option) {
+        if (option == null) {
+            throw new IllegalArgumentException("option must not be null");
+        }
+        Object value = options.get(option);
+        if (value == null) {
+            return option.value;
+        }
+        return (T) value;
+    }
+
+    /**
+     * Configure a per-instance option override (fluent style, e.g.
+     * {@code nioConfig.option(HttpOptions.GZIP, false)}).
+     *
+     * @param option the option to override
+     * @param value  the override value (typed as {@code T} by the option)
+     * @param <T>    value type
+     * @return this NioConfig instance
+     */
+    public <T> NioConfig option(Option<T> option, T value) {
+        if (option == null) {
+            throw new IllegalArgumentException("option must not be null");
+        }
+        if (value != null) {
+            value = option.normalizer.apply(value);
+        }
+        options.put(option, value);
+        return this;
+    }
 
     public String[] getApplicationProtocols() {
         return applicationProtocols;
@@ -173,25 +219,15 @@ public final class NioConfig {
     }
 
     public void setChannelReader(ChannelReader<?> channelReader) {
-        channelReader.getClass();
-        this.channelReader = channelReader;
+        this.channelReader = Objects.requireNonNull(channelReader, "channelReader must not be null");
     }
 
     public void setChannelReaderFactory(ChannelReaderFactory channelReaderFactory) {
-        channelReaderFactory.getClass();
-        this.channelReaderFactory = channelReaderFactory;
+        this.channelReaderFactory = Objects.requireNonNull(channelReaderFactory, "channelReaderFactory must not be null");
     }
 
     ChannelReaderFactory singletonChannelReaderFactory() {
         return () -> channelReader;
-    }
-
-    public long getSslHandshakeTimeoutMs() {
-        return sslHandshakeTimeoutMs;
-    }
-
-    public void setSslHandshakeTimeoutMs(long sslHandshakeTimeoutMs) {
-        this.sslHandshakeTimeoutMs = sslHandshakeTimeoutMs;
     }
 
     public boolean isAllowPlaintextWhenSslEnabled() {

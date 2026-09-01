@@ -1,6 +1,7 @@
 package io.github.wycst.wastnet.examples.http.mvc;
 
 import io.github.wycst.wastnet.http.HttpMethod;
+import io.github.wycst.wastnet.http.HttpResponse;
 import io.github.wycst.wastnet.http.MultipartField;
 import io.github.wycst.wastnet.http.annotation.Controller;
 import io.github.wycst.wastnet.http.annotation.Endpoint;
@@ -8,6 +9,8 @@ import io.github.wycst.wastnet.http.annotation.PathParam;
 import io.github.wycst.wastnet.http.annotation.RequestParam;
 import io.github.wycst.wastnet.http.annotation.ResponseBody;
 
+import java.io.File;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -87,5 +90,23 @@ public class DemoApiController {
         for (int i = 0; i < files.length; ++i) names[i] = files[i].getFileName();
         map.put("files", names);
         return map;
+    }
+
+    // 直接 sendFile，不做符号链接检测
+    @Endpoint("/file/send")
+    public void sendFile(HttpResponse response) throws Exception {
+        response.sendFile(new File("/tmp/welcome.html"));
+    }
+
+    // sendFile 前检测符号链接，若为符号链接则拒绝发送
+    @Endpoint("/file/send-check")
+    public void sendFileCheck(HttpResponse response) throws Exception {
+        File file = new File("/tmp/welcome.html");
+        if (Files.isSymbolicLink(file.toPath())) {
+            response.contentType("text/plain;charset=utf-8")
+                    .body("refuse: file is a symbolic link");
+            return;
+        }
+        response.sendFile(file);
     }
 }
