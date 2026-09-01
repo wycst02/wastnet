@@ -15,10 +15,14 @@
  */
 package io.github.wycst.wastnet.http.handler;
 
+import io.github.wycst.wastnet.env.RuntimeEnv;
 import io.github.wycst.wastnet.http.*;
-import io.github.wycst.wastnet.socket.conf.SocketConf;
 
 import java.io.File;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -29,15 +33,18 @@ import java.util.Map;
  */
 public class HttpResourceRoute implements HttpRoute {
 
-    // Only symlinks pointing outside docBase can bypass the string traversal check;
-    // static dirs in production should not contain symlinks (normally they don't).
-    private final String docBase;
+    private static final FileSystem DEFAULT_FS = FileSystems.getDefault(); // cached to avoid File.toPath() sync
+
+    // Symlinks are not recommended in static resource dirs (a symlink can point outside docBase and bypass the path-traversal guard); avoid them in production.
+    private final File docBaseDir;
     final String routePath;  // package-private for HttpRouterHandler
     private final int filePathOffset;
     private final File defaultFile;
     private final byte[] notFoundBytes;
     private byte[] notAllowedBytes;
+    private byte[] forbiddenBytes;
     private boolean strictMode = true;
+    private boolean checkSymlinks; // true = check symlinks at runtime (unless docBase scanned clean or allowed)
     private boolean cacheEnabled = true;
     private String defaultCacheControl = "max-age=0, must-revalidate";
     private final Map<String, String> mimeCacheControlRules = new HashMap<String, String>();
@@ -81,19 +88,23 @@ public class HttpResourceRoute implements HttpRoute {
      * @param defaultFile  fallback file for root requests, or {@code null} to disable
      */
     public HttpResourceRoute(String routePath, String docBase, File defaultFile) {
-        this.routePath = routePath;
-        this.filePathOffset = routePath.length();
-        this.docBase = docBase;
+        if (docBase == null || docBase.isEmpty()) {
+            throw new IllegalArgumentException("docBase must not be null or empty");
+        }
+        this.docBaseDir = new File(docBase);
+        this.filePathOffset = (this.routePath = routePath).length();
         this.defaultFile = defaultFile;
-        this.notFoundBytes = "404 Not Found".getBytes();
-        this.notAllowedBytes = HttpStatus.METHOD_NOT_ALLOWED.text.getBytes();
+        this.notFoundBytes = HttpStatus.NOT_FOUND.text.getBytes(StandardCharsets.UTF_8);
+        this.notAllowedBytes = HttpStatus.METHOD_NOT_ALLOWED.text.getBytes(StandardCharsets.UTF_8);
+        this.forbiddenBytes = HttpStatus.FORBIDDEN.text.getBytes(StandardCharsets.UTF_8);
+        this.checkSymlinks = docBaseDir.isDirectory() && scanHasSymlink(docBaseDir, System.currentTimeMillis() + SCAN_DEADLINE_MS);
     }
 
     /**
      * Set the base path for {@code $base_path} placeholder substitution in early hint links.
      * Called by HttpRouterHandler to pass the context path.
      */
-    HttpResourceRoute setBasePath(String basePath) {
+    HttpResourceRoute basePath(String basePath) {
         this.basePath = basePath;
         resolveEarlyHintBase();
         return this;
@@ -110,7 +121,27 @@ public class HttpResourceRoute implements HttpRoute {
      * Set custom response body for 405 Method Not Allowed.
      */
     public HttpResourceRoute notAllowedBody(String body) {
-        this.notAllowedBytes = body.getBytes();
+        this.notAllowedBytes = body.getBytes(StandardCharsets.UTF_8);
+        return this;
+    }
+
+    /**
+     * Set custom response body for 403 Forbidden.
+     */
+    public HttpResourceRoute forbiddenBody(String body) {
+        this.forbiddenBytes = body.getBytes(StandardCharsets.UTF_8);
+        return this;
+    }
+
+    /**
+     * Enable or disable serving symlinks over HTTP; overrides the construction-time scan result.
+     * <p>{@code true} allows symlinks to be read; {@code false} rejects them. Note: symlinks are not recommended in static resource dirs (a symlink can point outside docBase and bypass the path-traversal guard), so enabling this is discouraged.</p>
+     *
+     * @param allow true to allow symlinks, false to reject them
+     * @return this handler for chaining
+     */
+    public HttpResourceRoute allowSymlinks(boolean allow) {
+        this.checkSymlinks = !allow;
         return this;
     }
 
@@ -237,6 +268,43 @@ public class HttpResourceRoute implements HttpRoute {
         return null;
     }
 
+    // Scan all files under docBase for symlinks, recursing into every dir; bounded by a 3s deadline. Returns true if a file symlink is found or the deadline is hit (conservative). Dirs are not checked at scan time, but intermediate symlink dirs are rejected at runtime via hasSymlinkInPath.
+    private static final long SCAN_DEADLINE_MS = 3000;
+
+    private static boolean scanHasSymlink(File dir, long deadline) {
+        if (System.currentTimeMillis() > deadline) return true; // deadline exceeded: conservative
+        File[] children = dir.listFiles();
+        if (children == null) return false; // unreadable: not treated as symlink
+        for (File child : children) {
+            boolean symlink = Files.isSymbolicLink(child.toPath());
+            if (symlink && !child.isDirectory()) return true; // file symlink found
+            if (child.isDirectory() && scanHasSymlink(child, deadline)) return true; // recurse into dirs
+        }
+        return false;
+    }
+
+    /**
+     * Check whether any component of the (already resolved) file path is a symlink,
+     * walking from docBase down to the final file. A symlink directory can expose
+     * files outside docBase, so every intermediate level must be rejected, not just
+     * the final file.
+     *
+     * @param file the resolved file under docBase
+     * @return true if any path component (incl. intermediate dirs) is a symlink
+     */
+    private boolean hasSymlinkInPath(File file) {
+        File target = file;
+        do {
+            if (Files.isSymbolicLink(DEFAULT_FS.getPath(target.getPath()))) {
+                return true;
+            }
+            if (docBaseDir.equals(target)) {
+                return false; // reached docBase with no symlink component found
+            }
+        } while ((target = target.getParentFile()) != null);
+        return true; // loop ended without reaching docBase => a symlink diverted the path out of docBase
+    }
+
     @Override
     public void handle(String path, HttpRequest request, HttpResponse response) throws Throwable {
         if (strictMode && request.getMethod() != HttpMethod.GET) {
@@ -255,7 +323,7 @@ public class HttpResourceRoute implements HttpRoute {
                 ++filePathOffset;
             }
             String rp = path.substring(filePathOffset);
-            if(SocketConf.WINDOWS_PLATFORM) {
+            if(RuntimeEnv.WINDOWS_PLATFORM) {
                 if(rp.indexOf(':') > -1) {
                     response.status(HttpStatus.NOT_FOUND).write(notFoundBytes);
                     return;
@@ -265,14 +333,20 @@ public class HttpResourceRoute implements HttpRoute {
             // String check chosen over getCanonicalPath() canonicalization:
             // canonical path resolution is extremely unstable on JDK 11+ (esp. Windows).
             if (rp.contains("../")) { // Security: prevent path traversal, rp is decoded path
-                response.status(HttpStatus.NOT_FOUND).write(notFoundBytes);
+                response.status(HttpStatus.NOT_FOUND).body(notFoundBytes);
                 return;
             }
-            file = new File(docBase, rp);
+            file = new File(docBaseDir, rp);
         }
 
         if (file == null || !file.isFile()) {
-            response.status(HttpStatus.NOT_FOUND).write(notFoundBytes);
+            response.status(HttpStatus.NOT_FOUND).body(notFoundBytes);
+            return;
+        }
+
+        // Reject if any path component (intermediate dirs or the final file) is a symlink; an intermediate symlink dir can expose files outside docBase.
+        if (checkSymlinks && hasSymlinkInPath(file)) {
+            response.status(HttpStatus.FORBIDDEN).body(forbiddenBytes);
             return;
         }
 
