@@ -80,7 +80,6 @@ public class AnnotationScanBenchmark {
         } catch (Throwable t) {
             ++failures;
             System.err.println("Scan failure: " + t);
-            t.printStackTrace();
         }
         long end = System.nanoTime();
 
