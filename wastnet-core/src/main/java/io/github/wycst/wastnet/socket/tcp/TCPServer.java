@@ -138,7 +138,11 @@ public class TCPServer extends NioEngine<TCPServer> {
             this.initSslContext();
             final ChannelWorker[] ioWorkers = workers();
             this.workers = ioWorkers;
-            // Register the accept key before starting threads (channel not yet bound, so select() blocks instead of busy-spinning)
+            // Wait for subclass preparation before listening (no traffic until fully prepared)
+            prepareFuture.join();
+            // Bind/listen first; on Windows WSAEventSelect(FD_ACCEPT) only fires for a listening socket,
+            // so the accept key must be registered after listen() or connections are never accepted.
+            serverSocket.bind(localOnly ? new InetSocketAddress("127.0.0.1", port) : new InetSocketAddress(port));
             serverChannel.register(selector, SelectionKey.OP_ACCEPT);
             // Startup diagnostic: surface runtime scheduling config so worker count
             // and CPU affinity mismatches (e.g. container cgroup limits) are visible.
@@ -155,12 +159,9 @@ public class TCPServer extends NioEngine<TCPServer> {
             for (int i = 0; i < ioWorkers.length; ++i) {
                 new Thread(ioWorkers[i], "worker-" + i).start();
             }
-            // Wait for all threads to enter their event loops before binding
+            // Wait for all threads to enter their event loops before declaring started
             startLatch.await();
             startLatch = null;
-            // Bind last: the accept thread is already in its loop, so once listening it drains connections immediately, minimizing the un-accepted queue window
-            prepareFuture.join();
-            serverSocket.bind(localOnly ? new InetSocketAddress("127.0.0.1", port) : new InetSocketAddress(port));
         } catch (Throwable e) {
             stop();
             if(e instanceof BindException) {
