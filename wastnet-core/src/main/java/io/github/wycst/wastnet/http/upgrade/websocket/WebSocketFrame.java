@@ -53,11 +53,6 @@ public final class WebSocketFrame implements HttpUpgradeMessage {
     }
 
     @Override
-    public boolean isHttpRequest() {
-        return false;
-    }
-
-    @Override
     public boolean isWebSocket() {
         return true;
     }

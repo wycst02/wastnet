@@ -1,5 +1,5 @@
 package io.github.wycst.wastnet.examples.http.mvc;
-
+import io.github.wycst.wast.common.reflect.GenericParameterizedType;
 import io.github.wycst.wast.json.JSON;
 import io.github.wycst.wastnet.http.HTTPServer;
 import io.github.wycst.wastnet.http.HttpRequest;
@@ -9,6 +9,8 @@ import io.github.wycst.wastnet.http.annotation.ContentType;
 import io.github.wycst.wastnet.http.annotation.ConverterConfig;
 import io.github.wycst.wastnet.http.annotation.HttpMessageConverter;
 import io.github.wycst.wastnet.socket.tcp.NioConfig;
+
+import java.lang.reflect.Type;
 
 /**
  * 注解路由 + 轻量 DI + HttpMessageConverter SPI 综合演示.
@@ -57,16 +59,19 @@ public class MvcDemo {
                     }
 
                     @Override
-                    public <T> T read(HttpRequest request, ConverterConfig config, Class<T> type) throws Exception {
+                    public Object read(HttpRequest request, ConverterConfig config, Type type) throws Exception {
                         if (request.isStream()) return null;
                         byte[] data = request.getBodyData();
-                        return data != null && data.length > 0 ? JSON.parseObject(data, type) : null;
+                        if (data == null || data.length == 0) return null;
+                        GenericParameterizedType<?> genericParameterizedType = GenericParameterizedType.of(type);
+                        return JSON.parse(data, genericParameterizedType);
                     }
                 })
                 // 2. 配置属性（用于 @Value 注入）
                 .property("app.prefix", "Member-")
                 // 3. 扫描包
-                .scanPackages("io.github.wycst.wastnet.examples.http.mvc");
+                .scanPackages("io.github.wycst.wastnet.examples.http.mvc")
+                .configFiles("demo.properties");
 
         // demo 用于性能压测， 禁用拦截器（拦截器中存在 System.out 输出）
         annotationRouterHandler.interceptorsDisabled(true);
@@ -79,7 +84,7 @@ public class MvcDemo {
         
         HTTPServer server = HTTPServer.of(port, nioConfig)
         .requestHandler(annotationRouterHandler)
-        .startupBannerEnabled(false); //（关闭默认 banner，改为打印可用入口）
+        .startupBannerEnabled(true); //（关闭默认 banner，改为打印可用入口）
         
         // 启用 SSL，访问应使用 https / wss
         boolean ssl = System.getProperty("mvc.demo.ssl", "true").equals("true");
@@ -101,6 +106,16 @@ public class MvcDemo {
         System.out.println("  " + base + "/hello");
         System.out.println("  " + base + "/json");
         System.out.println("  " + base + "/h2monitor/connections  (need -Dwastnet.h2.monitor=true)");
+        System.out.println("  " + base + "/hdr-single   (header X-Client)");
+        System.out.println("  " + base + "/hdr-multi    (header X-Tags, multi-value)");
+        System.out.println("  " + base + "/hdr-default  (header X-Env, default=dev)");
+        System.out.println("  " + base + "/hdr-required (header X-Token, required)");
+        System.out.println("  " + base + "/hdr-int      (header X-Max, int, default=0)");
+        System.out.println("  " + base + "/sse-clock           (SSE: 每秒推送，curl -N 消费)");
+        System.out.println("  " + base + "/sse-stream          (SSE: 持续推送到超时断开)");
+        System.out.println("  " + base + "/sse-full            (SSE: 全字段事件)");
+        System.out.println("  " + base + "/sse/room/${roomId}  (SSE: 带路径参数)");
+        System.out.println("  " + base + "/sse/user?id=123     (SSE: 带请求参数)");
         System.out.println("  WebSocket: " + ws + "/ws/chat");
     }
 }

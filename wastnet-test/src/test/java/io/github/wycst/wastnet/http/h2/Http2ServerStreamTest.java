@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
 
-import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.List;
@@ -65,9 +64,7 @@ public class Http2ServerStreamTest {
         H2TestHelper.installCodec(reader);
         Http2ServerStream stream = new Http2ServerStream(reader, streamId, ctx);
         // frameBuf is initialized by onHeadersFrame in real flow; mimic it for direct onDataFrame calls.
-        Field fbField = Http2Stream.class.getDeclaredField("frameBuf");
-        fbField.setAccessible(true);
-        fbField.set(stream, HttpBuf.of(64));
+        stream.frameBuf = HttpBuf.of(64);
         return new StreamFixture(ctx, reader, stream);
     }
 
@@ -308,30 +305,24 @@ public class Http2ServerStreamTest {
         verify(f.ctx).runAsync(any(Runnable.class));
     }
 
-    // ---------- receiveWindow == 0, non-early, body > capacity → no refill, no streaming ----------
-
-    /**
-     * Covers the remaining false branch of Http2Stream.onDataFrame : dataFramesTotalLength
-     * exceeds maxStreamCapacitySize (neither refill nor streaming). Reachable only with an
-     * isolated small capacity config; cannot happen with the default capacity, so we set it directly.
-     */
     @Test
-    public void testOnDataFrameNonEarlyBodyExceedsCapacityNoOp() throws Exception {
+    public void testOnDataFrameNonEarlyBodyExceedsCapacityRefills() throws Exception {
         StreamFixture f = createFixture();
         H2TestHelper.setStreamEarly(f.reader, false);
         H2TestHelper.setMaxStreamCapacitySize(f.reader, 10);
         setupHeaders(f.stream);
         f.stream.endHeaders();
-        f.stream.receiveWindow = 20;          // window large enough to receive one oversized frame
+        f.stream.receiveWindow = 20;          // window larger than capacity -> oversized frame still fits the window
         f.reader.connectRecvWindow.set(20000);
 
-        // 20-byte frame exhausts the 20-byte window; cumulative body 20 > capacity 10 -> no-op branch
+        // 20-byte frame exhausts the 20-byte window; cumulative body 20 > capacity 10 -> refill branch.
+        // newWindowSize = capacity - dataFramesTotalLength = 10 - 20 = -10 (negative because capacity < window).
         Http2Frame frame = createDataFrame(new byte[20], false);
         f.stream.onDataFrame(frame, f.ctx);
 
         assertFalse(f.stream.needStreaming);
-        assertEquals(0, f.stream.receiveWindow);   // not refilled (no WU pair)
-        verify(f.reader, never()).sendWindowUpdatePair(eq(f.ctx), eq(f.stream), anyInt(), eq(true));
+        assertEquals(-10, f.stream.receiveWindow);   // refilled (negative because capacity < window)
+        verify(f.reader).sendWindowUpdatePair(eq(f.ctx), eq(f.stream), eq(-10), eq(true));
         verify(f.ctx, never()).runAsync(any(Runnable.class));
     }
 

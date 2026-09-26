@@ -817,21 +817,6 @@ class WebSocketDecoderTest {
         assertArrayEquals("12345678".getBytes(), capturedFrames.get(0).getData());
     }
 
-    @SuppressWarnings("unchecked")
-    private String getErrorMessage(int code) throws Exception {
-        java.lang.reflect.Method m = WebSocketDecoder.class.getDeclaredMethod("getWebSocketErrorMessage", int.class);
-        m.setAccessible(true);
-        return (String) m.invoke(decoder, code);
-    }
-
-    @Test
-    void testGetWebSocketErrorMessageElse() throws Exception {
-        String msg = getErrorMessage(1006);
-        assertTrue(msg.contains("1006"));
-        assertTrue(getErrorMessage(1002).contains("Protocol Error"));
-        assertTrue(getErrorMessage(1009).contains("Message Too Big"));
-    }
-
     @Test
     void testControlFramePayloadTooLarge() throws Exception {
         byte[] payload = new byte[200];

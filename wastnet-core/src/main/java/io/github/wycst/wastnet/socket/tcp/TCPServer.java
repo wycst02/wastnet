@@ -12,6 +12,7 @@ import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 
 /**
@@ -28,6 +29,8 @@ public class TCPServer extends NioEngine<TCPServer> {
     volatile Selector selector;
     ServerSocketChannel serverChannel;
     private ChannelWorker[] workers;
+    /** Resolved once at worker setup; avoids per-call String.equals in nextWorker. */
+    private boolean leastConnLoadBalance;
     /** Controls the AcceptDispatcher thread; decoupled from engineRunFlag for graceful shutdown. */
     volatile boolean acceptRunFlag;
 
@@ -86,6 +89,7 @@ public class TCPServer extends NioEngine<TCPServer> {
     // ==================== Worker management ====================
 
     ChannelWorker[] workers() throws IOException {
+        this.leastConnLoadBalance = "LEAST_CONN".equals(nioConfig.option(SocketOptions.LOAD_BALANCE_TYPE));
         int workNum = nioConfig.getWorkerNum();
         ChannelWorker[] selectorWorks = new ChannelWorker[workNum];
         for (int i = 0; i < workNum; ++i) {
@@ -95,7 +99,7 @@ public class TCPServer extends NioEngine<TCPServer> {
     }
 
     ChannelWorker nextWorker(int clientCnt, ChannelWorker[] workers) {
-        if (nioConfig.option(SocketOptions.LOAD_BALANCE_TYPE) == "LEAST_CONN") {
+        if (leastConnLoadBalance) {
             int minIdx = 0;
             int minConn = workers[0].getConnectionCount();
             for (int i = 1; i < workers.length; ++i) {
@@ -121,6 +125,7 @@ public class TCPServer extends NioEngine<TCPServer> {
      */
     public synchronized TCPServer start() {
         checkServerAvailable();
+        CompletableFuture<Void> prepareFuture = prepare();
         try {
             engineRunFlag = true;
             acceptRunFlag = true;
@@ -130,16 +135,16 @@ public class TCPServer extends NioEngine<TCPServer> {
             ServerSocket serverSocket = serverChannel.socket();
             serverSocket.setReuseAddress(true);
             serverSocket.setReceiveBufferSize(65536);
-            serverSocket.bind(localOnly ? new InetSocketAddress("127.0.0.1", port) : new InetSocketAddress(port));
-            serverChannel.register(selector, SelectionKey.OP_ACCEPT);
             this.initSslContext();
             final ChannelWorker[] ioWorkers = workers();
             this.workers = ioWorkers;
+            // Register the accept key before starting threads (channel not yet bound, so select() blocks instead of busy-spinning)
+            serverChannel.register(selector, SelectionKey.OP_ACCEPT);
             // Startup diagnostic: surface runtime scheduling config so worker count
             // and CPU affinity mismatches (e.g. container cgroup limits) are visible.
-            LOG.info("tcp server starting on port {} with {} io workers "
-                    + "(availableProcessors={}, syncRunner={}, readBuffer={}, writeBuffer={})",
-                    port, ioWorkers.length,
+            LOG.info("tcp server starting on port {} with {} io workers (ssl={}, "
+                    + "availableProcessors={}, syncRunner={}, readBuffer={}, writeBuffer={})",
+                    port, ioWorkers.length, isSsl(),
                     Runtime.getRuntime().availableProcessors(),
                     nioConfig.isSyncRunner(),
                     nioConfig.getReadBufferSize(),
@@ -150,9 +155,12 @@ public class TCPServer extends NioEngine<TCPServer> {
             for (int i = 0; i < ioWorkers.length; ++i) {
                 new Thread(ioWorkers[i], "worker-" + i).start();
             }
-            // Wait for all threads to enter their event loops before calling onStarted()
+            // Wait for all threads to enter their event loops before binding
             startLatch.await();
             startLatch = null;
+            // Bind last: the accept thread is already in its loop, so once listening it drains connections immediately, minimizing the un-accepted queue window
+            prepareFuture.join();
+            serverSocket.bind(localOnly ? new InetSocketAddress("127.0.0.1", port) : new InetSocketAddress(port));
         } catch (Throwable e) {
             stop();
             if(e instanceof BindException) {
@@ -162,6 +170,14 @@ public class TCPServer extends NioEngine<TCPServer> {
         }
         onStarted();
         return this;
+    }
+
+    /**
+     * Startup preparation joined just before binding. Do not override, or if you
+     * do, return a non-null CompletableFuture (null throws NPE on join).
+     */
+    protected CompletableFuture<Void> prepare() {
+        return CompletableFuture.completedFuture(null);
     }
 
     /**

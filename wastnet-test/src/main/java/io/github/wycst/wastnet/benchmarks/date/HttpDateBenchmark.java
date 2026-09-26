@@ -44,8 +44,8 @@ public class HttpDateBenchmark {
         long sum = 0;
         for (long ts = start; ts <= end; ts += MS_PER_SECOND) {
             HttpDate hd = new HttpDate(ts, GMT);
-            sum += hd.getYear() + hd.getMonth() + hd.getDay()
-                 + hd.getHourOfDay() + hd.getMinute() + hd.getSecond()
+            sum += hd.year + hd.month + hd.day
+                 + hd.hourOfDay + hd.minute + hd.second
                  + hd.getDayOfWeek();
         }
         bh.consume(sum);

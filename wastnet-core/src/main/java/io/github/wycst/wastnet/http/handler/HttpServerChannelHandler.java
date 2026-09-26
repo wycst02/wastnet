@@ -10,6 +10,7 @@ import io.github.wycst.wastnet.log.LogFactory;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import io.github.wycst.wastnet.socket.handler.ClearableHandler;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
+import io.github.wycst.wastnet.util.Utils;
 
 import java.io.IOException;
 import java.util.Objects;
@@ -25,17 +26,21 @@ public final class HttpServerChannelHandler implements ChannelHandler<HttpMessag
     static final Log log = LogFactory.getLog(HttpServerChannelHandler.class);
 
     private ChannelHandler<?> childHandler;
-    private HttpRequestHandler requestHandler = new HttpWelcomeHandler();
+    private HttpRequestHandler requestHandler = (request, response) -> {
+        String body = "Welcome to wastnet v" + HTTPServer.VERSION;
+        response.status(HttpStatus.OK)
+                .contentType(HttpHeaderValues.TEXT_PLAIN_UTF8)
+                .body(body.getBytes(Utils.UTF_8));
+    };
     private UpgradeHandler upgradeHandler = new DefaultUpgradeHandler();
     private HttpExceptionHandler exceptionHandler;
-    private boolean printStackTraceError;
+    private boolean printStackTraceError = true;
     private HttpServerInterceptor serverInterceptor;
     private HttpServerObserver serverObserver;
     private HttpRequestLifecycleDelegate delegate;
 
     public void setRequestHandler(HttpRequestHandler requestHandler) {
-        Objects.requireNonNull(requestHandler, "requestHandler must not be null");
-        this.requestHandler = requestHandler;
+        this.requestHandler = Objects.requireNonNull(requestHandler, "requestHandler must not be null");
     }
 
     /**
@@ -53,8 +58,7 @@ public final class HttpServerChannelHandler implements ChannelHandler<HttpMessag
     }
 
     public void setUpgradeHandler(UpgradeHandler upgradeHandler) {
-        Objects.requireNonNull(upgradeHandler, "upgradeHandler must not be null");
-        this.upgradeHandler = upgradeHandler;
+        this.upgradeHandler = Objects.requireNonNull(upgradeHandler, "upgradeHandler must not be null");
     }
 
     // Need to check for circular references
@@ -240,6 +244,11 @@ public final class HttpServerChannelHandler implements ChannelHandler<HttpMessag
             // Handle exception using configured exception handler
             exHandler.handleException(request, response, throwable);
         } catch (Throwable handlerException) {
+            // the handler itself failed: report the original application error too, otherwise
+            // only the handler's own failure surfaces and the root cause is lost
+            if (printStackTraceError) {
+                log.error("Original application exception (the exception handler failed afterwards):", throwable);
+            }
             // Safe handling when exception handler itself fails
             // Check if response has been partially modified by exception handler
             handleExceptionHandlerFailure(response, handlerException);

@@ -28,7 +28,7 @@ public class ChannelWorkerTest {
         server = new TCPServer(port, new NioConfig());
         server.config().setChannelHandler(new ChannelHandler<byte[]>() {
             @Override
-            public void onHandle(io.github.wycst.wastnet.socket.tcp.ChannelContext ctx, byte[] message) {}
+            public void onHandle(ChannelContext ctx, byte[] message) {}
         });
         server.start();
         worker = server.workers()[0];

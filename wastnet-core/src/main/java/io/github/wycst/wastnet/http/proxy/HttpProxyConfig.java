@@ -90,7 +90,7 @@ public class HttpProxyConfig {
      * @param rewrite rewrite function
      * @return this config for chaining
      */
-    public HttpProxyConfig rewrite(HttpProxyConfig.RewriteFunction rewrite) {
+    public HttpProxyConfig rewrite(RewriteFunction rewrite) {
         if (rewrite != null) {
             this.rewriteRule = RewriteRule.function(rewrite);
         }
@@ -224,7 +224,7 @@ public class HttpProxyConfig {
         if (HttpProxyVariables.containsVariable(value)) {
             headers.put(normalizedName, request -> HttpProxyVariables.resolve(value, request));
         } else {
-            headers.put(normalizedName, new StaticHeaderValueResolver(value));
+            headers.put(normalizedName, request -> value);
         }
         return this;
     }
@@ -284,20 +284,6 @@ public class HttpProxyConfig {
         String resolve(HttpRequest request);
     }
 
-    /**
-     * Static header value resolver for fixed values.
-     */
-    private static final class StaticHeaderValueResolver implements HeaderValueResolver {
-        private final String value;
-
-        private StaticHeaderValueResolver(String value) {
-            this.value = value;
-        }
-
-        public String resolve(HttpRequest request) {
-            return value;
-        }
-    }
 
     /**
      * Unified rewrite rule supporting multiple strategies:

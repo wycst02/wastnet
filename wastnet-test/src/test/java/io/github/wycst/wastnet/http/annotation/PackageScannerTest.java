@@ -6,11 +6,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
@@ -26,34 +23,58 @@ public class PackageScannerTest {
 
     @Test
     public void testScanAll() {
-        List<Class<?>> classes = PackageScanner.scan("io.github.wycst.wastnet.http.annotation");
+        Set<Class<?>> classes = PackageScanner.scan(c -> true, Thread.currentThread().getContextClassLoader(), "io.github.wycst.wastnet.http.annotation");
         assertTrue(classes.size() >= 22);
         assertTrue(classes.contains(AnnotationFilter.class));
     }
 
     @Test
     public void testScanWithFilter() {
-        Set<Class<?>> result = PackageScanner.scan("io.github.wycst.wastnet.http.annotation",
-                clazz -> AnnotationFilter.class.isAssignableFrom(clazz));
+        Set<Class<?>> result = PackageScanner.scan(clazz -> AnnotationFilter.class.isAssignableFrom(clazz),
+                Thread.currentThread().getContextClassLoader(),
+                "io.github.wycst.wastnet.http.annotation");
         assertTrue(result.contains(AnnotationFilter.class));
         assertTrue(result.contains(AnnotationResolver.class));
     }
 
     @Test
     public void testScanInvalidPackage() {
-        assertTrue(PackageScanner.scan("nonexistent.pkg", c -> true).isEmpty());
+        assertTrue(PackageScanner.scan(c -> true, Thread.currentThread().getContextClassLoader(), "nonexistent.pkg").isEmpty());
     }
 
     @Test
     public void testScanEmptyPackageName() {
-        Set<Class<?>> result = PackageScanner.scan("", c -> true);
+        Set<Class<?>> result = PackageScanner.scan(c -> true, Thread.currentThread().getContextClassLoader(), "");
         assertNotNull(result);
     }
 
     @Test
     public void testScanFilterRejectAll() {
-        Set<Class<?>> result = PackageScanner.scan("io.github.wycst.wastnet.http.annotation", clazz -> false);
+        Set<Class<?>> result = PackageScanner.scan(clazz -> false, Thread.currentThread().getContextClassLoader(), "io.github.wycst.wastnet.http.annotation");
         assertTrue(result.isEmpty());
+    }
+
+    // ================ Convenience overload (context class loader) ================
+
+    /** The convenience overload (no explicit loader) scans with the current context class loader. */
+    @Test
+    public void testScanConvenienceUsesContextClassLoader() {
+        Set<Class<?>> classes = PackageScanner.scan(c -> true, "io.github.wycst.wastnet.http.annotation");
+        assertTrue(classes.size() >= 22);
+        assertTrue(classes.contains(AnnotationFilter.class));
+    }
+
+    /** When the context class loader is null, the convenience overload falls back to the defining loader. */
+    @Test
+    public void testScanConvenienceFallsBackWhenContextNull() {
+        ClassLoader orig = Thread.currentThread().getContextClassLoader();
+        try {
+            Thread.currentThread().setContextClassLoader(null);
+            Set<Class<?>> classes = PackageScanner.scan(c -> true, "io.github.wycst.wastnet.http.annotation");
+            assertTrue(classes.contains(AnnotationFilter.class));
+        } finally {
+            Thread.currentThread().setContextClassLoader(orig);
+        }
     }
 
     // ================ JAR protocol ================
@@ -89,10 +110,10 @@ public class PackageScannerTest {
         try {
             Thread.currentThread().setContextClassLoader(jarLoader);
 
-            // Scan the package from JAR - this triggers "jar" protocol in scanResource
+            // Scan the package from JAR - this triggers "jar" protocol in scanJarRoot
             Set<Class<?>> result = PackageScanner.scan(
-                    "io.github.wycst.wastnet.http.annotation",
-                    clazz -> clazz == AnnotationFilter.class);
+                    clazz -> clazz == AnnotationFilter.class, jarLoader,
+                    "io.github.wycst.wastnet.http.annotation");
             assertTrue(result.contains(AnnotationFilter.class));
         } finally {
             Thread.currentThread().setContextClassLoader(orig);
@@ -100,93 +121,9 @@ public class PackageScannerTest {
         }
     }
 
-    // ================ Private method via reflection ================
-
-    /** Test scanDirectory with null listFiles (file not a directory) */
-    @Test
-    public void testScanDirectoryNullFiles(@TempDir File tmpDir) throws Exception {
-        Method scanDir = PackageScanner.class.getDeclaredMethod("scanDirectory",
-                File.class, String.class, Set.class, AnnotationFilter.class, ClassLoader.class);
-        scanDir.setAccessible(true);
-
-        File notADir = new File(tmpDir, "file.txt");
-        assertTrue(notADir.createNewFile());
-
-        Set<Class<?>> classes = new LinkedHashSet<Class<?>>();
-        scanDir.invoke(null, notADir, "test.pkg", classes,
-                (AnnotationFilter) c -> true, getClass().getClassLoader());
-        assertTrue(classes.isEmpty());
-    }
-
-    /** Test scanDirectory with subdirectory (recursion) */
-    @Test
-    public void testScanDirectoryWithSubdir(@TempDir File tmpDir) throws Exception {
-        Method scanDir = PackageScanner.class.getDeclaredMethod("scanDirectory",
-                File.class, String.class, Set.class, AnnotationFilter.class, ClassLoader.class);
-        scanDir.setAccessible(true);
-
-        File subDir = new File(tmpDir, "subpkg");
-        assertTrue(subDir.mkdir());
-        File classFile = new File(subDir, "Dummy.class");
-        try (FileOutputStream fos = new FileOutputStream(classFile)) {
-            fos.write(new byte[]{(byte) 0xCA, (byte) 0xFE, (byte) 0xBA, (byte) 0xBE});
-        }
-
-        Set<Class<?>> classes = new LinkedHashSet<Class<?>>();
-        scanDir.invoke(null, tmpDir, "test", classes,
-                (AnnotationFilter) c -> true, getClass().getClassLoader());
-        assertTrue(classes.isEmpty());
-    }
-
-    /** Test ClassNotFoundException is caught silently */
-    @Test
-    public void testScanDirectoryClassNotFound(@TempDir File tmpDir) throws Exception {
-        Method scanDir = PackageScanner.class.getDeclaredMethod("scanDirectory",
-                File.class, String.class, Set.class, AnnotationFilter.class, ClassLoader.class);
-        scanDir.setAccessible(true);
-
-        File badClass = new File(tmpDir, "BadClass.class");
-        try (FileOutputStream fos = new FileOutputStream(badClass)) {
-            fos.write(new byte[]{(byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00});
-        }
-
-        Set<Class<?>> classes = new LinkedHashSet<Class<?>>();
-        scanDir.invoke(null, tmpDir, "test", classes,
-                (AnnotationFilter) c -> true, getClass().getClassLoader());
-        assertTrue(classes.isEmpty());
-    }
-
-    /** Test scanJar(JarFile, ...) entry iteration via reflection */
-    @Test
-    public void testScanJarEntries(@TempDir File tmpDir) throws Exception {
-        String entryPath = "io/github/wycst/wastnet/http/annotation/AnnotationFilter.class";
-        java.io.InputStream in = getClass().getClassLoader().getResourceAsStream(entryPath);
-        assertNotNull(in);
-        byte[] buf = new byte[in.available()];
-        in.read(buf); in.close();
-
-        File jarFile = new File(tmpDir, "test.jar");
-        java.util.jar.JarOutputStream jos = new java.util.jar.JarOutputStream(new java.io.FileOutputStream(jarFile));
-        jos.putNextEntry(new java.util.jar.JarEntry(entryPath));
-        jos.write(buf); jos.closeEntry(); jos.close();
-
-        // Directly test the scanJar(JarFile, String, Set, AnnotationFilter, ClassLoader) method
-        Method scanJarFile = PackageScanner.class.getDeclaredMethod("scanJar",
-                java.util.jar.JarFile.class, String.class, Set.class, AnnotationFilter.class, ClassLoader.class);
-        scanJarFile.setAccessible(true);
-
-        java.util.jar.JarFile jar = new java.util.jar.JarFile(jarFile);
-        Set<Class<?>> classes = new LinkedHashSet<Class<?>>();
-        scanJarFile.invoke(null, jar,
-                "io/github/wycst/wastnet/http/annotation",
-                classes, (AnnotationFilter) c -> true, getClass().getClassLoader());
-        jar.close();
-        assertTrue(classes.contains(AnnotationFilter.class));
-    }
 
 
-
-    /** Test catch branch when getResources throws IOException */
+    /** Test catch branch when getResources throws IOException (a real class loader is supplied). */
     @Test
     public void testScanWithFailingClassLoader() {
         ClassLoader failing = new ClassLoader() {
@@ -195,27 +132,14 @@ public class PackageScannerTest {
                 throw new IOException("simulated failure");
             }
         };
-        ClassLoader orig = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(failing);
-            assertThrows(RuntimeException.class,
-                    () -> PackageScanner.scan("any.pkg", c -> true));
-        } finally {
-            Thread.currentThread().setContextClassLoader(orig);
-        }
+        assertThrows(RuntimeException.class,
+                () -> PackageScanner.scan(c -> true, failing, "any.pkg"));
     }
 
-    /** Test ClassLoader fallback branch (cl == null) */
+    /** A null class loader is a programming error: the framework always supplies a non-null loader, so a raw NPE surfaces. */
     @Test
     public void testScanWithNullClassLoader() {
-        ClassLoader orig = Thread.currentThread().getContextClassLoader();
-        try {
-            Thread.currentThread().setContextClassLoader(null);
-            List<Class<?>> classes = PackageScanner.scan("io.github.wycst.wastnet.http.annotation");
-            assertFalse(classes.isEmpty());
-            assertTrue(classes.contains(AnnotationFilter.class));
-        } finally {
-            Thread.currentThread().setContextClassLoader(orig);
-        }
+        assertThrows(NullPointerException.class,
+                () -> PackageScanner.scan(c -> true, (ClassLoader) null, "io.github.wycst.wastnet.http.annotation"));
     }
 }

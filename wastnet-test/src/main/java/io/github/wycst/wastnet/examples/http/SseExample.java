@@ -67,6 +67,23 @@ public class SseExample {
             emitter.close();
         });
 
+        // === 方式三补充：emitter 模式同样能读取请求信息 ===
+        // router.sse() 的 lambda 只拿到 emitter，但通过 emitter.request() 可访问
+        // 底层 HttpRequest：查询参数 / header / uri 参数等，无需改用注解形式
+        router.sse("/sse/feed", 60000L, emitter -> {
+            HttpRequest req = emitter.request();
+            String topic = req.getParameter("topic");       // 查询参数 ?topic=...
+            String auth = req.getHeader("Authorization");   // 请求头
+            for (int i = 1; i <= 5; ++i) {
+                String id = "feed-" + i;
+                String data = "{\"topic\":" + (topic == null ? "null" : "\"" + topic + "\"")
+                        + ",\"seq\":" + i + ",\"authorized\":" + (auth != null) + "}";
+                emitter.emit("feed", data, id, 3000);
+                Thread.sleep(1000);
+            }
+            emitter.close();
+        });
+
         // 启动服务器
         HTTPServer server = HTTPServer.of(8081)
                 .requestHandler(router)
@@ -76,5 +93,6 @@ public class SseExample {
         log.info("  Raw (manual): http://localhost:8081/sse/raw");
         log.info("  Loop (sse()): http://localhost:8081/sse/clock");
         log.info("  Emitter:      http://localhost:8081/sse/news");
+        log.info("  Emitter(req): http://localhost:8081/sse/feed?topic=sports  (Authorization header readable too)");
     }
 }

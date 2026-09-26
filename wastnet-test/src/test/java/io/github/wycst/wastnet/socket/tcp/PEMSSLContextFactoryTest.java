@@ -45,14 +45,14 @@ public class PEMSSLContextFactoryTest {
 
     @Test
     public void testBase64DecodeSimple() {
-        byte[] decoded = java.util.Base64.getMimeDecoder().decode("SGVsbG8="); // "Hello"
+        byte[] decoded = Base64.getMimeDecoder().decode("SGVsbG8="); // "Hello"
         assertNotNull(decoded);
         assertEquals("Hello", new String(decoded));
     }
 
     @Test
     public void testBase64DecodeWithoutPadding() {
-        byte[] decoded = java.util.Base64.getMimeDecoder().decode("SGVsbG8"); // "Hello" no padding
+        byte[] decoded = Base64.getMimeDecoder().decode("SGVsbG8"); // "Hello" no padding
         assertNotNull(decoded);
         assertEquals("Hello", new String(decoded));
     }
@@ -60,14 +60,14 @@ public class PEMSSLContextFactoryTest {
     @Test
     public void testBase64DecodeLongString() {
         String original = "This is a longer test string for base64 decoding with multiple characters!";
-        String encoded = java.util.Base64.getEncoder().encodeToString(original.getBytes());
-        byte[] decoded = java.util.Base64.getMimeDecoder().decode(encoded);
+        String encoded = Base64.getEncoder().encodeToString(original.getBytes());
+        byte[] decoded = Base64.getMimeDecoder().decode(encoded);
         assertEquals(original, new String(decoded));
     }
 
     @Test
     public void testBase64DecodeEmpty() {
-        byte[] decoded = java.util.Base64.getMimeDecoder().decode("");
+        byte[] decoded = Base64.getMimeDecoder().decode("");
         assertNotNull(decoded);
         assertEquals(0, decoded.length);
     }
@@ -76,20 +76,20 @@ public class PEMSSLContextFactoryTest {
     public void testBase64DecodeWithNewlines() {
         // Base64 with embedded newlines (as in PEM files)
         String multiLine = "U0FN\nUExF\nIFRF\nU1Q=";
-        byte[] decoded = java.util.Base64.getMimeDecoder().decode(multiLine);
+        byte[] decoded = Base64.getMimeDecoder().decode(multiLine);
         assertEquals("SAMPLE TEST", new String(decoded).trim());
     }
 
     @Test
     public void testBase64DecodeSingleChar() {
-        byte[] decoded = java.util.Base64.getMimeDecoder().decode("Zg=="); // "f"
+        byte[] decoded = Base64.getMimeDecoder().decode("Zg=="); // "f"
         assertEquals(1, decoded.length);
         assertEquals('f', decoded[0]);
     }
 
     @Test
     public void testBase64DecodeTwoChars() {
-        byte[] decoded = java.util.Base64.getMimeDecoder().decode("Zm8="); // "fo"
+        byte[] decoded = Base64.getMimeDecoder().decode("Zm8="); // "fo"
         assertEquals(2, decoded.length);
         assertEquals("fo", new String(decoded));
     }
@@ -97,7 +97,7 @@ public class PEMSSLContextFactoryTest {
     @Test
     public void testBase64DecodeInvalidChar() {
         // Lenient MIME decoder ignores non-alphabet characters (e.g. '!') instead of throwing
-        byte[] decoded = java.util.Base64.getMimeDecoder().decode("!!");
+        byte[] decoded = Base64.getMimeDecoder().decode("!!");
         assertNotNull(decoded);
     }
 

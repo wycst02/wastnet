@@ -27,6 +27,7 @@ import io.github.wycst.wastnet.util.Utils;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Default implementation of {@link UpgradeHandler}.
@@ -225,7 +226,13 @@ public class DefaultUpgradeHandler implements UpgradeHandler, ClearableHandler {
                 return true;
             }
             // origin already validated above; doHandshake does NOT re-check it
-            return doHandshake((WebSocketResource) upgradeResource, request, ctx) != null;
+            try {
+                return doHandshake((WebSocketResource) upgradeResource, request, ctx) != null;
+            } catch (Exception e) {
+                log.error("WebSocket upgrade handshake failed, path: {}", request.getRequestUri(), e);
+                WebSocketResponse.create(request, ctx).status(HttpStatus.BAD_REQUEST).body("Bad Request").commit();
+                return true; // response committed; skip normal routing
+            }
         } else {
             // h2c upgrade
             if (!isH2cUpgradeRequest(request)) return false;
@@ -259,7 +266,7 @@ public class DefaultUpgradeHandler implements UpgradeHandler, ClearableHandler {
     /**
      * Perform a WebSocket upgrade using the given resource.
      * <p>
-     * Used by {@link io.github.wycst.wastnet.http.HttpRequest#upgrade()} and its
+     * Used by {@link HttpRequest#upgrade()} and its
      * overloaded variant so callers can supply a custom {@link WebSocketResource}
      * (e.g. embedded usage with personalized configuration).
      *
@@ -364,5 +371,26 @@ public class DefaultUpgradeHandler implements UpgradeHandler, ClearableHandler {
             }
         }
         resourceHashMap.clear();
+    }
+
+    /**
+     * Remove upgrade resources registered at the given (already context-prefixed) paths,
+     * disconnecting WebSocket connections first. Used by dev hot reload to drop only the
+     * scanned WebSocket endpoints while leaving manually-registered ones intact.
+     *
+     * @param paths context-prefixed paths previously registered via {@link #ws(String, WebSocketResource)}
+     */
+    protected void removeResources(Set<String> paths) {
+        if (paths == null || paths.isEmpty()) return;
+        for (String p : paths) {
+            UpgradeResource resource = resourceHashMap.remove(p);
+            if (resource != null && resource.isWebSocket()) {
+                try {
+                    ((WebSocketResource) resource).disconnect();
+                } catch (Exception exception) {
+                    log.warn("Error disconnecting WebSocket resource on reload: {}", exception.getMessage());
+                }
+            }
+        }
     }
 }

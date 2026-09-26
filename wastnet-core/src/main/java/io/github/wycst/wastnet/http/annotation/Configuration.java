@@ -10,6 +10,10 @@ import java.lang.annotation.Target;
  * <p>
  * Only classes annotated with {@code @Configuration} are scanned for {@code @Bean} methods.
  * Regular {@link Component @Component} classes do not support {@code @Bean}.
+ * <p>
+ * A {@code @Configuration} class must declare a <b>no-arg constructor</b>: constructor injection is
+ * unsupported, and a class with a parameterized constructor is silently skipped (together with all
+ * of its {@code @Bean} methods) during scanning.
  *
  * @author wangyc
  */

@@ -16,8 +16,8 @@ public final class IdleStateHandlerTrigger {
 
     final IdleStateHandler idleStateHandler;
     final ChannelContext ctx;
-    final long readerIdleTimeNanos;
-    final long writerIdleTimeNanos;
+    private final long readerIdleTimeNanos;
+    private final long writerIdleTimeNanos;
     final boolean sharedMode;
 
     long idleReadTriggerCnt;
@@ -27,13 +27,14 @@ public final class IdleStateHandlerTrigger {
     final AtomicLong lastWriteNanos = new AtomicLong();
     final AtomicLong idleWriteTriggerConsecutiveCnt = new AtomicLong();
 
-    ScheduleWriteTask scheduleWriteTask;
-    ScheduleReadTask scheduleReadTask;
     ScheduledFuture<?> readIdleFuture;
     ScheduledFuture<?> writeIdleFuture;
     /** Flag to prevent rescheduling idle tasks after the connection is released */
     volatile boolean released;
     static final long MIN_NANOS = 1000000000L;
+
+    Runnable scheduleWriteTask;
+    Runnable scheduleReadTask;
 
     public IdleStateHandlerTrigger(IdleStateHandler idleStateHandler, ChannelContext ctx) {
         this.idleStateHandler = idleStateHandler;
@@ -43,13 +44,47 @@ public final class IdleStateHandlerTrigger {
         this.sharedMode = idleStateHandler.getMode() == IdleStateHandler.Mode.SHARED;
         if (!sharedMode) {
             // EXCLUSIVE mode: per-connection recursive scheduling (precise)
+            this.scheduleReadTask = () -> {
+                // Skip if the connection has been released to avoid ghost tasks
+                if (released) return;
+                long useNanos = System.nanoTime() - lastReadNanos.get();
+                long rem = readerIdleTimeNanos - useNanos;
+                readIdleFuture.cancel(false);
+                if (rem > MIN_NANOS) {
+                    scheduleReadTask(rem);
+                    return;
+                }
+                try {
+                    increaseTriggerReadCount();
+                    idleStateHandler.onIdleTriggered(ctx, IdleStateHandler.IdleType.Read, idleReadTriggerCnt, idleReadTriggerConsecutiveCnt.get());
+                } catch (Throwable ignored) {
+                } finally {
+                    scheduleReadTask(readerIdleTimeNanos);
+                }
+            };
+            this.scheduleWriteTask = () -> {
+                // Skip if the connection has been released to avoid ghost tasks
+                if (released) return;
+                long useNanos = System.nanoTime() - lastWriteNanos.get();
+                long rem = writerIdleTimeNanos - useNanos;
+                writeIdleFuture.cancel(false);
+                if (rem > MIN_NANOS) {
+                    scheduleWriteTask(rem);
+                    return;
+                }
+                try {
+                    increaseTriggerWriteCount();
+                    idleStateHandler.onIdleTriggered(ctx, IdleStateHandler.IdleType.Write, idleWriteTriggerCnt, idleWriteTriggerConsecutiveCnt.get());
+                } catch (Throwable ignored) {
+                } finally {
+                    scheduleWriteTask(writerIdleTimeNanos);
+                }
+            };
             if (readerIdleTimeNanos >= MIN_NANOS) {
-                this.scheduleReadTask = new ScheduleReadTask();
                 scheduleReadTask(readerIdleTimeNanos);
                 onReadTriggered();
             }
             if (writerIdleTimeNanos >= MIN_NANOS) {
-                this.scheduleWriteTask = new ScheduleWriteTask();
                 scheduleWriteTask(writerIdleTimeNanos);
                 onWriteTriggered();
             }
@@ -95,57 +130,14 @@ public final class IdleStateHandlerTrigger {
         }
     }
 
-    class ScheduleWriteTask implements Runnable {
-        @Override
-        public void run() {
-            // Skip if the connection has been released to avoid ghost tasks
-            if (released) return;
-            long useNanos = System.nanoTime() - lastWriteNanos.get();
-            long rem = writerIdleTimeNanos - useNanos;
-            writeIdleFuture.cancel(false);
-            if (rem > MIN_NANOS) {
-                scheduleWriteTask(rem);
-                return;
-            }
-            try {
-                increaseTriggerWriteCount();
-                idleStateHandler.onIdleTriggered(ctx, IdleStateHandler.IdleType.Write, idleWriteTriggerCnt, idleWriteTriggerConsecutiveCnt.get());
-            } catch (Throwable ignored) {
-            } finally {
-                scheduleWriteTask(writerIdleTimeNanos);
-            }
-        }
-    }
 
-    class ScheduleReadTask implements Runnable {
-        @Override
-        public void run() {
-            // Skip if the connection has been released to avoid ghost tasks
-            if (released) return;
-            long useNanos = System.nanoTime() - lastReadNanos.get();
-            long rem = readerIdleTimeNanos - useNanos;
-            readIdleFuture.cancel(false);
-            if (rem > MIN_NANOS) {
-                scheduleReadTask(rem);
-                return;
-            }
-            try {
-                increaseTriggerReadCount();
-                idleStateHandler.onIdleTriggered(ctx, IdleStateHandler.IdleType.Read, idleReadTriggerCnt, idleReadTriggerConsecutiveCnt.get());
-            } catch (Throwable ignored) {
-            } finally {
-                scheduleReadTask(readerIdleTimeNanos);
-            }
-        }
-    }
-
-    private void scheduleWriteTask(long timeNanos) {
+    void scheduleWriteTask(long timeNanos) {
         // Guard against reschedule after the connection is released
         if (released) return;
         writeIdleFuture = ctx.schedule(scheduleWriteTask, timeNanos, TimeUnit.NANOSECONDS);
     }
 
-    private void increaseTriggerWriteCount() {
+    void increaseTriggerWriteCount() {
         ++idleWriteTriggerCnt;
         long val = idleWriteTriggerConsecutiveCnt.incrementAndGet();
         if (idleWriteTriggerCnt <= 0) {
@@ -156,13 +148,13 @@ public final class IdleStateHandlerTrigger {
         }
     }
 
-    private void scheduleReadTask(long timeNanos) {
+    void scheduleReadTask(long timeNanos) {
         // Guard against reschedule after the connection is released
         if (released) return;
         readIdleFuture = ctx.schedule(scheduleReadTask, timeNanos, TimeUnit.NANOSECONDS);
     }
 
-    private void increaseTriggerReadCount() {
+    void increaseTriggerReadCount() {
         ++idleReadTriggerCnt;
         long val = idleReadTriggerConsecutiveCnt.incrementAndGet();
         if (idleReadTriggerCnt <= 0) {

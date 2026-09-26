@@ -5,8 +5,6 @@ import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.nio.ByteBuffer;
 import java.util.List;
 
@@ -160,10 +158,8 @@ public class Http2StreamExtraTest {
         invokeFireTrailers(s2);
     }
 
-    private static void invokeFireTrailers(Http2Stream s) throws Exception {
-        Method m = Http2Stream.class.getDeclaredMethod("fireTrailers");
-        m.setAccessible(true);
-        m.invoke(s);
+    private static void invokeFireTrailers(Http2Stream s) {
+        s.fireTrailers();
     }
 
     @Test

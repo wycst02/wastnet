@@ -29,6 +29,7 @@ import io.github.wycst.wastnet.util.Utils;
 
 import javax.net.ssl.SSLContext;
 import java.lang.reflect.Method;
+import java.util.Objects;
 import java.util.concurrent.*;
 
 /**
@@ -129,15 +130,13 @@ public class NioEngine<E extends NioEngine<E>> {
     }
 
     public E sslContext(SSLContext sslCtx) {
-        sslCtx.getClass();
-        this.sslCtx = sslCtx;
+        this.sslCtx = Objects.requireNonNull(sslCtx, "sslCtx");
         this.ssl = true;
         return self();
     }
 
     public E sslContextFactory(SSLContextFactory sslContextFactory) {
-        sslContextFactory.getClass();
-        this.sslContextFactory = sslContextFactory;
+        this.sslContextFactory = Objects.requireNonNull(sslContextFactory, "sslContextFactory");
         this.ssl = true;
         return self();
     }

@@ -150,6 +150,14 @@ public abstract class HttpInternalResponse implements HttpResponse {
         return ctx.option(HttpOptions.GZIP_MIN_SIZE);
     }
 
+    /**
+     * Returns the shared, non-copying "Date" header line (37 bytes); the value
+     * lives at offset 6, length 29. Caller must not mutate the array.
+     */
+    protected final byte[] getCurrentDateHeaderLineBytes() {
+        return HttpDate.getCurrentDateHeaderLineBytes();
+    }
+
     // ==================== Status ====================
 
     @Override
@@ -325,8 +333,8 @@ public abstract class HttpInternalResponse implements HttpResponse {
     }
 
     @Override
-    public void writeChunked(byte[] data) throws IOException {
-        write(data);
+    public void writeChunked(byte[] data, int offset, int count) throws IOException {
+        write(data, offset, count);
     }
 
     // ==================== Keep-Alive ====================
@@ -409,17 +417,15 @@ public abstract class HttpInternalResponse implements HttpResponse {
 
     @Override
     public final void addHeader(String key, Serializable value) {
-        validateHeaderString(key = String.valueOf(key), value);
+        validateHeaderBase(key = String.valueOf(key), value);
+        validateHeaderByProtocol(key, value);
         doAddHeader(key, String.valueOf(value));
     }
 
     /**
-     * CRLF injection defense for response headers.
-     * Only Number, Boolean or CharSequence are supported as header values; any
-     * other type is rejected. The key is always checked. Number/Boolean values
-     * are inherently CR/LF-free, so only CharSequence values can carry an injection.
+     * Protocol-independent header validation: CRLF injection defense plus value type whitelist.
      */
-    private void validateHeaderString(String key, Serializable value) {
+    private void validateHeaderBase(String key, Serializable value) {
         if (key.indexOf('\r') > -1 || key.indexOf('\n') > -1) {
             throw new IllegalArgumentException("Header key must not contain CR or LF");
         }
@@ -434,6 +440,12 @@ public abstract class HttpInternalResponse implements HttpResponse {
             return;
         }
         throw new IllegalArgumentException("Header value only supports Number, Boolean or CharSequence");
+    }
+
+    /**
+     * Protocol-specific header rules hook (e.g. HTTP/2 rejects pseudo-headers); no-op by default.
+     */
+    protected void validateHeaderByProtocol(String key, Serializable value) {
     }
 
     @Override
@@ -870,7 +882,7 @@ public abstract class HttpInternalResponse implements HttpResponse {
         sendFile0(file, fileSize, mimeType, shouldCompress);
     }
 
-    protected void addCacheHeaders(long fileSize, long lastModified) throws IOException {
+    protected void addCacheHeaders(long fileSize, long lastModified) {
     }
 
     protected abstract void sendFile0(File file, long fileSize, String mimeType, boolean shouldCompress) throws IOException;

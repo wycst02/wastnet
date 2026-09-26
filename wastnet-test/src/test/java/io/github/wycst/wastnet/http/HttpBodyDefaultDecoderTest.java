@@ -162,7 +162,7 @@ public class HttpBodyDefaultDecoderTest {
         HttpBodyDecoder decoder = createDecoder("text/plain", "data".getBytes());
         Assertions.assertNull(decoder.getMultipartField("any"));
         Assertions.assertNull(decoder.getMultipartFields("any"));
-        Assertions.assertTrue(decoder.getMultipartFieldValues("any").isEmpty());
+        Assertions.assertNull(decoder.getMultipartFieldValues("any"));
     }
 
     // ==================== Multipart: first boundary not at position 0 ====================

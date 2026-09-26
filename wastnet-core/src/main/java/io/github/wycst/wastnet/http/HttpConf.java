@@ -3,6 +3,7 @@ package io.github.wycst.wastnet.http;
 import io.github.wycst.wastnet.log.Log;
 import io.github.wycst.wastnet.log.LogFactory;
 import io.github.wycst.wastnet.socket.conf.Conf;
+import io.github.wycst.wastnet.util.ConfigLoader;
 
 import java.io.File;
 import java.util.Properties;
@@ -330,7 +331,7 @@ public final class HttpConf extends Conf {
     // ================= Static Initialization Block =================
 
     static {
-        APP_PROPS = createFileProps("wastnet-http.properties");
+        APP_PROPS = ConfigLoader.createFileProps("wastnet-http.properties");
 
         // Initialize configuration values
         MAX_SINGLE_HEADER_SIZE = (int) Math.min(Integer.MAX_VALUE, Math.max(1L, getPropSize(APP_PROPS, "wastnet.http.max-single-header-size", 8192L))); // Default: 8192 (8KB), min: 1

@@ -5,7 +5,6 @@ import io.github.wycst.wastnet.http.proxy.HttpProxyConfig;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
-import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -216,7 +215,7 @@ public class HttpRouterHandlerTest {
         HttpRoute dummy = new HttpRoute() {
             public void handle(String path, HttpRequest request, HttpResponse response) {}
         };
-        // empty methods → route.self() path
+        // empty methods → route.target() path
         h.exactRoute("/open", dummy);
         // Also test the 3-arg overload with empty array ( empty-branch)
         h.exactRoute("/open2", dummy, new HttpMethod[0]);
@@ -229,7 +228,7 @@ public class HttpRouterHandlerTest {
     public void testHandleExactMatch() throws Throwable {
         HttpRouterHandler h = new HttpRouterHandler();
         HttpRoute route = mock(HttpRoute.class);
-        when(route.self()).thenReturn(route);
+        when(route.target()).thenReturn(route);
         h.exactRoute("/test", route);
 
         HttpRequest req = mock(HttpRequest.class);
@@ -244,7 +243,7 @@ public class HttpRouterHandlerTest {
     public void testHandlePrefixMatch() throws Throwable {
         HttpRouterHandler h = new HttpRouterHandler();
         HttpRoute route = mock(HttpRoute.class);
-        when(route.self()).thenReturn(route);
+        when(route.target()).thenReturn(route);
         h.route("/api", route);
 
         HttpRequest req = mock(HttpRequest.class);
@@ -259,7 +258,7 @@ public class HttpRouterHandlerTest {
     public void testHandleRegexMatch() throws Throwable {
         HttpRouterHandler h = new HttpRouterHandler();
         HttpRoute route = mock(HttpRoute.class);
-        when(route.self()).thenReturn(route);
+        when(route.target()).thenReturn(route);
         h.route("^/user/\\d+$", route);
 
         HttpRequest req = mock(HttpRequest.class);
@@ -275,7 +274,7 @@ public class HttpRouterHandlerTest {
     public void testHandleContextPathSubPathNotEmpty() throws Throwable {
         HttpRouterHandler h = new HttpRouterHandler("/app");
         HttpRoute route = mock(HttpRoute.class);
-        when(route.self()).thenReturn(route);
+        when(route.target()).thenReturn(route);
         h.exactRoute("/hello", route);
 
         HttpRequest req = mock(HttpRequest.class);
@@ -291,7 +290,7 @@ public class HttpRouterHandlerTest {
     public void testHandleContextPathSubPathEmpty() throws Throwable {
         HttpRouterHandler h = new HttpRouterHandler("/app");
         HttpRoute route = mock(HttpRoute.class);
-        when(route.self()).thenReturn(route);
+        when(route.target()).thenReturn(route);
         h.exactRoute("/", route);
 
         HttpRequest req = mock(HttpRequest.class);
@@ -401,9 +400,7 @@ public class HttpRouterHandlerTest {
     public void testBuildFullPathContextPathRootWithSlash() throws Exception {
         // contextPathLen==1, path starts with "/" → path unchanged
         HttpRouterHandler h = new HttpRouterHandler();
-        java.lang.reflect.Method m = HttpRouterHandler.class.getDeclaredMethod("buildFullPath", String.class);
-        m.setAccessible(true);
-        String result = (String) m.invoke(h, "/info");
+        String result = h.buildFullPath("/info");
         assertEquals("/info", result);
     }
 
@@ -411,9 +408,7 @@ public class HttpRouterHandlerTest {
     public void testBuildFullPathContextPathRootWithoutSlash() throws Exception {
         // contextPathLen==1, path doesn't start with "/" → prepend "/"
         HttpRouterHandler h = new HttpRouterHandler();
-        java.lang.reflect.Method m = HttpRouterHandler.class.getDeclaredMethod("buildFullPath", String.class);
-        m.setAccessible(true);
-        String result = (String) m.invoke(h, "info");
+        String result = h.buildFullPath("info");
         assertEquals("/info", result);
     }
 
@@ -421,9 +416,7 @@ public class HttpRouterHandlerTest {
     public void testBuildFullPathWithContextPath() throws Exception {
         // contextPathLen>1, path starts with "/"
         HttpRouterHandler h = new HttpRouterHandler("/app");
-        java.lang.reflect.Method m = HttpRouterHandler.class.getDeclaredMethod("buildFullPath", String.class);
-        m.setAccessible(true);
-        String result = (String) m.invoke(h, "/info");
+        String result = h.buildFullPath("/info");
         assertEquals("/app/info", result);
     }
 
@@ -431,9 +424,7 @@ public class HttpRouterHandlerTest {
     public void testBuildFullPathWithContextPathNoSlash() throws Exception {
         // contextPathLen>1, path doesn't start with "/" → prepend "/"
         HttpRouterHandler h = new HttpRouterHandler("/app");
-        java.lang.reflect.Method m = HttpRouterHandler.class.getDeclaredMethod("buildFullPath", String.class);
-        m.setAccessible(true);
-        String result = (String) m.invoke(h, "info");
+        String result = h.buildFullPath("info");
         assertEquals("/app/info", result);
     }
 
@@ -461,10 +452,7 @@ public class HttpRouterHandlerTest {
     }
 
     private boolean apply(HttpRouterHandler h, List<RouterInterceptor> chain) throws Throwable {
-        java.lang.reflect.Method m = HttpRouterHandler.class.getDeclaredMethod(
-                "applyInterceptors", List.class, String.class, HttpRequest.class, HttpResponse.class);
-        m.setAccessible(true);
-        return (Boolean) m.invoke(h, chain, "/p", mock(HttpRequest.class), mock(HttpResponse.class));
+        return h.applyInterceptors(chain, "/p", mock(HttpRequest.class), mock(HttpResponse.class));
     }
 
     @Test
@@ -609,16 +597,12 @@ public class HttpRouterHandlerTest {
 
     @Test
     public void testSetDefaultHealthResponse() throws Throwable {
-        Field ct = HttpRouterHandler.class.getDeclaredField("defaultHealthContentType");
-        Field bd = HttpRouterHandler.class.getDeclaredField("defaultHealthResponseBody");
-        ct.setAccessible(true);
-        bd.setAccessible(true);
-        String origCt = (String) ct.get(null);
-        String origBody = (String) bd.get(null);
+        String origCt = HttpRouterHandler.defaultHealthContentType;
+        String origBody = HttpRouterHandler.defaultHealthResponseBody;
         try {
             HttpRouterHandler.setDefaultHealthResponse("text/plain", "OK");
-            assertEquals("text/plain", ct.get(null));
-            assertEquals("OK", bd.get(null));
+            assertEquals("text/plain", HttpRouterHandler.defaultHealthContentType);
+            assertEquals("OK", HttpRouterHandler.defaultHealthResponseBody);
 
             // the built-in /health route must actually serve the new defaults
             HttpRouterHandler h = new HttpRouterHandler();
@@ -636,10 +620,8 @@ public class HttpRouterHandlerTest {
     private static List<String> patterns(HttpRouterHandler h) {
         List<String> out = new ArrayList<String>();
         try {
-            Field f = HttpRouterHandler.RouteEntry.class.getDeclaredField("pattern");
-            f.setAccessible(true);
             for (HttpRouterHandler.RouteEntry e : h.routes) {
-                out.add((String) f.get(e));
+                out.add(e.pattern);
             }
         } catch (Exception e) {
             throw new RuntimeException(e);

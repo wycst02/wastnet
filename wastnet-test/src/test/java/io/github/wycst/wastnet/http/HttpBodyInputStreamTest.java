@@ -8,6 +8,7 @@ import java.io.IOException;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -206,5 +207,66 @@ public class HttpBodyInputStreamTest {
 
         Assertions.assertEquals(-1, n);
         Assertions.assertTrue(stream.completed);
+    }
+
+    // ==================== public read() / available() / close() / complete() ====================
+
+    @Test
+    public void testReadSingleByte() throws IOException {
+        ChannelContext ctx = mock(ChannelContext.class);
+        when(ctx.isChannelClosed()).thenReturn(false);
+        HttpBodyInputStream stream = new HttpBodyInputStream(2, "AB".getBytes(), ctx);
+
+        Assertions.assertEquals('A', stream.read());
+        Assertions.assertEquals('B', stream.read());
+        // body fully read: readChannel sees remSize == 0 and reports end of stream
+        Assertions.assertEquals(-1, stream.read());
+    }
+
+    @Test
+    public void testAvailableReturnsBodyLength() throws IOException {
+        ChannelContext ctx = mock(ChannelContext.class);
+        HttpBodyInputStream stream = new HttpBodyInputStream(42, new byte[0], ctx);
+
+        Assertions.assertEquals(42, stream.available());
+    }
+
+    /** close() -> complete() -> complete0(): nothing left to discard. */
+    @Test
+    public void testCloseCompletesStream() throws IOException {
+        ChannelContext ctx = mock(ChannelContext.class);
+        when(ctx.isChannelClosed()).thenReturn(false);
+        HttpBodyInputStream stream = new HttpBodyInputStream(3, "abc".getBytes(), ctx);
+
+        stream.close();
+        Assertions.assertTrue(stream.completed);
+    }
+
+    /** complete0(): remaining > 0, channel reports EOF during discard. */
+    @Test
+    public void testCompleteDiscardsRemainingUntilEof() throws IOException {
+        ChannelContext ctx = mock(ChannelContext.class);
+        when(ctx.isChannelClosed()).thenReturn(false);
+        when(ctx.readFully(any(byte[].class), anyInt(), anyInt(), anyLong())).thenReturn(-1);
+
+        HttpBodyInputStream stream = new HttpBodyInputStream(10, new byte[0], ctx);
+        stream.complete();
+
+        Assertions.assertTrue(stream.completed);
+    }
+
+    /** complete0() catch branch -> completeAndClose(): marks completed and closes the channel. */
+    @Test
+    public void testCompleteClosesChannelOnReadError() throws IOException {
+        ChannelContext ctx = mock(ChannelContext.class);
+        when(ctx.isChannelClosed()).thenReturn(false);
+        when(ctx.readFully(any(byte[].class), anyInt(), anyInt(), anyLong()))
+                .thenThrow(new IOException("boom"));
+
+        HttpBodyInputStream stream = new HttpBodyInputStream(10, new byte[0], ctx);
+        stream.complete();
+
+        Assertions.assertTrue(stream.completed);
+        verify(ctx).close();
     }
 }

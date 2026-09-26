@@ -194,13 +194,9 @@ public class HttpProxyVariablesTest {
     // ==================== Null resolver branch  ====================
 
     @Test
-    void testResolveProviderReturnsNull() throws Exception {
-        // Insert a resolver that returns null into BUILTINS via reflection
-        java.lang.reflect.Field builtinsField = HttpProxyVariables.class.getDeclaredField("BUILTINS");
-        builtinsField.setAccessible(true);
-        @SuppressWarnings("unchecked")
-        java.util.Map<String, HttpProxyConfig.HeaderValueResolver> map =
-                (java.util.Map<String, HttpProxyConfig.HeaderValueResolver>) builtinsField.get(null);
+    void testResolveProviderReturnsNull() {
+        // Insert a resolver that returns null into BUILTINS directly (same package, package-private field)
+        java.util.Map<String, HttpProxyConfig.HeaderValueResolver> map = HttpProxyVariables.BUILTINS;
         HttpProxyConfig.HeaderValueResolver nullResolver = new HttpProxyConfig.HeaderValueResolver() {
             public String resolve(HttpRequest request) { return null; }
         };

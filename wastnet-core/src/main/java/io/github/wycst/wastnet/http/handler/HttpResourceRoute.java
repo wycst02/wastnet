@@ -42,13 +42,13 @@ public class HttpResourceRoute implements HttpRoute {
     private final File defaultFile;
     private final byte[] notFoundBytes;
     private byte[] notAllowedBytes;
-    private byte[] forbiddenBytes;
+    byte[] forbiddenBytes;
     private boolean strictMode = true;
-    private boolean checkSymlinks; // true = check symlinks at runtime (unless docBase scanned clean or allowed)
+    boolean checkSymlinks; // true = check symlinks at runtime (unless docBase scanned clean or allowed)
     private boolean cacheEnabled = true;
-    private String defaultCacheControl = "max-age=0, must-revalidate";
+    String defaultCacheControl = "max-age=0, must-revalidate";
     private final Map<String, String> mimeCacheControlRules = new HashMap<String, String>();
-    private String[] earlyHintLinks;
+    String[] earlyHintLinks;
     private String basePath;  // context path for $base_path replacement in early hints
 
     /**
@@ -271,7 +271,7 @@ public class HttpResourceRoute implements HttpRoute {
     // Scan all files under docBase for symlinks, recursing into every dir; bounded by a 3s deadline. Returns true if a file symlink is found or the deadline is hit (conservative). Dirs are not checked at scan time, but intermediate symlink dirs are rejected at runtime via hasSymlinkInPath.
     private static final long SCAN_DEADLINE_MS = 3000;
 
-    private static boolean scanHasSymlink(File dir, long deadline) {
+    static boolean scanHasSymlink(File dir, long deadline) {
         if (System.currentTimeMillis() > deadline) return true; // deadline exceeded: conservative
         File[] children = dir.listFiles();
         if (children == null) return false; // unreadable: not treated as symlink
@@ -318,25 +318,30 @@ public class HttpResourceRoute implements HttpRoute {
         if (len <= 1) {
             file = defaultFile;
         } else {
-            int filePathOffset = this.filePathOffset, ch;
-            while ((ch = path.charAt(filePathOffset)) == '/' || ch == '\\') {
-                ++filePathOffset;
-            }
-            String rp = path.substring(filePathOffset);
-            if(RuntimeEnv.WINDOWS_PLATFORM) {
-                if(rp.indexOf(':') > -1) {
-                    response.status(HttpStatus.NOT_FOUND).write(notFoundBytes);
+            resolve_file_path: {
+                int filePathOffset = this.filePathOffset, ch;
+                while ((ch = path.charAt(filePathOffset)) == '/' || ch == '\\') {
+                    if(++filePathOffset == path.length()) { // fall back to the index page for paths ending with only separators (e.g. "////")
+                        file = defaultFile;
+                        break resolve_file_path;
+                    }
+                }
+                String rp = path.substring(filePathOffset);
+                if(RuntimeEnv.WINDOWS_PLATFORM) {
+                    if(rp.indexOf(':') > -1) {
+                        response.status(HttpStatus.NOT_FOUND).write(notFoundBytes);
+                        return;
+                    }
+                    if(rp.contains("\\")) rp = rp.replace("\\", "/");
+                }
+                // String check chosen over getCanonicalPath() canonicalization:
+                // canonical path resolution is extremely unstable on JDK 11+ (esp. Windows).
+                if (rp.contains("../")) { // Security: prevent path traversal, rp is decoded path
+                    response.status(HttpStatus.NOT_FOUND).body(notFoundBytes);
                     return;
-                } 
-                if(rp.contains("\\")) rp = rp.replace("\\", "/");
+                }
+                file = new File(docBaseDir, rp);
             }
-            // String check chosen over getCanonicalPath() canonicalization:
-            // canonical path resolution is extremely unstable on JDK 11+ (esp. Windows).
-            if (rp.contains("../")) { // Security: prevent path traversal, rp is decoded path
-                response.status(HttpStatus.NOT_FOUND).body(notFoundBytes);
-                return;
-            }
-            file = new File(docBaseDir, rp);
         }
 
         if (file == null || !file.isFile()) {

@@ -124,13 +124,11 @@ public class Http2ResponseTest {
         } catch (IOException e) {
             // never thrown on a mock
         }
-        try {
-            java.lang.reflect.Field f = Http2Stream.class.getDeclaredField("frameBuf");
-            f.setAccessible(true);
-            f.set(stream, HttpBuf.of(256));
-        } catch (Exception ignored) {
-        }
-        // Http2Stream.ctx / reader are set by the real constructor; mock skips it, so inject them.
+        // frameBuf is package-private and non-final: assign directly (same package).
+        stream.frameBuf = HttpBuf.of(256);
+        // ctx / reader are final on Http2Stream, so they can only be injected via reflection
+        // (setAccessible + Field.set works at runtime on the mock). The mocked stream otherwise
+        // has null ctx/reader, which breaks synchronized(stream.ctx) blocks in the response path.
         try {
             // spy a real reader so final fields (e.g. flushPending) are initialized
             Http2ServerReader reader = spy(new Http2ServerReader());
@@ -446,7 +444,7 @@ public class Http2ResponseTest {
     @Test
     void testSendFile0SmallFile() throws Exception {
         MockFixture f = createMockFixture();
-        java.io.File tmp = java.io.File.createTempFile("h2test", ".txt");
+        File tmp = File.createTempFile("h2test", ".txt");
         try {
             java.io.FileOutputStream fos = new java.io.FileOutputStream(tmp);
             fos.write("small content".getBytes());
@@ -461,7 +459,7 @@ public class Http2ResponseTest {
     @Test
     void testSendFile0WithGzip() throws Exception {
         MockFixture f = createMockFixture();
-        java.io.File tmp = java.io.File.createTempFile("h2gzip", ".txt");
+        File tmp = File.createTempFile("h2gzip", ".txt");
         try {
             java.io.FileOutputStream fos = new java.io.FileOutputStream(tmp);
             fos.write("compressible content".getBytes());
@@ -539,15 +537,16 @@ public class Http2ResponseTest {
     }
 
     @Test
-    void testEncodeHeadersSkipsContentTypeAndLengthFromH2Headers() throws Exception {
+    void testEncodeHeadersContentLengthSkippedContentTypeRetainedFromH2Headers() throws Exception {
         MockFixture f = createMockFixture();
-        // content-type/content-length added via addHeader go into h2Headers and must be skipped
+        // content-length added via addHeader goes into h2Headers and is skipped (managed header);
+        // content-type added via addHeader is retained (only setContentType drives the managed header).
         f.response.addHeader("content-type", "application/json");
         f.response.addHeader("content-length", "500");
         f.response.commit();
         Map<String, Object> headers = decodeSentHeaders(f);
         assertEquals("200", headers.get(":status"));
-        assertNull(headers.get("content-type"));
+        assertEquals("application/json", headers.get("content-type"));
         assertNull(headers.get("content-length"));
     }
 

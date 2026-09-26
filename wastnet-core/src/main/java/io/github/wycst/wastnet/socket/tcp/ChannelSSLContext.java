@@ -373,7 +373,7 @@ public final class ChannelSSLContext extends ChannelContext {
      * @param dst destination buffer
      * @return number of bytes transferred
      */
-    private int transferTo(ByteBuffer src, ByteBuffer dst) {
+    int transferTo(ByteBuffer src, ByteBuffer dst) {
         if (!src.hasRemaining()) return 0;
         int toTransfer = Math.min(src.remaining(), dst.remaining());
         int oldLimit = src.limit();

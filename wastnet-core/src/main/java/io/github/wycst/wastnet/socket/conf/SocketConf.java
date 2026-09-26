@@ -1,13 +1,14 @@
 package io.github.wycst.wastnet.socket.conf;
 
 import io.github.wycst.wastnet.env.RuntimeEnv;
+import io.github.wycst.wastnet.util.ConfigLoader;
 
 import java.util.Properties;
 
 public final class SocketConf extends Conf {
 
-    // Prevent instantiation of this static configuration holder.
-    private SocketConf() {
+    // Prevent instantiation of this static configuration holder outside the package.
+    SocketConf() {
     }
 
     /**
@@ -109,7 +110,7 @@ public final class SocketConf extends Conf {
     public static final long GRACEFUL_SHUTDOWN_TIMEOUT_MS;
 
     static {
-        APP_PROPS = createFileProps("wastnet-socket.properties");
+        APP_PROPS = ConfigLoader.createFileProps("wastnet-socket.properties");
 
         ENABLE_VIRTUAL_THREAD = RuntimeEnv.JDK_VERSION >= 21f && isPropTrue(APP_PROPS, "wastnet.socket.virtual-thread.enabled");
         SELECT_TIMEOUT_MS = Math.min(100, getPropInt(APP_PROPS, "wastnet.socket.select-timeout-ms", 100)); // 10 - 100ms

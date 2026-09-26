@@ -68,7 +68,7 @@ public class ChannelContext {
      * Persisted flag set by {@link #wakeup()} (invoked only when readable data is available),
      * checked before {@code lock.wait()} to avoid lost wakeup when a notify races ahead of the wait.
      */
-    private boolean readReady;
+    boolean readReady;
     final ByteBuffer byteBuffer;
     // Short sleep for busy waiting in worker thread
     // static final long SHORT_SLEEP_MILLIS = 1;
@@ -753,6 +753,8 @@ public class ChannelContext {
      * @param runnable the task to run
      */
     public void runAsync(Runnable runnable) {
+        ChannelWorker worker = this.worker;
+        if(worker == null) return;
         worker.runAsync(runnable);
     }
 

@@ -131,81 +131,6 @@ public class ConfTest {
         Assertions.assertFalse(Conf.isPropTrue(props, "key", true));
     }
 
-    // ==================== createFileProps does not throw ====================
-
-    @Test
-    public void testCreateFilePropsDoesNotThrow() {
-        Assertions.assertDoesNotThrow(() -> Conf.createFileProps("nonexistent.properties"));
-    }
-
-    // ==================== load* chain (in-memory) ====================
-
-    @Test
-    public void testLoadInputStreamNormal() throws Exception {
-        Properties props = new Properties();
-        String data = "name=wastnet\nport=8080\n";
-        Conf.loadInputStream(props, new ByteArrayInputStream(data.getBytes("UTF-8")));
-        Assertions.assertEquals("wastnet", props.getProperty("name"));
-        Assertions.assertEquals("8080", props.getProperty("port"));
-    }
-
-    @Test
-    public void testLoadInputStreamNullReturnsImmediately() {
-        Properties props = new Properties();
-        props.setProperty("keep", "1");
-        Conf.loadInputStream(props, null);
-        Assertions.assertEquals("1", props.getProperty("keep"));
-    }
-
-    @Test
-    public void testLoadInputStreamReadFailureCaught() {
-        Properties props = new Properties();
-        InputStream bad = new InputStream() {
-            @Override
-            public int read() throws IOException {
-                throw new IOException("boom");
-            }
-
-            @Override
-            public int read(byte[] b, int off, int len) throws IOException {
-                throw new IOException("boom");
-            }
-        };
-        // load failure is swallowed by catch(Throwable); must not propagate
-        Assertions.assertDoesNotThrow(() -> Conf.loadInputStream(props, bad));
-    }
-
-    @Test
-    public void testLoadFilePropertiesMissingFileReturns() {
-        Properties props = new Properties();
-        Conf.loadFileProperties(props, new File("non-existent-file-xyz-123.properties"));
-        Assertions.assertTrue(props.isEmpty());
-    }
-
-    @Test
-    public void testLoadFilePropertiesDirectoryReturns() {
-        Properties props = new Properties();
-        Conf.loadFileProperties(props, new File("."));
-        Assertions.assertTrue(props.isEmpty());
-    }
-
-    @Test
-    public void testLoadFilePropertiesExistingFile() throws Exception {
-        Properties props = new Properties();
-        File tmp = File.createTempFile("confcov", ".properties");
-        tmp.deleteOnExit();
-        Files.write(tmp.toPath(), "k=v\n".getBytes("UTF-8"));
-        Conf.loadFileProperties(props, tmp);
-        Assertions.assertEquals("v", props.getProperty("k"));
-    }
-
-    @Test
-    public void testLoadResourcePropertiesMissing() {
-        Properties props = new Properties();
-        Conf.loadResourceProperties(props, "non-existent-resource-xyz.properties");
-        Assertions.assertTrue(props.isEmpty());
-    }
-
     @Test
     public void testGetPropertyFromPropsTrims() {
         Properties props = new Properties();
@@ -236,29 +161,5 @@ public class ConfTest {
         // PATH exists as an environment variable on every normal OS; covers the getenv branch
         Properties props = new Properties();
         Assertions.assertNotNull(Conf.getProperty(props, "PATH"));
-    }
-
-    @Test
-    public void testLoadPropertiesNoConfigDir() {
-        Properties props = new Properties();
-        // working dir has no config/ folder, so the load is a silent no-op (covered path)
-        Conf.loadProperties(props, "no-such-config.properties");
-        Assertions.assertNull(props.getProperty("no-such-config.properties"));
-    }
-
-    @Test
-    public void testLoadConfigDirPropertiesNoSuchFile() {
-        // loadConfigDirProperties reads from JAR_DIR_PATH/config/<name>; without such a file it is a silent no-op
-        Properties props = new Properties();
-        Conf.loadConfigDirProperties(props, "no-such-config-dir-file.properties");
-        Assertions.assertNull(props.getProperty("no-such-config-dir-file.properties"));
-    }
-
-    @Test
-    public void testLoadParentConfigDirPropertiesNoParentConfig() {
-        Properties props = new Properties();
-        // parent dir/config/<name> does not exist -> silent no-op (covered early-return path)
-        Conf.loadParentConfigDirProperties(props, "no-such-parent-config.properties");
-        Assertions.assertNull(props.getProperty("no-such-parent-config.properties"));
     }
 }

@@ -56,7 +56,7 @@ public class MockHttpTestBase {
             @Override public String getHeader(String name, boolean caseSensitive) { return null; }
             @Override public boolean containsHeader(String name) { return false; }
             @Override public Object getRawHeader(String name) { return null; }
-            @Override public java.util.List<String> getFullHeader(String name) { return null; }
+            @Override public List<String> getFullHeader(String name) { return null; }
             @Override public Set<String> getHeaderNames() { return Collections.emptySet(); }
             @Override public String getUriParameter(String name) { return null; }
             @Override public String getQueryString() { return null; }
@@ -189,6 +189,7 @@ public class MockHttpTestBase {
             @Override public void setChunkedEncoding() {}
             @Override public void removeChunkedEncoding() {}
             @Override public void writeChunked(byte[] data) throws java.io.IOException {}
+            @Override public void writeChunked(byte[] data, int offset, int count) throws java.io.IOException {}
             @Override public HttpVersion getHttpVersion() { return HttpVersion.HTTP_1_1; }
             @Override public boolean isKeepAlive() { return false; }
             @Override public void setKeepAlive(boolean keepAlive) {}
@@ -271,6 +272,7 @@ public class MockHttpTestBase {
             @Override public void setChunkedEncoding() {}
             @Override public void removeChunkedEncoding() {}
             @Override public void writeChunked(byte[] data) throws java.io.IOException {}
+            @Override public void writeChunked(byte[] data, int offset, int count) throws java.io.IOException {}
             @Override public HttpVersion getHttpVersion() { return HttpVersion.HTTP_1_1; }
             @Override public boolean isKeepAlive() { return false; }
             @Override public void setKeepAlive(boolean keepAlive) {}

@@ -42,6 +42,9 @@ public final class Http2Helper {
     private static final byte[] CRLF_BYTES = "\r\n".getBytes();
     private static final byte[] H1_VERSION_CRLF = " HTTP/1.1\r\n".getBytes();
 
+    /** Safe upper bound for the HPACK string length-prefix byte count (always ≤ 5). */
+    private static final int HPACK_LEN_PREFIX_BUDGET = 5;
+
     // Pre-encoded HPACK literal for ":status: 502" (never-indexed, ref static index 8)
     // Hex: 18 03 35 30 32
     private static final byte[] H2_ERROR_502_HEADER_PAYLOAD = {
@@ -453,17 +456,19 @@ public final class Http2Helper {
      * <p>
      * Uses single-byte Indexed Header Field (A) for 200 and 500,
      * falls back to Never Indexed (D) + inline value for other codes.
+     * <p>
+     * Note: caller must ensure buf has enough free space (1 byte).
      *
      * @param buf        the target buffer
      * @param statusCode the HTTP status code
      */
     public static void writeHpackStatus(HttpBuf buf, int statusCode) {
         if (statusCode == 200) {
-            buf.write((byte) (0x80 | 8));   // A, :status 200 (idx 8)
+            buf.writeUnchecked((byte) (0x80 | 8));   // A, :status 200 (idx 8)
         } else if (statusCode == 500) {
-            buf.write((byte) (0x80 | 14));  // A, :status 500 (idx 14)
+            buf.writeUnchecked((byte) (0x80 | 14));  // A, :status 500 (idx 14)
         } else {
-            buf.write((byte) (0x10 | 8));   // D, name=:status (idx 8, ≤15)
+            buf.writeUnchecked((byte) (0x10 | 8));   // D, name=:status (idx 8, ≤15)
             writeHpackString(buf, String.valueOf(statusCode));
         }
     }
@@ -483,29 +488,59 @@ public final class Http2Helper {
     }
 
     /**
-     * Write a single HPACK string (length-prefixed, optionally Huffman-encoded) into the buffer.
-     * <p>
-     * Huffman encoding is applied when {@link HttpConf#HTTP2_HPACK_HUFFMAN_ENABLED} is true
-     * and the string is ASCII-only (all characters are single-byte) and longer than 5 bytes,
-     * which is the sweet spot where the HPACK Huffman table provides meaningful compression.
-     * Short strings and non-ASCII content skip Huffman to avoid potential expansion.
-     * <p>
-     * The length prefix is encoded via {@link Http2HpackCodec#encodeLength(int, byte[], int, boolean)}.
+     * Encodes a string as an HPACK string literal (length-prefixed, optional Huffman).
+     * Huffman is used only for ASCII-only strings longer than 5 bytes when
+     * {@link HttpConf#HTTP2_HPACK_HUFFMAN_ENABLED} is on.
      *
      * @param buf   the target buffer
      * @param value the string value to encode
      */
     public static void writeHpackString(HttpBuf buf, String value) {
         byte[] bytes = value.getBytes(Utils.UTF_8);
-        boolean useHuffman = HttpConf.HTTP2_HPACK_HUFFMAN_ENABLED
-                && bytes.length == value.length() && bytes.length > 5;
+        // ASCII-only (bytes.length == value.length()) is the Huffman candidate:
+        // multibyte UTF-8 is left uncompressed to avoid the per-string encode cost.
+        writeHpackBytes(buf, bytes, bytes.length == value.length());
+    }
+
+    /**
+     * Writes a byte slice as an HPACK string literal, directly into the buffer
+     * (no scratch array). Honors Huffman only when enabled and {@code len > 5}.
+     *
+     * @param buf         target buffer
+     * @param bytes       literal octets
+     * @param offset      start offset within {@code bytes}
+     * @param len         number of bytes to take
+     * @param useHuffman  Huffman candidate
+     */
+    public static void writeHpackBytes(HttpBuf buf, byte[] bytes, int offset, int len, boolean useHuffman) {
+        // Gate on the global switch and a length floor (Huffman expands short strings).
+        useHuffman = useHuffman && HttpConf.HTTP2_HPACK_HUFFMAN_ENABLED && len > 5;
+
+        int dataLen = useHuffman
+                ? HuffmanByteCodec.computeHuffmanLength(bytes, offset, len)
+                : len;
+
+        buf.incrementCapacity(HPACK_LEN_PREFIX_BUDGET + dataLen);
+        byte[] dst = buf.getBuf();
+        int off = buf.getWriteIndex();
+        int prefixLen = Http2HpackCodec.encodeLength(dataLen, dst, off, useHuffman);
+
+        // Huffman-encoded in place, or copied verbatim behind the prefix.
         if (useHuffman) {
-            bytes = HuffmanByteCodec.encodeData(bytes);
+            HuffmanByteCodec.encodeData(bytes, offset, len, dst, off + prefixLen);
+        } else {
+            System.arraycopy(bytes, offset, dst, off + prefixLen, len);
         }
-        byte[] tmp = new byte[9];
-        int prefixLen = Http2HpackCodec.encodeLength(bytes.length, tmp, 0, useHuffman);
-        buf.write(tmp, 0, prefixLen);
-        buf.write(bytes);
+        buf.setCount(buf.size() + prefixLen + dataLen);
+    }
+
+    /**
+     * Convenience overload: writes the whole {@code bytes} array as an HPACK string literal.
+     *
+     * @see #writeHpackBytes(HttpBuf, byte[], int, int, boolean)
+     */
+    public static void writeHpackBytes(HttpBuf buf, byte[] bytes, boolean useHuffman) {
+        writeHpackBytes(buf, bytes, 0, bytes.length, useHuffman);
     }
 
     private static void writeH1HeaderLine(HttpBuf buf, String name, String value) {

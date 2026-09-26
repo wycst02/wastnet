@@ -12,8 +12,8 @@ import java.nio.channels.SocketChannel;
  */
 class ChannelSSLRunner extends ChannelRunner {
 
-    private boolean isSSL;
-    private boolean finishHandshake;
+    boolean isSSL;
+    boolean finishHandshake;
     SSLEngineContext sslEngineContext;
 
     ChannelSSLRunner(ChannelWorker worker, SocketChannel channel, NioConfig nioConfig, SSLContext sslCtx, String[] sslCipherSuites) throws IOException {

@@ -138,9 +138,9 @@ router.exactRoute("/user", userHandler); // 匹配 /myapp/user
 
 ## 内置 Handler
 
-### HttpWelcomeHandler
+### 默认欢迎页
 
-默认欢迎页，输出框架介绍和快速开始信息。当未设置 `requestHandler` 时自动生效。
+未设置 `requestHandler` 时，框架默认返回一个纯文本欢迎页，内容为 `Welcome to wastnet v<version>`（含版本号）。
 
 ### HttpServerChannelHandler
 

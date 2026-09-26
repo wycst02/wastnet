@@ -17,17 +17,17 @@ public class UserService {
     private String namePrefix;
 
     public UserService() {
-        System.out.println("[DI] constructor: UserService");
+        // System.out.println("[DI] constructor: UserService");
     }
 
     @PostConstruct
     public void init() {
-        System.out.println("[DI] @PostConstruct: prefix=" + namePrefix);
+        // System.out.println("[DI] @PostConstruct: prefix=" + namePrefix);
     }
 
     @PreDestroy
     public void close() {
-        System.out.println("[DI] @PreDestroy: closing");
+        // System.out.println("[DI] @PreDestroy: closing");
     }
 
     public String getUserName(int id) {

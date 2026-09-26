@@ -429,20 +429,15 @@ public abstract class Http2Stream {
         }
 
         // c. recvWindow == 0
-        if (reader.streamEarly) {
-            // First window exhaustion => stream now (ring buffer = INITIAL_RECEIVE_WINDOW_SIZE)
-            startStreaming();
+        if (reader.streamEarly || dataFramesTotalLength == reader.maxStreamCapacitySize) {
+            startStreaming(); // window exhausted (early-start) or buffer full (==MAX) => stream now
             return;
         }
-        if (dataFramesTotalLength < reader.maxStreamCapacitySize) {
-            // First window exhaustion: send WU to refill
-            // newWindowSize = MAX_STREAM_CAPACITY_SIZE - dataFramesTotalLength (remaining buffer space)
-            int newWindowSize = reader.maxStreamCapacitySize - dataFramesTotalLength;
-            reader.sendWindowUpdatePair(ctx, this, newWindowSize, true);
-            receiveWindow = refilled = newWindowSize;
-        } else if (dataFramesTotalLength == reader.maxStreamCapacitySize) {
-            startStreaming();
-        }
+        // First window exhaustion: send WU to refill
+        // newWindowSize = MAX_STREAM_CAPACITY_SIZE - dataFramesTotalLength (remaining buffer space)
+        int newWindowSize = reader.maxStreamCapacitySize - dataFramesTotalLength;
+        reader.sendWindowUpdatePair(ctx, this, newWindowSize, true);
+        receiveWindow = refilled = newWindowSize;
     }
 
     /**
@@ -736,7 +731,17 @@ public abstract class Http2Stream {
             endStreamSent = true;
         }
 
-        if (Http2MessageReader.DEBUG) {
+        debugLogFrame(frame);
+        return true;
+    }
+
+    /**
+     * DEBUG-only frame logging, factored out of {@link #prepareFrame} so callers that pre-set
+     * {@code endStreamSent} (e.g. the HEADERS+DATA merge in Http2Response) can still emit the
+     * observability log without running the end-stream guard / flag detection.
+     */
+    void debugLogFrame(ByteBuffer frame) {
+        if (Http2MessageReader.DEBUG && log.isDebugEnabled()) {
             synchronized (reader) {
                 for (Http2Frame h2Frame : Http2Frame.fromByteBuffer(frame)) {
                     if (h2Frame.type != Http2FrameType.DATA) {
@@ -749,7 +754,6 @@ public abstract class Http2Stream {
                 }
             }
         }
-        return true;
     }
 
     void writeDataFrame(ByteBuffer frame, int payloadLength) throws IOException {

@@ -22,6 +22,7 @@ import io.github.wycst.wastnet.http.h2.Http2Helper;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -109,10 +110,11 @@ public class H1H2ProxyAdapter extends H2H2ProxyAdapter {
             // Body
             if (response.isStream()) {
                 resp.setChunkedEncoding();
-                java.io.InputStream bodyStream = response.getBodyStream();
+                InputStream bodyStream = response.getBodyStream();
                 byte[] buf = new byte[8192];
-                while (bodyStream.read(buf) != -1) {
-                    resp.writeChunked(buf);
+                int n;
+                while ((n = bodyStream.read(buf)) != -1) {
+                    resp.writeChunked(buf, 0, n);
                 }
             } else {
                 byte[] body = response.getBody();

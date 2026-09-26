@@ -90,7 +90,7 @@ class HttpHandlerTest {
     @Test
     void testHandleExactMatch() throws Throwable {
         HttpRoute route = mock(HttpRoute.class);
-        when(route.self()).thenReturn(route);
+        when(route.target()).thenReturn(route);
         router.exactRoute("/test", route);
         when(mockReq.getRequestUri()).thenReturn("/test");
         router.handle(mockReq, mockResp);
@@ -100,7 +100,7 @@ class HttpHandlerTest {
     @Test
     void testHandlePrefixMatch() throws Throwable {
         HttpRoute route = mock(HttpRoute.class);
-        when(route.self()).thenReturn(route);
+        when(route.target()).thenReturn(route);
         router.route("/api", route);
         when(mockReq.getRequestUri()).thenReturn("/api/users");
         router.handle(mockReq, mockResp);
@@ -157,7 +157,7 @@ class HttpHandlerTest {
     void testHandleWithContextPath() throws Throwable {
         router = new HttpRouterHandler("/app");
         HttpRoute route = mock(HttpRoute.class);
-        when(route.self()).thenReturn(route);
+        when(route.target()).thenReturn(route);
         router.exactRoute("/test", route);
         when(mockReq.getRequestUri()).thenReturn("/app/test");
         router.handle(mockReq, mockResp);

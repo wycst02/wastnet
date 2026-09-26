@@ -40,8 +40,8 @@ public class Http2ServerReader extends Http2MessageReader {
     final int maxServerConcurrentStreams;
 
     // ---- Rapid Reset (CVE-2023-44487) defense: per-connection client RST rate limit ----
-    private long rstWindowStartMs;
-    private int rstCountInWindow;
+    long rstWindowStartMs;
+    int rstCountInWindow;
 
     // Server reply: SETTINGS frame + initial connection-level WINDOW_UPDATE (40 bytes)
     static final byte[] SERVER_REPLY_FRAMES = buildServerReplyFrames(HttpConf.HTTP2_MAX_CONCURRENT_STREAMS, HttpConf.HTTP2_INITIAL_SEND_WINDOW_SIZE);

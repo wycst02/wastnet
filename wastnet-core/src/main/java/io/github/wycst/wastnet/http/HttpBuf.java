@@ -46,7 +46,7 @@ import java.util.Arrays;
  *       {@link #append(byte[], int, int)} is an unchecked fast path for internal use.</li>
  *
  *   <li><b>Optimized ISO-8859-1 string support</b> — {@link #toISO_8859_1_string()}
- *       uses {@link io.github.wycst.wastnet.http.HttpUnsafe} for zero-copy string
+ *       uses {@link HttpUnsafe} for zero-copy string
  *       creation on JDK 9+. Trimmed variants handle HTTP OWS (optional whitespace)
  *       without allocation.</li>
  *
@@ -205,7 +205,7 @@ public final class HttpBuf {
      *
      * @param increment the number of additional bytes needed
      */
-    void incrementCapacity(int increment) {
+    public void incrementCapacity(int increment) {
         int required = begin + count + increment;
         if (required <= buf.length) {
             return;
@@ -242,6 +242,16 @@ public final class HttpBuf {
     }
 
     /**
+     * Writes a single byte without checking or expanding capacity.
+     * Caller must ensure free space remains; otherwise it writes out of bounds.
+     *
+     * @param b the byte to write
+     */
+    public void writeUnchecked(byte b) {
+        buf[begin + count++] = b;
+    }
+
+    /**
      * Write all bytes from the specified array to the buffer.
      * Equivalent to {@code write(arr, 0, arr.length)}.
      *
@@ -251,6 +261,17 @@ public final class HttpBuf {
      */
     public int write(byte[] bytes) {
         return write(bytes, 0, bytes.length);
+    }
+
+    /**
+     * Writes all bytes from the specified array without capacity check;
+     * caller must ensure enough free space remains.
+     *
+     * @param bytes the source byte array
+     */
+    public void writeUnchecked(byte[] bytes) {
+        System.arraycopy(bytes, 0, buf, begin + count, bytes.length);
+        count += bytes.length;
     }
 
     /**
@@ -552,12 +573,29 @@ public final class HttpBuf {
     }
 
     /**
+     * Sets the write position (number of valid bytes).
+     */
+    public void setCount(int count) {
+        this.count = count;
+    }
+
+    /**
      * Returns the starting index of the valid data in the buffer.
      *
      * @return the starting index
      */
     public int getBegin() {
         return begin;
+    }
+
+    /**
+     * Returns the absolute index in the backing array where the next byte
+     * will be written, i.e. {@code getBegin() + size()}.
+     *
+     * @return the current write index
+     */
+    public int getWriteIndex() {
+        return begin + count;
     }
 
     /**

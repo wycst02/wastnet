@@ -21,9 +21,10 @@ public interface HttpRoute {
     void handle(String path, HttpRequest request, HttpResponse response) throws Throwable;
 
     /**
-     * Return self.
+     * Return the underlying route this represents (peels wrappers such as
+     * {@link HttpMethodRoute}). For a plain route this is {@code this}.
      */
-    default HttpRoute self() {
+    default HttpRoute target() {
         return this;
     }
 }

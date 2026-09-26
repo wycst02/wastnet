@@ -27,8 +27,7 @@ public class HttpCoreUtilTest {
     @Test
     public void testHeaderUtilsSetTitleCaseConfig() {
         HttpHeaderUtils.HeaderConfig titleConfig = HttpHeaderUtils.HeaderConfig.standardConfig();
-        assertTrue(titleConfig.isCommaSeparated());
-        assertEquals(HttpHeaderUtils.HeaderFormatStrategy.TITLE_CASE, titleConfig.formatStrategy);
+        assertEquals(HttpHeaderUtils.FORMAT_TITLE_CASE, titleConfig.formatStrategy);
 
         HttpHeaderUtils.setHeaderConfig(titleConfig);
         assertTrue(HttpHeaderUtils.isTitleCase());
@@ -53,17 +52,6 @@ public class HttpCoreUtilTest {
         HttpHeaderUtils.resetHeaderConfig();
         assertFalse(HttpHeaderUtils.isTitleCase());
         assertTrue(HttpHeaderUtils.isCommaSeparated());
-    }
-
-    @Test
-    public void testHeaderUtilsAllowDuplicatesConfig() {
-        HttpHeaderUtils.HeaderConfig dupConfig = HttpHeaderUtils.HeaderConfig.allowDuplicatesConfig();
-        assertTrue(dupConfig.isAllowDuplicates());
-
-        HttpHeaderUtils.setHeaderConfig(dupConfig);
-        assertTrue(HttpHeaderUtils.isAllowDuplicates());
-
-        HttpHeaderUtils.resetHeaderConfig();
     }
 
     @Test
@@ -364,24 +352,24 @@ public class HttpCoreUtilTest {
 
     @Test
     public void testHttpDateConstructor() {
-        HttpDate date = new HttpDate(0L, java.util.TimeZone.getTimeZone("GMT"));
-        assertTrue(date.getYear() >= 1970);
-        assertTrue(date.getMonth() >= 1 && date.getMonth() <= 12);
-        assertTrue(date.getDay() >= 1 && date.getDay() <= 31);
+        HttpDate date = new HttpDate(0L, TimeZone.getTimeZone("GMT"));
+        assertTrue(date.year >= 1970);
+        assertTrue(date.month >= 1 && date.month <= 12);
+        assertTrue(date.day >= 1 && date.day <= 31);
         assertTrue(date.getDayOfWeek() >= 1 && date.getDayOfWeek() <= 7);
     }
 
     @Test
     public void testHttpDateLeapYear() {
         // Year 2000 is a leap year (divisible by 400)
-        HttpDate leapDate = new HttpDate(951825600000L, java.util.TimeZone.getTimeZone("GMT")); // 2000-02-29
-        assertEquals(2000, leapDate.getYear());
-        assertEquals(2, leapDate.getMonth());
-        assertEquals(29, leapDate.getDay());
+        HttpDate leapDate = new HttpDate(951825600000L, TimeZone.getTimeZone("GMT")); // 2000-02-29
+        assertEquals(2000, leapDate.year);
+        assertEquals(2, leapDate.month);
+        assertEquals(29, leapDate.day);
 
         // Year 1900 is NOT a leap year (divisible by 100 but not 400)
-        HttpDate nonLeapDate = new HttpDate(-2203977600000L, java.util.TimeZone.getTimeZone("GMT")); // 1900-03-01
-        assertEquals(1900, nonLeapDate.getYear());
+        HttpDate nonLeapDate = new HttpDate(-2203977600000L, TimeZone.getTimeZone("GMT")); // 1900-03-01
+        assertEquals(1900, nonLeapDate.year);
     }
 
     @Test
@@ -414,7 +402,7 @@ public class HttpCoreUtilTest {
 
     @Test
     public void testGetDayOfWeekAtEpoch() {
-        HttpDate epoch = new HttpDate(0L, java.util.TimeZone.getTimeZone("GMT"));
+        HttpDate epoch = new HttpDate(0L, TimeZone.getTimeZone("GMT"));
         assertEquals(5, epoch.getDayOfWeek()); // 1970-01-01 was Thursday (5)
     }
 

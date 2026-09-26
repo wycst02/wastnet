@@ -10,8 +10,8 @@ import java.util.Set;
 /**
  * protocol layer response abstraction
  *
- * @since 2024-1-20
  * @author wangyc
+ * @since 2024-1-20
  */
 public interface HttpResponse /*extends HttpMessage*/ {
 
@@ -102,7 +102,7 @@ public interface HttpResponse /*extends HttpMessage*/ {
      * @return the header names, never null
      */
     Set<String> getHeaderNames();
-    
+
     /**
      * Add a header to the response with chain call support
      * If the header already exists, it will be stored as a list of values
@@ -295,11 +295,26 @@ public interface HttpResponse /*extends HttpMessage*/ {
      * Write chunked data for Transfer-Encoding: chunked responses
      * This method handles the chunked transfer encoding format automatically
      *
-     * @param data the data to write as a chunk
+     * @param data   the data to write as a chunk
      * @throws IOException           if an I/O error occurs
      * @throws IllegalStateException if chunked encoding is not supported or enabled
      */
-    void writeChunked(byte[] data) throws IOException;
+    default void writeChunked(byte[] data) throws IOException {
+        if (data == null) return;
+        writeChunked(data, 0, data.length);
+    }
+
+    /**
+     * Write chunked data for Transfer-Encoding: chunked responses
+     * This method handles the chunked transfer encoding format automatically
+     *
+     * @param data   the data to write as a chunk
+     * @param offset the starting position in the data
+     * @param count  the number of bytes to write
+     * @throws IOException           if an I/O error occurs
+     * @throws IllegalStateException if chunked encoding is not supported or enabled
+     */
+    void writeChunked(byte[] data, int offset, int count) throws IOException;
 
     /**
      * Write bytes to response body

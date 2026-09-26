@@ -46,10 +46,13 @@ final class DefaultAnnotationResolver implements AnnotationResolver {
         for (Method method : clazz.getMethods()) {
             if (Modifier.isStatic(method.getModifiers())) continue;
             Endpoint ann = method.getAnnotation(Endpoint.class);
-            if (ann != null && !ann.value().isEmpty()) {
-                MethodRouteInfo routeInfo = new MethodRouteInfo(ann.value(), ann.allowMethods(), method, Endpoint.class, ann.responseType());
-                routeInfo.setInterceptorNames(resolveInterceptorNames(clazz, method));
-                routes.add(routeInfo);
+            if (ann != null) {
+                String path = ann.value().trim();
+                if (!path.isEmpty()) {
+                    MethodRouteInfo routeInfo = new MethodRouteInfo(path, ann.allowMethods(), method, Endpoint.class, ann.responseType());
+                    routeInfo.setInterceptorNames(resolveInterceptorNames(clazz, method));
+                    routes.add(routeInfo);
+                }
             }
         }
         return routes;
@@ -82,9 +85,15 @@ final class DefaultAnnotationResolver implements AnnotationResolver {
         for (Method method : clazz.getMethods()) {
             if (Modifier.isStatic(method.getModifiers())) continue;
             Sse ann = method.getAnnotation(Sse.class);
-            if (ann == null || ann.value().isEmpty()) continue;
+            if (ann == null) continue;
+            String path = ann.value().trim();
+            if (path.isEmpty()) continue;
             Class<?>[] paramTypes = method.getParameterTypes();
-            if (paramTypes.length != 1 || paramTypes[0] != SseEmitter.class) {
+            int sseCount = 0;
+            for (Class<?> pt : paramTypes) {
+                if (pt == SseEmitter.class) ++sseCount;
+            }
+            if (sseCount != 1) {
                 throw new IllegalArgumentException(
                         "@Sse method " + clazz.getSimpleName() + "." + method.getName()
                                 + " must have exactly one parameter of type SseEmitter");
@@ -94,7 +103,7 @@ final class DefaultAnnotationResolver implements AnnotationResolver {
                         "@Sse method " + clazz.getSimpleName() + "." + method.getName()
                                 + " must return void");
             }
-            MethodRouteInfo endpointInfo = new MethodRouteInfo(ann.value(), new HttpMethod[0], method, Sse.class);
+            MethodRouteInfo endpointInfo = new MethodRouteInfo(path, new HttpMethod[0], method, Sse.class);
             endpointInfo.setInterceptorNames(resolveInterceptorNames(clazz, method));
             endpoints.add(endpointInfo);
         }
@@ -134,24 +143,43 @@ final class DefaultAnnotationResolver implements AnnotationResolver {
         if (annInterceptor != null && !annInterceptor.value().isEmpty()) {
             return annInterceptor.value();
         }
-        String simpleName = clazz.getSimpleName();
-        return Character.toLowerCase(simpleName.charAt(0)) + simpleName.substring(1);
+        return AnnotationResolver.resolveBeanName(clazz);
     }
 
     // ── Value / Inject ──
 
     @Override
     public String resolveValueExpression(Annotation annotation) {
-        return ((Value) annotation).value();
+        if (annotation instanceof Value) {
+            return ((Value) annotation).value();
+        }
+        return annotationValue(annotation);
     }
 
     @Override
     public String resolveInjectName(Annotation annotation) {
-        return ((Inject) annotation).value();
+        if (annotation instanceof Inject) {
+            return ((Inject) annotation).value();
+        }
+        return annotationValue(annotation);
     }
 
     @Override
     public String resolveBeanName(Annotation annotation) {
-        return ((Bean) annotation).value();
+        if (annotation instanceof Bean) {
+            return ((Bean) annotation).value();
+        }
+        return annotationValue(annotation);
+    }
+
+    // Read value() via reflection for third-party annotations bridged through
+    // valueBy/injectBy/beanBy (no dedicated framework type available).
+    private static String annotationValue(Annotation annotation) {
+        try {
+            Method valueMethod = annotation.annotationType().getMethod("value");
+            return valueMethod.invoke(annotation).toString();
+        } catch (Exception e) {
+            return "";
+        }
     }
 }

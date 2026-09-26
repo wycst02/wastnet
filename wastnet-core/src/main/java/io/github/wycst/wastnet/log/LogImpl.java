@@ -35,42 +35,57 @@ class LogImpl implements Log {
 
     @Override
     public void debug(String msg, Object... args) {
-        log(LogLevel.DEBUG, msg, args, null);
+        log(LogLevel.DEBUG, msg, args);
     }
 
     @Override
     public void info(String msg, Object... args) {
-        log(LogLevel.INFO, msg, args, null);
+        log(LogLevel.INFO, msg, args);
     }
 
     @Override
     public void warn(String msg, Object... args) {
-        log(LogLevel.WARN, msg, args, null);
+        log(LogLevel.WARN, msg, args);
     }
 
     @Override
     public void error(String msg, Object... args) {
-        logError(LogLevel.ERROR, msg, args, null);
+        logError(msg, args, null);
     }
 
     @Override
     public void error(String msg, Throwable throwable, Object... args) {
-        logError(LogLevel.ERROR, msg, args, throwable);
+        logError(msg, args, throwable);
     }
 
-    private void log(LogLevel level, String msg, Object[] args, Throwable thrown) {
+    @Override
+    public void console(String msg, Object... args) {
+        logConsole(msg, args);
+    }
+
+    private void log(LogLevel level, String msg, Object[] args) {
         if (!enabled || !LogFactory.isLoggable(level)) {
             return;
         }
         long millis = System.currentTimeMillis();
-        accessHandler.publish(FORMATTER.format(level.name(), loggerName, millis, msg, args, thrown));
+        accessHandler.publish(FORMATTER.format(level.name(), loggerName, millis, msg, args, null));
     }
 
-    private void logError(LogLevel level, String msg, Object[] args, Throwable thrown) {
-        if (!enabled || !LogFactory.isLoggable(level)) {
+    private void logError(String msg, Object[] args, Throwable thrown) {
+        if (!enabled || !LogFactory.isLoggable(LogLevel.ERROR)) {
             return;
         }
         long millis = System.currentTimeMillis();
-        errorHandler.publish(FORMATTER.format(level.name(), loggerName, millis, msg, args, thrown), true);
+        errorHandler.publish(FORMATTER.format(LogLevel.ERROR.name(), loggerName, millis, msg, args, thrown), true);
+    }
+
+    private void logConsole(String msg, Object[] args) {
+        if (!enabled || !LogFactory.isLoggable(LogLevel.INFO)) {
+            return;
+        }
+        // Console feedback is dev-facing: skip the file log's header (timestamp, thread, level,
+        // fully-qualified logger name) and print just the rendered message. The {} placeholder
+        // semantics stay identical to the file output via LogFormatter.replacePlaceholder.
+        System.out.println(LogFormatter.replacePlaceholder(msg, "{}", args));
     }
 }

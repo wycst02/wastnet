@@ -359,7 +359,7 @@ public class HttpBodyDecoderMultipartDeepTest {
         Assertions.assertNull(decoder.getMultipartFields("key"));
         Assertions.assertTrue(decoder.getMultipartFieldNames().isEmpty());
         Assertions.assertNull(decoder.getMultipartFieldValue("key"));
-        Assertions.assertTrue(decoder.getMultipartFieldValues("key").isEmpty());
+        Assertions.assertNull(decoder.getMultipartFieldValues("key"));
     }
 
     // ==================== Release / cleanup ====================

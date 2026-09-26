@@ -261,19 +261,18 @@ public abstract class HttpBodyDecoder {
     }
 
     /**
-     * Get all multipart field values as string by name.
-     * File fields are ignored, only returns values of form fields.
+     * Get all multipart form-field values as string by name.
+     * File fields are ignored; only values of non-file form fields are returned.
      *
      * @param name field name
-     * @return list of field values (may be empty if all fields are files), empty list if field not found or content type is not multipart
+     * @return list of form-field values (non-empty), or null if there is no form-field value
+     *         for the name (the field is not found, is a file upload, or the content type
+     *         is not multipart)
      */
     public final List<String> getMultipartFieldValues(String name) {
-        if (!isMultipart()) {
-            return Collections.emptyList();
-        }
-        List<MultipartField> fields = getMultipartFields(name);
-        if (fields == null) {
-            return Collections.emptyList();
+        List<MultipartField> fields;
+        if (!isMultipart() || (fields = getMultipartFields(name)) == null) {
+            return null;
         }
         List<String> values = new ArrayList<>(fields.size());
         for (MultipartField field : fields) {
@@ -281,7 +280,7 @@ public abstract class HttpBodyDecoder {
                 values.add(field.getDataAsString(charset));
             }
         }
-        return values;
+        return values.isEmpty() ? null : values;
     }
 
     /**
@@ -307,7 +306,7 @@ public abstract class HttpBodyDecoder {
      * For form-urlencoded, returns all values for the parameter name.
      *
      * @param name parameter name
-     * @return list of parameter values, empty list if not found
+     * @return list of parameter values, or null if not found
      */
     public final List<String> getParameterValues(String name) {
         if (isMultipart()) {
@@ -315,7 +314,7 @@ public abstract class HttpBodyDecoder {
         } else if (isFormUrlencoded()) {
             return getUrlencodedParameterValues(name);
         }
-        return Collections.emptyList();
+        return null;
     }
 
     /**

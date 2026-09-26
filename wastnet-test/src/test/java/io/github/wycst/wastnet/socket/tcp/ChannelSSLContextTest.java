@@ -166,11 +166,9 @@ public class ChannelSSLContextTest {
     @Test
     public void testTransferToEmptySrc() throws Exception {
         ChannelSSLContext ctx = new ChannelSSLContext(clientChannel, createDisabledEngineCtx());
-        java.lang.reflect.Method m = ChannelSSLContext.class.getDeclaredMethod("transferTo", ByteBuffer.class, ByteBuffer.class);
-        m.setAccessible(true);
         ByteBuffer emptySrc = ByteBuffer.allocate(0);
         ByteBuffer dst = ByteBuffer.allocate(10);
-        int n = (int) m.invoke(ctx, emptySrc, dst);
+        int n = ctx.transferTo(emptySrc, dst);
         Assertions.assertEquals(0, n);
     }
 
@@ -178,7 +176,7 @@ public class ChannelSSLContextTest {
 
     @Test
     public void testReadWithApplicationInBufRemaining() throws Exception {
-        javax.net.ssl.SSLContext rawCtx = javax.net.ssl.SSLContext.getInstance("TLS");
+        SSLContext rawCtx = SSLContext.getInstance("TLS");
         rawCtx.init(null, ChannelSSLContext.TRUST_ALL_MANAGERS, null);
         SSLEngineContext engineCtx = new SSLEngineContext(rawCtx, null, null, true);
         ChannelSSLContext ctx = new ChannelSSLContext(clientChannel, engineCtx);
@@ -208,7 +206,7 @@ public class ChannelSSLContextTest {
     @Test
     public void testIsSSLAndDisabledMethods() throws Exception {
         // Create SSL-enabled context (not disabled, not doing handshake)
-        javax.net.ssl.SSLContext rawCtx = javax.net.ssl.SSLContext.getInstance("TLS");
+        SSLContext rawCtx = SSLContext.getInstance("TLS");
         rawCtx.init(null, ChannelSSLContext.TRUST_ALL_MANAGERS, null);
         SSLEngineContext engineCtx = new SSLEngineContext(rawCtx, null, null, true);
         ChannelSSLContext ctx = new ChannelSSLContext(600L, clientChannel, engineCtx);
@@ -472,6 +470,90 @@ public class ChannelSSLContextTest {
                 // Timeout also covers the inner loop's awaitReadableWithTimeout path
             }
             ctx.close();
+        } finally {
+            sslServer.shutdown();
+        }
+    }
+
+    // ==================== readFully: leftover plaintext in applicationInBuf ====================
+
+    private static ChannelSSLContext sslEnabledContext(SocketChannel channel) throws Exception {
+        SSLContext rawCtx = SSLContext.getInstance("TLS");
+        rawCtx.init(null, ChannelSSLContext.TRUST_ALL_MANAGERS, null);
+        SSLEngineContext engineCtx = new SSLEngineContext(rawCtx, null, null, true);
+        return new ChannelSSLContext(channel, engineCtx);
+    }
+
+    /** position > 0 and the buffered bytes are enough: served entirely from the buffer. */
+    @Test
+    public void testSslReadFullyServedFromResidue() throws Exception {
+        ChannelSSLContext ctx = sslEnabledContext(clientChannel);
+        ByteBuffer appBuf = ctx.sslEngineCtx.applicationInBuf;
+        appBuf.put("hello".getBytes());
+        appBuf.flip();          // read mode: position=0, limit=5
+        appBuf.position(2);     // 3 unread bytes: "llo"
+
+        byte[] b = new byte[8];
+        Assertions.assertEquals(3, ctx.readFully(b, 0, 3, 1000));
+        Assertions.assertEquals("llo", new String(b, 0, 3));
+    }
+
+    /** position > 0 but fewer buffered bytes than requested: drain them, then hit EOF. */
+    @Test
+    public void testSslReadFullyDrainsResidueThenEof() throws Exception {
+        ChannelSSLContext ctx = sslEnabledContext(clientChannel);
+        ByteBuffer appBuf = ctx.sslEngineCtx.applicationInBuf;
+        appBuf.put("hello".getBytes());
+        appBuf.flip();
+        appBuf.position(2);
+
+        if (serverSide != null) {
+            serverSide.shutdownOutput();
+            serverSide.close();
+        }
+        Thread.sleep(100);
+
+        byte[] b = new byte[16];
+        try {
+            Assertions.assertEquals(-1, ctx.readFully(b, 0, 10, 500));
+        } catch (java.net.SocketTimeoutException e) {
+            // FIN not observed in time — the buffered part was consumed either way
+        }
+        Assertions.assertEquals("llo", new String(b, 0, 3));
+    }
+
+    /** Request more than one TLS record carries: partial consume, loop, then wait for more. */
+    @Test
+    public void testSslReadFullyPartialThenWaitsForMore() throws Exception {
+        int sslPort = findFreePort();
+        HTTPServer sslServer = HTTPServer.of(sslPort)
+                .pemSSL("cert/cert.pem", "cert/server.pem")
+                .requestHandler((request, response) -> {
+                    try {
+                        response.body("OK".getBytes());
+                    } catch (Exception ignored) {
+                    }
+                })
+                .startupBannerEnabled(false)
+                .start();
+        try {
+            Thread.sleep(200);
+            SocketChannel ch = SocketChannel.open();
+            ch.connect(new InetSocketAddress("127.0.0.1", sslPort));
+            ch.configureBlocking(false);
+            ChannelSSLContext ctx = ChannelSSLContext.createClientContext(900L, ch, (String[]) null);
+            ctx.write(ByteBuffer.wrap("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n".getBytes()));
+            ctx.flush();
+            Thread.sleep(300);
+
+            byte[] buf = new byte[65536];
+            try {
+                Assertions.assertEquals(-1, ctx.readFully(buf, 0, buf.length, 500));
+            } catch (java.net.SocketTimeoutException e) {
+                // expected: connection stays open, no further data arrives
+            }
+            ctx.close();
+            ch.close();
         } finally {
             sslServer.shutdown();
         }

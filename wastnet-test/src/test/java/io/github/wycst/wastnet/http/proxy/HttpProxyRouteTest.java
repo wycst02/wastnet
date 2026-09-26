@@ -42,7 +42,7 @@ public class HttpProxyRouteTest {
         @Override public long getContentLength() { return 0; }
         @Override public String getContentType() { return null; }
         @Override public void delegate(ChannelContext ctx) throws Throwable {}
-        @Override public io.github.wycst.wastnet.http.HttpBodyInputStream bodyStream() { return null; }
+        @Override public HttpBodyInputStream bodyStream() { return null; }
         @Override public byte[] getBodyData() { return new byte[0]; }
         @Override public String getHeader(String name) { return headers.get(name.toLowerCase()); }
         @Override public boolean containsHeader(String name) { return headers.containsKey(name.toLowerCase()); }
@@ -65,8 +65,8 @@ public class HttpProxyRouteTest {
                 .loopDetection(true);
         HttpProxyRoute route = new HttpProxyRoute(config);
 
-        // Read loopMarker via reflection
-        String loopMarker = (String) readField(route, "loopMarker");
+        // loopMarker is package-private (same package), read directly
+        String loopMarker = route.loopMarker;
         assertNotNull(loopMarker);
 
         ChannelContext ctx = mock(ChannelContext.class);
@@ -150,16 +150,4 @@ public class HttpProxyRouteTest {
         route.clear(); // should not throw
     }
 
-    // ==================== Helper ====================
-
-    private static Object readField(Object target, String name) throws Exception {
-        Class<?> clazz = target.getClass();
-        java.lang.reflect.Field f = null;
-        while (clazz != null && f == null) {
-            try { f = clazz.getDeclaredField(name); } catch (NoSuchFieldException e) { clazz = clazz.getSuperclass(); }
-        }
-        if (f == null) throw new NoSuchFieldException(name);
-        f.setAccessible(true);
-        return f.get(target);
-    }
 }

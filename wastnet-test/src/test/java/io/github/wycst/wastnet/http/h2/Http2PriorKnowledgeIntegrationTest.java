@@ -370,10 +370,11 @@ public class Http2PriorKnowledgeIntegrationTest {
         }
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     public void testH2PostRequest() throws Exception {
-        okhttp3.MediaType mediaType = okhttp3.MediaType.parse("text/plain; charset=utf-8");
-        okhttp3.RequestBody reqBody = okhttp3.RequestBody.create(mediaType, "Hello H2 World!");
+        MediaType mediaType = MediaType.get("text/plain; charset=utf-8");
+        RequestBody reqBody = RequestBody.create(mediaType, "Hello H2 World!");
 
         Request request = new Request.Builder()
                 .url("http://localhost:" + port + "/app/api/echo")
@@ -472,13 +473,14 @@ public class Http2PriorKnowledgeIntegrationTest {
         }
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     public void testH2LargePost() throws Exception {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < 5000; ++i) sb.append("data chunk " + i + " ");
         String bigBody = sb.toString();
-        okhttp3.MediaType mediaType = okhttp3.MediaType.parse("text/plain; charset=utf-8");
-        okhttp3.RequestBody reqBody = okhttp3.RequestBody.create(mediaType, bigBody);
+        MediaType mediaType = MediaType.get("text/plain; charset=utf-8");
+        RequestBody reqBody = RequestBody.create(mediaType, bigBody);
 
         Request request = new Request.Builder()
                 .url("http://localhost:" + port + "/app/api/echo")
@@ -631,10 +633,11 @@ public class Http2PriorKnowledgeIntegrationTest {
         }
     }
 
+    @SuppressWarnings("deprecation")
     @Test
     public void testH2RequestFullPost() throws Exception {
-        okhttp3.MediaType mt = okhttp3.MediaType.parse("text/plain; charset=utf-8");
-        okhttp3.RequestBody reqBody = okhttp3.RequestBody.create(mt, "post body data");
+        MediaType mt = MediaType.get("text/plain; charset=utf-8");
+        RequestBody reqBody = RequestBody.create(mt, "post body data");
         Request request = new Request.Builder()
                 .url("http://localhost:" + port + "/app/api/req-full?name=hello&name=world")
                 .post(reqBody)

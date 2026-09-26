@@ -114,7 +114,7 @@ public class TCPServerTest {
     @Test
     public void testStartBindError() throws Exception {
         // Bind to a port first, then try to create a server on the same port
-        java.net.ServerSocket occupied = new java.net.ServerSocket(findFreePort());
+        ServerSocket occupied = new ServerSocket(findFreePort());
         int occupiedPort = occupied.getLocalPort();
         TCPServer server = new TCPServer(occupiedPort);
         server.config().setChannelHandler(new ChannelHandler<byte[]>() {
@@ -336,9 +336,9 @@ public class TCPServerTest {
             ChannelWorker worker = server.workers()[0];
             // Non-SSL → creates plain ChannelRunner
             int helperPort = findFreePort();
-            java.net.ServerSocket ss = new java.net.ServerSocket(helperPort);
-            java.nio.channels.SocketChannel ch = java.nio.channels.SocketChannel.open();
-            ch.connect(new java.net.InetSocketAddress("127.0.0.1", ss.getLocalPort()));
+            ServerSocket ss = new ServerSocket(helperPort);
+            SocketChannel ch = SocketChannel.open();
+            ch.connect(new InetSocketAddress("127.0.0.1", ss.getLocalPort()));
             ChannelRunner runner = server.createConnectionRunner(worker, ch);
             Assertions.assertNotNull(runner);
             Assertions.assertFalse(runner instanceof ChannelSSLRunner);
@@ -367,9 +367,9 @@ public class TCPServerTest {
             ChannelWorker worker = server.workers()[0];
             // SSL → creates ChannelSSLRunner
             int helperPort = findFreePort();
-            java.net.ServerSocket ss = new java.net.ServerSocket(helperPort);
-            java.nio.channels.SocketChannel ch = java.nio.channels.SocketChannel.open();
-            ch.connect(new java.net.InetSocketAddress("127.0.0.1", ss.getLocalPort()));
+            ServerSocket ss = new ServerSocket(helperPort);
+            SocketChannel ch = SocketChannel.open();
+            ch.connect(new InetSocketAddress("127.0.0.1", ss.getLocalPort()));
             ChannelRunner runner = server.createConnectionRunner(worker, ch);
             Assertions.assertNotNull(runner);
             Assertions.assertTrue(runner instanceof ChannelSSLRunner);

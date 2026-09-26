@@ -140,6 +140,79 @@ public class HttpMethodRouteTest {
         Assertions.assertTrue(handlerCalled[0]);
     }
 
+    @Test
+    public void testBuilderHeadPutPatchDispatch() throws Throwable {
+        final boolean[] headCalled = {false};
+        final boolean[] putCalled = {false};
+        final boolean[] patchCalled = {false};
+        HttpMethodRoute route = new HttpMethodRoute()
+                .head(new HttpRoute() {
+                    @Override
+                    public void handle(String path, HttpRequest request, HttpResponse response) {
+                        headCalled[0] = true;
+                    }
+                })
+                .put(new HttpRoute() {
+                    @Override
+                    public void handle(String path, HttpRequest request, HttpResponse response) {
+                        putCalled[0] = true;
+                    }
+                })
+                .patch(new HttpRoute() {
+                    @Override
+                    public void handle(String path, HttpRequest request, HttpResponse response) {
+                        patchCalled[0] = true;
+                    }
+                });
+        route.handle("/test", MockHttpTestBase.mockRequest(HttpMethod.HEAD), null);
+        route.handle("/test", MockHttpTestBase.mockRequest(HttpMethod.PUT), null);
+        route.handle("/test", MockHttpTestBase.mockRequest(HttpMethod.PATCH), null);
+        Assertions.assertTrue(headCalled[0], "HEAD handler should be called");
+        Assertions.assertTrue(putCalled[0], "PUT handler should be called");
+        Assertions.assertTrue(patchCalled[0], "PATCH handler should be called");
+    }
+
+    @Test
+    public void testHandleReturns405ForNullMethod() throws Throwable {
+        final HttpStatus[] capturedStatus = {null};
+        final String[] capturedHeader = {null};
+        final byte[][] capturedBody = {null};
+        HttpMethodRoute route = new HttpMethodRoute().get(MockHttpTestBase.noopRoute());
+        route.handle("/", MockHttpTestBase.mockRequest(null), MockHttpTestBase.mockResponse(capturedStatus, capturedHeader, capturedBody, true));
+        Assertions.assertEquals(HttpStatus.METHOD_NOT_ALLOWED, capturedStatus[0]);
+        Assertions.assertEquals("GET", capturedHeader[0]);
+    }
+
+    @Test
+    public void testTargetReturnsDelegateWhenPresent() {
+        HttpRoute delegate = MockHttpTestBase.noopRoute();
+        Assertions.assertSame(delegate, new HttpMethodRoute(delegate, HttpMethod.GET).target());
+    }
+
+    @Test
+    public void testTargetReturnsSelfForBuilder() {
+        HttpMethodRoute route = new HttpMethodRoute();
+        Assertions.assertSame(route, route.target());
+    }
+
+    @Test
+    public void testConstructorRejectsNullDelegate() {
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new HttpMethodRoute(null, HttpMethod.GET));
+    }
+
+    @Test
+    public void testConstructorRejectsNullMethods() {
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new HttpMethodRoute(MockHttpTestBase.noopRoute(), (HttpMethod[]) null));
+    }
+
+    @Test
+    public void testConstructorRejectsEmptyMethods() {
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> new HttpMethodRoute(MockHttpTestBase.noopRoute()));
+    }
+
         // ==================== Helpers ====================
 
     /** @deprecated Use {@link MockHttpTestBase#noopRoute()} instead */

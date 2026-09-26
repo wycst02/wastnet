@@ -107,6 +107,25 @@ public abstract class Http2MessageReader extends HttpMessageReader<HttpMessage> 
     /** Max time (ms) a sender blocks waiting for flow-control credit, overridable via HttpOptions.HTTP2_FLOW_CONTROL_WAIT_TIMEOUT_MS. */
     final int flowControlWaitTimeoutMs;
 
+    // Per-connection reusable frame buffer, lazily allocated and grown only to the largest frame
+    // actually sent on this connection (not the protocol MAX). Safe under the ctx lock, no volatile needed.
+    ByteBuffer reusableFrame;
+
+    /**
+     * Returns the per-connection reusable frame buffer, (re)allocating only when {@code capacity}
+     * exceeds the current one. The caller must hold the ctx lock and fully overwrite the returned
+     * buffer before writing it out; all writes on a connection are serialized under that lock.
+     */
+    ByteBuffer obtainReusableFrame(int capacity) {
+        ByteBuffer frame = reusableFrame;
+        if (frame == null || frame.capacity() < capacity) {
+            frame = ByteBuffer.allocate(capacity);
+            reusableFrame = frame;
+        }
+        frame.clear();
+        return frame;
+    }
+
     // SETTINGS ACK (9 bytes) shared by both sides
     static final byte[] SETTINGS_ACK = {0, 0, 0, 4, 1, 0, 0, 0, 0};
 
@@ -307,9 +326,10 @@ public abstract class Http2MessageReader extends HttpMessageReader<HttpMessage> 
                 len -= nextFrameLength;
                 if (len < 1) return;
             } catch (Throwable e) {
-                if(DEBUG) {
-                    LOG.error("Http2MessageReader decode error, hexBytes: " + Utils.printHexString(Arrays.copyOfRange(buf, offset, offset + len), ' '), e);
+                if (DEBUG) {
+                    LOG.error("Http2MessageReader decode error, hexBytes: " + Utils.printHexString(Arrays.copyOfRange(buf, offset, offset + len), ' '));
                 }
+                LOG.error("Http2MessageReader decode error", e);
                 closeConnection(ctx, 1); // PROTOCOL_ERROR (fallback: unknown frame type / decode failure)
                 return;
             }
@@ -328,7 +348,7 @@ public abstract class Http2MessageReader extends HttpMessageReader<HttpMessage> 
      * Handle HTTP/2 frame based on frame type.
      */
     final void handleFrame(ChannelContext ctx, Http2Frame frame) throws IOException {
-        if (DEBUG) {
+        if (DEBUG && LOG.isDebugEnabled()) {
             synchronized (this) {
                 if (frame.type != Http2FrameType.DATA) {
                     LOG.debug("[{} {}] streamId={} length={}\n{}",

@@ -81,14 +81,4 @@ public class HttpDecodedResponse implements HttpMessage {
     public InputStream getBodyStream() {
         return bodyStream;
     }
-
-    @Override
-    public boolean isHttpRequest() {
-        return false;
-    }
-
-    @Override
-    public boolean isUpgrade() {
-        return false;
-    }
 }

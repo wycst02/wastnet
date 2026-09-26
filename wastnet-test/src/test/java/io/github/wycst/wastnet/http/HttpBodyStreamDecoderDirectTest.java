@@ -2,7 +2,6 @@ package io.github.wycst.wastnet.http;
 
 import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
-import java.lang.reflect.Method;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -276,8 +275,6 @@ public class HttpBodyStreamDecoderDirectTest {
     }
 
     private static void invokeDecode(HttpBodyStreamDecoder dec, byte[] b) throws Exception {
-        Method m = HttpBodyStreamDecoder.class.getDeclaredMethod("doDecodeMultipartFields", byte[].class);
-        m.setAccessible(true);
-        m.invoke(dec, new Object[]{b});
+        dec.doDecodeMultipartFields(b);
     }
 }

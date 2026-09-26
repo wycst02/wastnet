@@ -11,10 +11,8 @@ import java.io.InputStream;
  */
 public class HTTPServerTest {
 
-    private static void setBannerEnabled(Object instance, boolean value) throws Exception {
-        java.lang.reflect.Field f = HTTPServer.class.getDeclaredField("startupBannerEnabled");
-        f.setAccessible(true);
-        f.setBoolean(instance, value);
+    private static void setBannerEnabled(Object instance, boolean value) {
+        ((HTTPServer) instance).startupBannerEnabled = value;
     }
 
     // Expose protected hooks so onStarted/onStopped can be driven without a live bind.

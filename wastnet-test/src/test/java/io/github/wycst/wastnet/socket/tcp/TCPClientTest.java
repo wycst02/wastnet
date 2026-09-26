@@ -423,7 +423,7 @@ public class TCPClientTest {
                     byte[] realBody = new byte[bodyLen];
                     System.arraycopy(buf, 0, realBody, 0, bodyLen);
                     byte[] header = java.nio.ByteBuffer.allocate(4).putInt(bodyLen).array();
-                    java.io.OutputStream out = accepted.getOutputStream();
+                    OutputStream out = accepted.getOutputStream();
                     out.write(header); out.write(realBody); out.flush();
                 }
             } catch (Exception ignored) {}

@@ -126,7 +126,7 @@ public class HttpDefaultRequestTest {
     @Test
     public void testGetFullHeader() {
         HttpDefaultRequest req = createSimpleGetRequest();
-        java.util.List<String> value = req.getFullHeader("host");
+        List<String> value = req.getFullHeader("host");
         Assertions.assertEquals(1, value.size());
         Assertions.assertEquals("localhost:8080", value.get(0));
     }
@@ -247,7 +247,7 @@ public class HttpDefaultRequestTest {
                 HttpMethod.GET, "/".getBytes(), "/", new HashMap<String, List<String>>(),
                 HttpVersion.HTTP_1_1, headers, new byte[0], 0L, null
         );
-        java.util.List<String> full = req.getFullHeader("accept-language");
+        List<String> full = req.getFullHeader("accept-language");
         Assertions.assertEquals(2, full.size());
         Assertions.assertEquals("en-US", full.get(0));
         Assertions.assertEquals("zh-CN", full.get(1));

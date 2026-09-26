@@ -163,7 +163,7 @@ public class SmallClassTest {
         HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
         // busy starts true; use reflection to reset for test
-        java.lang.reflect.Field busyField = H2H1ProxyAdapter.class.getDeclaredField("busy");
+        Field busyField = H2H1ProxyAdapter.class.getDeclaredField("busy");
         busyField.setAccessible(true);
         ((java.util.concurrent.atomic.AtomicBoolean) busyField.get(adapter)).set(false);
         assertTrue(adapter.tryAcquire());
@@ -216,6 +216,7 @@ public class SmallClassTest {
         verify(ctx).getHandShakedApplicationProtocol();
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     public void testHttpChannelProtocolReaderSwitchToAndDecode() throws Exception {
         HttpMessageReader<HttpMessage> mockReader = mock(HttpMessageReader.class);
@@ -230,6 +231,7 @@ public class SmallClassTest {
         verify(mockReader).decode(same(ctx), any(byte[].class), eq(0), eq(5));
     }
 
+    @SuppressWarnings("unchecked")
     @Test
     public void testHttpChannelProtocolReaderUpgrade() {
         HttpMessageReader<HttpMessage> mockReader = mock(HttpMessageReader.class);

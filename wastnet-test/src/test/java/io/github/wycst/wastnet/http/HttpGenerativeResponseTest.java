@@ -1,6 +1,5 @@
 package io.github.wycst.wastnet.http;
 
-import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import io.github.wycst.wastnet.socket.tcp.NioConfig;
 import org.junit.jupiter.api.Assertions;
@@ -277,8 +276,8 @@ public class HttpGenerativeResponseTest {
         try {
             // Switch to ALLOW_DUPLICATES to trigger writeMultipleHeaderLines
             HttpHeaderUtils.HeaderConfig config =
-                    new HttpHeaderUtils.HeaderConfig(HttpHeaderUtils.HeaderMergeStrategy.ALLOW_DUPLICATES,
-                            HttpHeaderUtils.HeaderFormatStrategy.LOWERCASE);
+                    new HttpHeaderUtils.HeaderConfig(HttpHeaderUtils.MERGE_ALLOW_DUPLICATES,
+                            HttpHeaderUtils.FORMAT_LOWERCASE);
             HttpHeaderUtils.setHeaderConfig(config);
 
             TestResponse resp = createResponse();

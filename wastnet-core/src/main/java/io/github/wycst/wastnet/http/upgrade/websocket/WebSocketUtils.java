@@ -175,9 +175,8 @@ public class WebSocketUtils {
         String connection = request.getHeader(HttpHeaderNormalized.getConnection(), true);
         String secWebSocketKey = request.getHeader(HttpHeaderNormalized.getSecWebSocketKey(), true);
 
-        return HttpHeaderValues.WEBSOCKET.equalsIgnoreCase(upgrade) &&
-                HttpHeaderValues.UPGRADE.equalsIgnoreCase(connection) &&
-                !secWebSocketKey.trim().isEmpty();
+        // probe path (proxy): a missing key means "not an upgrade" instead of an NPE
+        return secWebSocketKey != null && isWebSocketUpgradeRequest(upgrade, connection, secWebSocketKey);
     }
 
     /**

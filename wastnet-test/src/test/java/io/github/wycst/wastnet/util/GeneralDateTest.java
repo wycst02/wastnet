@@ -23,26 +23,26 @@ public class GeneralDateTest {
     public void testConstructorDecomposesFields() {
         long t = millis(2020, 2, 29, 12, 34, 56);
         GeneralDate gd = new GeneralDate(t, GMT);
-        Assertions.assertEquals(2020, gd.getYear());
-        Assertions.assertEquals(2, gd.getMonth());
-        Assertions.assertEquals(29, gd.getDay());
-        Assertions.assertEquals(12, gd.getHourOfDay());
-        Assertions.assertEquals(34, gd.getMinute());
-        Assertions.assertEquals(56, gd.getSecond());
+        Assertions.assertEquals(2020, gd.year);
+        Assertions.assertEquals(2, gd.month);
+        Assertions.assertEquals(29, gd.day);
+        Assertions.assertEquals(12, gd.hourOfDay);
+        Assertions.assertEquals(34, gd.minute);
+        Assertions.assertEquals(56, gd.second);
     }
 
     @Test
     public void testLeapYearFeb29() {
         GeneralDate gd = new GeneralDate(millis(2020, 2, 29, 0, 0, 0), GMT);
-        Assertions.assertEquals(2, gd.getMonth());
-        Assertions.assertEquals(29, gd.getDay());
+        Assertions.assertEquals(2, gd.month);
+        Assertions.assertEquals(29, gd.day);
     }
 
     @Test
     public void testNonLeapYearFeb28() {
         GeneralDate gd = new GeneralDate(millis(2021, 2, 28, 0, 0, 0), GMT);
-        Assertions.assertEquals(2, gd.getMonth());
-        Assertions.assertEquals(28, gd.getDay());
+        Assertions.assertEquals(2, gd.month);
+        Assertions.assertEquals(28, gd.day);
     }
 
     @Test
@@ -104,9 +104,9 @@ public class GeneralDateTest {
         long t = millis(2020, 2, 29, 12, 34, 56); // GMT instant
         GeneralDate gd = new GeneralDate(t, plus8);
         // +8h -> 20:34:56, same day
-        Assertions.assertEquals(20, gd.getHourOfDay());
-        Assertions.assertEquals(34, gd.getMinute());
-        Assertions.assertEquals(2020, gd.getYear());
-        Assertions.assertEquals(29, gd.getDay());
+        Assertions.assertEquals(20, gd.hourOfDay);
+        Assertions.assertEquals(34, gd.minute);
+        Assertions.assertEquals(2020, gd.year);
+        Assertions.assertEquals(29, gd.day);
     }
 }

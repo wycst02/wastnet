@@ -36,11 +36,13 @@ import io.github.wycst.wastnet.http.*;
  */
 public class HttpMethodRoute implements HttpRoute {
 
+    final HttpRoute delegate;
     private final HttpRoute[] handlers = new HttpRoute[HttpMethod.values().length];
     private String allowHeader;
 
     /** No-arg constructor for builder pattern (#2). */
     public HttpMethodRoute() {
+        delegate = null;
     }
 
     /** Quick-filter constructor: one delegate for one or more methods (#1). */
@@ -51,7 +53,15 @@ public class HttpMethodRoute implements HttpRoute {
         for (HttpMethod m : allowMethods) {
             handlers[m.ordinal()] = delegate;
         }
+        this.delegate = delegate;
         buildAllowHeader();
+    }
+
+    @Override
+    public HttpRoute target() {
+        // Peel this wrapper so callers (e.g. hot-reload clear logic) see the actual route,
+        // preserving its scanned/manual affiliation through instanceof checks.
+        return delegate != null ? delegate : this;
     }
 
     // ==================== Builder methods ====================

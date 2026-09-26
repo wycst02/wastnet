@@ -22,8 +22,8 @@ public class HttpDateTest {
         // Year 2100: divisible by 100 but not 400 → C=false
         long millis2100 = 4107542400000L; // approximately 2100-03-01 GMT
         HttpDate date = new HttpDate(millis2100, GMT);
-        Assertions.assertEquals(2100, date.getYear());
-        Assertions.assertEquals(3, date.getMonth());
+        Assertions.assertEquals(2100, date.year);
+        Assertions.assertEquals(3, date.month);
     }
 
     // ==================== setTime while loop branches ====================
@@ -33,7 +33,7 @@ public class HttpDateTest {
         // December (month=12) triggers m >= 11 in while loop
         long decMillis = 1733011200000L; // 2024-12-01 GMT
         HttpDate date = new HttpDate(decMillis, GMT);
-        Assertions.assertEquals(12, date.getMonth());
+        Assertions.assertEquals(12, date.month);
     }
 
     // ==================== isSameDay false branch ====================
@@ -50,10 +50,8 @@ public class HttpDateTest {
     @Test
     public void testUpdateCacheIfNeededCrossDay() throws Exception {
         HttpDate.getCurrentDateHeaderLineBytes();
-        java.lang.reflect.Field lastUpdateField = HttpDate.class.getDeclaredField("lastUpdateMillis");
-        lastUpdateField.setAccessible(true);
         long yesterday = System.currentTimeMillis() - 48 * 60 * 60 * 1000L;
-        lastUpdateField.setLong(null, yesterday);
+        HttpDate.lastUpdateMillis = yesterday;
         byte[] line = HttpDate.getCurrentDateHeaderLineBytes();
         Assertions.assertEquals(37, line.length);
         Assertions.assertEquals('d', line[0]);

@@ -7,9 +7,9 @@ import java.lang.annotation.Target;
 
 /**
  * Indicates that a method produces a bean to be managed by the framework's
- * {@link io.github.wycst.wastnet.http.annotation.BeanContainer BeanContainer}.
+ * {@link BeanContainer BeanContainer}.
  * <p>
- * Typically used on methods within classes annotated with {@link Component @Component}.
+ * Typically used on methods within classes annotated with {@link Configuration @Configuration}.
  * The bean name defaults to the method name; a custom name can be specified
  * via {@link #value()}.
  * <p>

@@ -28,7 +28,7 @@ import static org.mockito.Mockito.*;
 @org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class ChannelContextTest {
 
-    private java.nio.channels.SocketChannel realChannel;
+    private SocketChannel realChannel;
     private ChannelContext ctx;
     private java.net.ServerSocket serverSocket;
 
@@ -37,7 +37,7 @@ public class ChannelContextTest {
         // 使用真实连接的 SocketChannel（isOpen()/isConnected() 自然返回 true）
         // Mock 无法 stub isOpen()（final 方法），不同 JDK 行为不一致
         serverSocket = new java.net.ServerSocket(0);
-        realChannel = java.nio.channels.SocketChannel.open(
+        realChannel = SocketChannel.open(
                 new java.net.InetSocketAddress("127.0.0.1", serverSocket.getLocalPort()));
         realChannel.configureBlocking(false);
         ctx = new ChannelContext(1L, realChannel, 1024);
@@ -216,11 +216,11 @@ public class ChannelContextTest {
             ctx.idleStateHandlerTrigger.onReadTriggered();
             ctx.idleStateHandlerTrigger.onWriteTriggered();
 
-            // Invoke ScheduleReadTask.run() and ScheduleWriteTask.run() via reflection.
-            // These are package-private inner classes, inaccessible from this package.
+            // Invoke scheduleReadTask.run() and scheduleWriteTask.run() via reflection.
+            // These are package-private Runnable fields, inaccessible from this package.
             // With rem > MIN_NANOS, they call scheduleReadTask/scheduleWriteTask.
-            invokeScheduleTaskRun("ScheduleReadTask");
-            invokeScheduleTaskRun("ScheduleWriteTask");
+            invokeScheduleTaskRun("scheduleReadTask");
+            invokeScheduleTaskRun("scheduleWriteTask");
 
             // ctx.schedule() succeeded (read/write futures set by real worker)
             java.lang.reflect.Field readFutureF =
@@ -273,16 +273,11 @@ public class ChannelContextTest {
         }
     }
 
-    private void invokeScheduleTaskRun(String innerClassName) throws Exception {
-        Class<?> taskClass = Class.forName(
-                "io.github.wycst.wastnet.socket.handler.IdleStateHandlerTrigger$" + innerClassName);
-        java.lang.reflect.Constructor<?> ctor =
-                taskClass.getDeclaredConstructor(IdleStateHandlerTrigger.class);
-        ctor.setAccessible(true);
-        Object task = ctor.newInstance(ctx.idleStateHandlerTrigger);
-        java.lang.reflect.Method run = taskClass.getDeclaredMethod("run");
-        run.setAccessible(true);
-        run.invoke(task);
+    private void invokeScheduleTaskRun(String fieldName) throws Exception {
+        java.lang.reflect.Field f = IdleStateHandlerTrigger.class.getDeclaredField(fieldName);
+        f.setAccessible(true);
+        Runnable task = (Runnable) f.get(ctx.idleStateHandlerTrigger);
+        task.run();
     }
 
 
@@ -591,7 +586,7 @@ public class ChannelContextTest {
     public void testSetReadKeyAndReader() {
         ctx.setReadKey(null);
         Assertions.assertNull(ctx.reader());
-        ctx.setReadKey(mock(java.nio.channels.SelectionKey.class));
+        ctx.setReadKey(mock(SelectionKey.class));
     }
 
     // ==================== channelRead triggers idle on success ====================
@@ -760,13 +755,11 @@ public class ChannelContextTest {
     public void testWakeupWithWaitingFlag() throws Exception {
         // wakeup() sets readReady=true under the lock
         ctx.wakeup();
-        java.lang.reflect.Field rf = ChannelContext.class.getDeclaredField("readReady");
-        rf.setAccessible(true);
-        Assertions.assertTrue((Boolean) rf.get(ctx));
+        Assertions.assertTrue(ctx.readReady);
 
         // awaitReadableInternal consumes readReady on the fast path and returns without waiting
         ctx.awaitReadableInternal(1000);
-        Assertions.assertFalse((Boolean) rf.get(ctx));
+        Assertions.assertFalse(ctx.readReady);
     }
 
     // ==================== writeFlush(byte[]) ====================

@@ -178,16 +178,6 @@ public abstract class HttpInternalRequest implements HttpRequest {
         return true;
     }
 
-    @Override
-    public final boolean isUpgrade() {
-        return false;
-    }
-
-    @Override
-    public boolean isBad() {
-        return false;
-    }
-
     public boolean isProtocolError() {
         return false;
     }
@@ -428,7 +418,7 @@ public abstract class HttpInternalRequest implements HttpRequest {
     public List<String> getFullHeader(String name) {
         Object val = getRawHeader(name);
         if (val == null) return null;
-        if (val instanceof String) return java.util.Collections.singletonList((String) val);
+        if (val instanceof String) return Collections.singletonList((String) val);
         return (List<String>) val;
     }
 }

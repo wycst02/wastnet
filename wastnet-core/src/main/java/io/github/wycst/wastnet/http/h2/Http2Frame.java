@@ -1,11 +1,11 @@
 package io.github.wycst.wastnet.http.h2;
 
+import io.github.wycst.wastnet.util.Utils;
+
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-
-import io.github.wycst.wastnet.util.Utils;
 
 /**
  * HTTP/2 frame structure.

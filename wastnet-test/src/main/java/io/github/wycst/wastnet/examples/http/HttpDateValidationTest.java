@@ -44,12 +44,12 @@ public class HttpDateValidationTest {
             HttpDate hd = new HttpDate(ts, GMT);
             ZonedDateTime ref = Instant.ofEpochMilli(ts).atZone(UTC);
 
-            int actualYear   = hd.getYear();
-            int actualMonth  = hd.getMonth();
-            int actualDay    = hd.getDay();
-            int actualHour   = hd.getHourOfDay();
-            int actualMinute = hd.getMinute();
-            int actualSecond = hd.getSecond();
+            int actualYear   = hd.year;
+            int actualMonth  = hd.month;
+            int actualDay    = hd.day;
+            int actualHour   = hd.hourOfDay;
+            int actualMinute = hd.minute;
+            int actualSecond = hd.second;
             int actualDow    = hd.getDayOfWeek();
 
             int expectYear   = ref.getYear();

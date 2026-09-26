@@ -11,12 +11,16 @@ public interface HttpMessage {
      *
      * @return true if the message is a request, false otherwise
      */
-    boolean isHttpRequest();
+    default boolean isHttpRequest() {
+        return false;
+    }
 
     /**
      * Whether the message is an upgrade message
      *
      * @return true if the message is an upgrade message, false otherwise
      */
-    boolean isUpgrade();
+    default boolean isUpgrade() {
+        return false;
+    }
 }

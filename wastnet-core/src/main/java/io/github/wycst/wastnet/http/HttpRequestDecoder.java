@@ -37,6 +37,11 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
     static final byte BODY_MODE_NORMAL = 0;
     static final byte BODY_MODE_STREAM = 1;
     static final byte BODY_MODE_CHUNKED = 2;
+    static final byte STATE_INIT = 0;
+    static final byte STATE_READ_HEADER = 1;
+    static final byte STATE_READ_BOUNDARY = 2;
+    static final byte STATE_READ_BODY = 3;
+    static final byte STATE_COMPLETED = 4;
 
     // Last-2-char short dispatch keys (lowercase, collation-safe with equals guard)
     private static final short K_CONTENT_TYPE   = (short)('p' << 8 | 'e');
@@ -48,7 +53,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
 
     final ChannelContext ctx;
     final HttpUriDecoder uriDecoder = new HttpUriDecoder(false);
-    private ReadState readState = ReadState.Init;
+    private byte readState = STATE_INIT;
     final String[] startLineValues = new String[3];
     byte[] startLineMiddle;
     private int startLineIdx;
@@ -122,7 +127,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
                 onException(ctx, throwable);
                 return;
             }
-            if (readState == ReadState.Completed) {
+            if (readState == STATE_COMPLETED) {
                 completed = true;
                 try {
                     onDecoded(ctx);
@@ -148,10 +153,10 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
      */
     private boolean handleBadOrTimeout() throws IOException {
         if(shallow) return false;
-        if (readState != ReadState.Completed
+        if (readState != STATE_COMPLETED
                 && System.currentTimeMillis() - requestStartTime > ctx.option(HttpOptions.REQUEST_TIMEOUT_MS)) {
             status = HttpStatus.REQUEST_TIMEOUT;
-            readState = ReadState.Completed;
+            readState = STATE_COMPLETED;
         }
         if (status != null) {
             headers.put(HttpHeaderNormalized.getConnection(), HttpHeaderValues.CLOSE); // any decoding error may leave residual bytes in buffer, force close to avoid client hang
@@ -166,13 +171,13 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
     public int decode(byte[] buf, int offset, int len) {
         int limit = offset + len;
         switch (readState) {
-            case Init:
+            case STATE_INIT:
                 return readStartLine(buf, offset, limit);
-            case ReadHeader:
+            case STATE_READ_HEADER:
                 return readHeaders(buf, offset, limit);
-            case ReadBoundary:
+            case STATE_READ_BOUNDARY:
                 return readBoundary(buf, offset, limit);
-            case ReadBody:
+            case STATE_READ_BODY:
                 return readBody(buf, offset, limit);
             default:
                 return limit;
@@ -180,7 +185,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
     }
 
     public HttpMessage getResult() {
-        if (status == null && readState == ReadState.Completed) {
+        if (status == null && readState == STATE_COMPLETED) {
             return new HttpDefaultRequest(HttpMethod.fromString(startLineValues[0]), startLineMiddle, uriDecoder.getUri(), uriDecoder.getParameters(), HttpVersion.of(startLineValues[2]), headers, body, contentLength, contentType);
         }
         return new HttpBadRequest(HttpMethod.fromString(startLineValues[0]), startLineMiddle, uriDecoder.getUri(), uriDecoder.getParameters(), HttpVersion.of(startLineValues[2]), headers, body, contentLength, contentType, null).status(status == null ? HttpStatus.BAD_REQUEST : status);
@@ -222,7 +227,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
      * digits (response). The first and third tokens are stored as strings in {@link #startLineValues}.
      * </p>
      * <p>
-     * On success, advances {@link #readState} to {@link ReadState#ReadHeader}
+     * On success, advances {@link #readState} to {@code STATE_READ_HEADER}
      * and falls through to {@link #readHeaders}. On failure or insufficient data,
      * sets {@link #status} to the appropriate error code and returns early.
      * </p>
@@ -312,7 +317,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
                 break;
             }
         }
-        readState = ReadState.ReadHeader;
+        readState = STATE_READ_HEADER;
         return readHeaders(buf, ++offset, limit);
     }
 
@@ -321,7 +326,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
         if (httpBuf.isEmpty() && offset < limit) {
             byte b = buf[offset];
             if (b == '\r' || b == '\n') {
-                readState = ReadState.ReadBoundary;
+                readState = STATE_READ_BOUNDARY;
                 return readBoundary(buf, offset, limit);
             }
         }
@@ -345,7 +350,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
             if (++offset == limit) return limit;
             byte b = buf[offset];
             if (b == '\r' || b == '\n') {
-                readState = ReadState.ReadBoundary;
+                readState = STATE_READ_BOUNDARY;
                 return readBoundary(buf, offset, limit);
             }
         }
@@ -447,7 +452,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
         } // lone '\\n' without '\\r' also accepted as boundary
 
         prepareRequestContent();
-        readState = ReadState.ReadBody;
+        readState = STATE_READ_BODY;
         return readBody(buf, offset, limit);
     }
 
@@ -458,7 +463,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
             return limit;
         }
         if (contentLength <= 0 /*|| bodySize == contentLength*/) { // bodySize always < contentLength
-            readState = ReadState.Completed;
+            readState = STATE_COMPLETED;
             if (pipelineEnabled) {
                 return offset; // zero-copy: remaining pipeline data starts here
             } else if (len > 0 && !hasContentLength) {
@@ -482,7 +487,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
     }
 
     void completedBody(byte[] buf, int offset, int len, int hbSize, byte mode) {
-        readState = ReadState.Completed;
+        readState = STATE_COMPLETED;
         bodyMode = mode;
         if (hbSize == 0) body = Arrays.copyOfRange(buf, offset, offset + len);
         else {
@@ -611,7 +616,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
     }
 
     public void reset() {
-        readState = ReadState.Init;
+        readState = STATE_INIT;
         startLineIdx = totalHeaderSize = 0;
         requestStartTime = contentLength = 0;
         expectLF = expectContinue = chunked = hasContentLength = hasHost = false;
@@ -624,9 +629,5 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
         bodyMode = BODY_MODE_NORMAL;
         body = HttpRequest.EMPTY_BODY;
         uriDecoder.reset();
-    }
-
-    public enum ReadState {
-        Init, ReadHeader, ReadBoundary, ReadBody, Completed
     }
 }

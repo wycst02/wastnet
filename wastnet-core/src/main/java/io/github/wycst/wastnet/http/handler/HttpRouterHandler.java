@@ -26,10 +26,12 @@ import io.github.wycst.wastnet.log.LogFactory;
 import io.github.wycst.wastnet.socket.handler.ClearableHandler;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 /**
@@ -78,7 +80,7 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
     private boolean interceptorsDisabled = false;
     private HttpProxyWorkerManager proxyWorkerManager;
     // Route-level interceptors (ordered chain), independent of server-wide HttpServerInterceptor
-    private final List<RouterInterceptor> interceptors = new ArrayList<>();
+    protected final List<RouterInterceptor> interceptors = new ArrayList<>();
 
     /**
      * Create a router handler with root context path ({@code "/"}).
@@ -97,21 +99,8 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
      * @param contextPath the context path (e.g. {@code "/api"}), defaults to {@code "/"}
      */
     public HttpRouterHandler(String contextPath) {
-        if (contextPath == null || (contextPath = contextPath.trim()).isEmpty()) {
-            contextPath = "/";
-        } else {
-            if (!contextPath.startsWith("/")) {
-                contextPath = "/" + contextPath;
-            }
-            // Remove all trailing "/"
-            int end = contextPath.length();
-            while (end > 1 && contextPath.charAt(end - 1) == '/') {
-                --end;
-            }
-            contextPath = contextPath.substring(0, end);
-        }
-        this.contextPath = contextPath;
-        this.contextPathLen = contextPath.length();
+        this.contextPath = normalizeBasePath(contextPath);
+        this.contextPathLen = this.contextPath.length();
     }
 
     /**
@@ -122,7 +111,7 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
      * @return this handler for chaining
      */
     public HttpRouterHandler exactRoute(String path, HttpRoute route) {
-        exactRoutes.put(path, route.self());
+        exactRoutes.put(path, route.target());
         return this;
     }
 
@@ -135,7 +124,7 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
      * @return this handler for chaining
      */
     public HttpRouterHandler exactRoute(String path, HttpRoute route, HttpMethod... allowMethods) {
-        exactRoutes.put(path, allowMethods.length == 0 ? route.self() : new HttpMethodRoute(route, allowMethods));
+        exactRoutes.put(path, allowMethods.length == 0 ? route.target() : new HttpMethodRoute(route, allowMethods));
         return this;
     }
 
@@ -151,7 +140,7 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
      * @return this handler for chaining
      */
     public HttpRouterHandler route(String path, HttpRoute route) {
-        routes.add(new RouteEntry(path, route.self()));
+        routes.add(new RouteEntry(path, route.target()));
         return this;
     }
 
@@ -159,7 +148,7 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
      * Register a prefix-matched route with optional method restrictions.
      */
     public HttpRouterHandler route(String path, HttpRoute route, HttpMethod... allowMethods) {
-        routes.add(new RouteEntry(path, allowMethods.length == 0 ? route.self() : new HttpMethodRoute(route, allowMethods)));
+        routes.add(new RouteEntry(path, allowMethods.length == 0 ? route.target() : new HttpMethodRoute(route, allowMethods)));
         return this;
     }
 
@@ -366,16 +355,43 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
     }
 
     /**
+     * Test the route against the predicate; release its resources first if it matches.
+     */
+    private static <T> boolean matchesAndClear(T route, Predicate<? super T> predicate) {
+        if (predicate.test(route)) {
+            if (route instanceof ClearableHandler) ((ClearableHandler) route).clear();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Clear routes matching the predicate from exactRoutes and routes, releasing
+     * each removed ClearableHandler first.
+     */
+    protected void clearRoutesIf(Predicate<HttpRoute> predicate) {
+        exactRoutes.entrySet().removeIf(e -> matchesAndClear(e.getValue(), predicate));
+        routes.removeIf(en -> matchesAndClear(en.handler, predicate));
+    }
+
+    /**
+     * Clear interceptors matching the predicate, releasing each removed ClearableHandler first.
+     */
+    protected void clearInterceptorsIf(Predicate<RouterInterceptor> predicate) {
+        interceptors.removeIf(i -> matchesAndClear(i, predicate));
+    }
+
+    /**
      * Clear all registered routes and release associated resources.
      *
      * <p>Cleanup order and resource release:</p>
      * <ol>
      *   <li>Iterate all handlers in {@code exactRoutes} / {@code routes} and call
      *       {@link ClearableHandler#clear()} on each that implements it.
-     *       {@link io.github.wycst.wastnet.http.proxy.HttpProxyRoute#clear()} closes
+     *       {@link HttpProxyRoute#clear()} closes
      *       <b>proxy connections</b> (clientCtx / targetCtx TCP channels) for its route.</li>
      *   <li>Clear route maps ({@code exactRoutes.clear()}, {@code routes.clear()}).</li>
-     *   <li>If a custom {@link io.github.wycst.wastnet.http.proxy.HttpProxyWorkerManager} exists,
+     *   <li>If a custom {@link HttpProxyWorkerManager} exists,
      *       call {@code shutdown()}:
      *       <ul>
      *         <li>Stops all proxy worker threads.</li>
@@ -387,29 +403,13 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
      * </ol>
      *
      * <p>Note: routes registered via {@code new HttpProxyRoute(config)} use the static
-     * {@link io.github.wycst.wastnet.http.proxy.HttpProxyWorkerManager#GLOBAL_WORKER_MANAGER},
+     * {@link HttpProxyWorkerManager#GLOBAL_WORKER_MANAGER},
      * which is never shut down (relies on JVM exit).</p>
      */
     @Override
     public void clear() {
-        for (HttpRoute route : exactRoutes.values()) {
-            if (route instanceof ClearableHandler) {
-                ((ClearableHandler) route).clear();
-            }
-        }
-        for (RouteEntry entry : routes) {
-            if (entry.handler instanceof ClearableHandler) {
-                ((ClearableHandler) entry.handler).clear();
-            }
-        }
-        exactRoutes.clear();
-        routes.clear();
-        for (RouterInterceptor interceptor : interceptors) {
-            if (interceptor instanceof ClearableHandler) {
-                ((ClearableHandler) interceptor).clear();
-            }
-        }
-        interceptors.clear();
+        clearRoutesIf(r -> true);
+        clearInterceptorsIf(i -> true);
         if (proxyWorkerManager != null) {
             proxyWorkerManager.shutdown();
             proxyWorkerManager = null;
@@ -508,10 +508,10 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
      * Route entry with pattern matching.
      */
     protected static class RouteEntry {
-        private final String pattern;
+        final String pattern;
         private final boolean prefix;
         private final Pattern regex;
-        final HttpRoute handler;
+        private final HttpRoute handler;
 
         RouteEntry(String pattern, HttpRoute handler) {
             this(pattern, false, handler);
@@ -537,13 +537,36 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
     // ==================== Upgrade registration ====================
 
     /**
+     * Normalize a base/context path: trim, treat null/empty as "/", ensure a leading
+     * slash, and strip trailing slashes while keeping at least one.
+     */
+    protected static String normalizeBasePath(String path) {
+        if (path == null || (path = path.trim()).isEmpty()) {
+            return "/";
+        }
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+        int end = path.length();
+        while (end > 1 && path.charAt(end - 1) == '/') {
+            --end;
+        }
+        return path.substring(0, end);
+    }
+
+    /**
+     * Build full path by combining a base path with a sub path, ensuring exactly one separator.
+     */
+    protected static String buildFullPath(String base, String path) {
+        String withSlash = path.startsWith("/") ? path : "/" + path;
+        return "/".equals(base) ? withSlash : base + withSlash;
+    }
+
+    /**
      * Build full path by appending path to contextPath.
      */
-    private String buildFullPath(String path) {
-        if (contextPathLen == 1) {
-            return path.startsWith("/") ? path : "/" + path;
-        }
-        return contextPath + (path.startsWith("/") ? path : "/" + path);
+    protected String buildFullPath(String path) {
+        return buildFullPath(this.contextPath, path);
     }
 
     /**
@@ -608,24 +631,40 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
      * @return this router handler for chaining
      */
     public HttpRouterHandler sse(String path, final long timeoutMs, final SseHandler handler) {
-        exactRoutes.put(path, (subPath, request, response) -> {
-            final SseEmitter emitter = ((HttpInternalResponse) response).sseEmitter();
-            final ChannelContext sseCtx = ((HttpInternalRequest) request).ctx();
-            sseCtx.runAsync(() -> {
-                try {
-                    handler.handle(emitter);
-                } catch (Throwable throwable) {
-                    log.error("SSE handler error", throwable);
-                } finally {
-                    emitter.close();
-                }
-            });
-            final long effectiveTimeoutMs = timeoutMs < 0 ? sseCtx.option(HttpOptions.SSE_TIMEOUT_MS) : timeoutMs;
-            if (!emitter.awaitClose(effectiveTimeoutMs)) {
-                emitter.close(); // timeout: force close
+        exactRoutes.put(path, (subPath, request, response) -> startSse(request, response, timeoutMs, handler));
+        return this;
+    }
+
+    /**
+     * Run an SSE task against the given request/response: open the SSE stream
+     * (set {@code text/event-stream} headers and flush), execute {@code sseTask}
+     * on a worker thread, keep the request thread blocked until the stream closes
+     * or the timeout elapses, and always close the emitter on completion.
+     * <p>
+     * Shared by {@link #sse(String, long, SseHandler)} and by scanned {@code @Sse}
+     * endpoints so both paths use identical SSE lifecycle handling.
+     *
+     * @param request    the HTTP request
+     * @param response   the HTTP response
+     * @param timeoutMs  max duration before closing; {@code < 0} falls back to {@link HttpOptions#SSE_TIMEOUT_MS}
+     * @param sseTask    the task that receives the ready-to-use {@link SseEmitter}
+     */
+    protected void startSse(HttpRequest request, HttpResponse response, long timeoutMs, SseHandler sseTask) throws IOException, InterruptedException {
+        final SseEmitter emitter = ((HttpInternalResponse) response).sseEmitter();
+        final ChannelContext sseCtx = ((HttpInternalRequest) request).ctx();
+        sseCtx.runAsync(() -> {
+            try {
+                sseTask.handle(emitter);
+            } catch (Throwable throwable) {
+                log.error("SSE handler error", throwable);
+            } finally {
+                emitter.close();
             }
         });
-        return this;
+        final long effectiveTimeoutMs = timeoutMs < 0 ? sseCtx.option(HttpOptions.SSE_TIMEOUT_MS) : timeoutMs;
+        if (!emitter.awaitClose(effectiveTimeoutMs)) {
+            emitter.close(); // timeout: force close
+        }
     }
 
     /**

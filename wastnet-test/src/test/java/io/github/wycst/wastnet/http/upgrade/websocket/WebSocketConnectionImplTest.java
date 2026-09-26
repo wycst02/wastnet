@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -316,18 +315,14 @@ class WebSocketConnectionImplTest {
         logger.setFilter(null);
     }
 
-    private Runnable getDetectionTask(WebSocketConnectionImpl conn) throws Exception {
-        Field f = WebSocketConnectionImpl.class.getDeclaredField("detectionTask");
-        f.setAccessible(true);
-        Runnable task = (Runnable) f.get(conn);
+    private Runnable getDetectionTask(WebSocketConnectionImpl conn) {
+        Runnable task = conn.detectionTask;
         assertNotNull(task);
         return task;
     }
 
-    private void setLastActiveTime(WebSocketConnectionImpl conn, long time) throws Exception {
-        Field f = WebSocketConnectionImpl.class.getDeclaredField("lastActiveTime");
-        f.setAccessible(true);
-        f.set(conn, time);
+    private void setLastActiveTime(WebSocketConnectionImpl conn, long time) {
+        conn.lastActiveTime = time;
     }
 
     /** Call timeoutDetection but catch the NPE from final method scheduleDetectionTask. */
@@ -450,9 +445,7 @@ class WebSocketConnectionImplTest {
         // First call sets up detectionTask
         try { conn.timeoutDetection(1, WebSocketResource.TimeoutStrategy.DISCONNECT); } catch (Exception ignored) {}
         // Get the future and cancel it
-        java.lang.reflect.Field f = WebSocketConnectionImpl.class.getDeclaredField("timeoutTaskFuture");
-        f.setAccessible(true);
-        java.util.concurrent.ScheduledFuture<?> future = (java.util.concurrent.ScheduledFuture<?>) f.get(conn);
+        java.util.concurrent.ScheduledFuture<?> future = conn.timeoutTaskFuture;
         if (future != null) future.cancel(true);
         // Second setTimeoutDetection should see isCancelled()=true
         try { conn.timeoutDetection(1, WebSocketResource.TimeoutStrategy.DISCONNECT); } catch (Exception ignored) {}
@@ -499,8 +492,8 @@ class WebSocketConnectionImplTest {
             server = ssc.accept();
             server.configureBlocking(false);
             ctx = new ChannelContext(client, 4096);
-            io.github.wycst.wastnet.http.upgrade.UpgradeWebSocketHolder holder =
-                    new io.github.wycst.wastnet.http.upgrade.UpgradeWebSocketHolder(
+            UpgradeWebSocketHolder holder =
+                    new UpgradeWebSocketHolder(
                             new WebSocketResource(), null);
             ctx.binding(holder);
         }
@@ -520,9 +513,7 @@ class WebSocketConnectionImplTest {
             WebSocketResponse realResp = new WebSocketResponse(mockReq, pair.ctx);
             WebSocketConnectionImpl conn = new WebSocketConnectionImpl(mockReq, realResp, pair.ctx);
             try { conn.timeoutDetection(1, WebSocketResource.TimeoutStrategy.PING); } catch (Exception ignored) {}
-            java.lang.reflect.Field f = WebSocketConnectionImpl.class.getDeclaredField("lastActiveTime");
-            f.setAccessible(true);
-            f.set(conn, System.currentTimeMillis() - 1500);
+            conn.lastActiveTime = System.currentTimeMillis() - 1500;
             // scheduleDetectionTask inside the task will NPE (no worker), but ping() executes first
             try { getDetectionTask(conn).run(); } catch (Exception ignored) {}
         } finally {

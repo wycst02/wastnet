@@ -255,13 +255,13 @@ public class Http2MessageReaderTest {
     public void testDecodeLenLessThan9ReadsFromChannel() throws Exception {
         // Use loopback TCP to buffer frame data on server side,
         // then provide only 5 bytes to decode → triggers len < 9 → read()
-        java.nio.channels.ServerSocketChannel ssc =
-                java.nio.channels.ServerSocketChannel.open();
-        ssc.socket().bind(new java.net.InetSocketAddress("127.0.0.1", 0));
+        ServerSocketChannel ssc =
+                ServerSocketChannel.open();
+        ssc.socket().bind(new InetSocketAddress("127.0.0.1", 0));
         int port = ssc.socket().getLocalPort();
 
         SocketChannel client = SocketChannel.open();
-        client.connect(new java.net.InetSocketAddress("127.0.0.1", port));
+        client.connect(new InetSocketAddress("127.0.0.1", port));
         SocketChannel server = ssc.accept();
         ssc.close();
 

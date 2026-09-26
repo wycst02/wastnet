@@ -82,8 +82,8 @@ public class IdleStateHandlerTest {
         RecordingHandler handler = new RecordingHandler(0, 0, TimeUnit.SECONDS);
         IdleStateHandlerTrigger trigger = new IdleStateHandlerTrigger(handler, mock(ChannelContext.class));
 
-        Assertions.assertNull(trigger.scheduleReadTask);
-        Assertions.assertNull(trigger.scheduleWriteTask);
+        Assertions.assertNotNull(trigger.scheduleReadTask);
+        Assertions.assertNotNull(trigger.scheduleWriteTask);
         Assertions.assertNull(trigger.readIdleFuture);
         Assertions.assertNull(trigger.writeIdleFuture);
     }
@@ -180,7 +180,7 @@ public class IdleStateHandlerTest {
         RecordingHandler handler = new RecordingHandler(0, 0, TimeUnit.SECONDS);
         IdleStateHandlerTrigger trigger = new IdleStateHandlerTrigger(handler, mock(ChannelContext.class));
 
-        IdleStateHandlerTrigger.ScheduleReadTask readTask = trigger.new ScheduleReadTask();
+        Runnable readTask = trigger.scheduleReadTask;
         trigger.scheduleReadTask = readTask;
         trigger.release();
 
@@ -192,7 +192,7 @@ public class IdleStateHandlerTest {
         RecordingHandler handler = new RecordingHandler(0, 0, TimeUnit.SECONDS);
         IdleStateHandlerTrigger trigger = new IdleStateHandlerTrigger(handler, mock(ChannelContext.class));
 
-        IdleStateHandlerTrigger.ScheduleWriteTask writeTask = trigger.new ScheduleWriteTask();
+        Runnable writeTask = trigger.scheduleWriteTask;
         trigger.scheduleWriteTask = writeTask;
         trigger.release();
 
@@ -206,12 +206,12 @@ public class IdleStateHandlerTest {
         RecordingHandler handler = new RecordingHandler(0, 0, TimeUnit.SECONDS);
         IdleStateHandlerTrigger trigger = new IdleStateHandlerTrigger(handler, mock(ChannelContext.class));
 
-        IdleStateHandlerTrigger.ScheduleReadTask readTask = trigger.new ScheduleReadTask();
+        Runnable readTask = trigger.scheduleReadTask;
         trigger.scheduleReadTask = readTask;
         trigger.readIdleFuture = mock(ScheduledFuture.class);
         // Set lastReadNanos far in the past so rem=readerIdleTimeNanos - elapsed <= 0
         trigger.lastReadNanos.set(System.nanoTime() - 10_000_000_000L);
-        setField(trigger, "readerIdleTimeNanos", 5_000_000_000L);
+        setFinalField(trigger, "readerIdleTimeNanos", 5_000_000_000L);
         try {
             readTask.run();
         } catch (Exception ignored) {
@@ -226,11 +226,11 @@ public class IdleStateHandlerTest {
         RecordingHandler handler = new RecordingHandler(0, 0, TimeUnit.SECONDS);
         IdleStateHandlerTrigger trigger = new IdleStateHandlerTrigger(handler, mock(ChannelContext.class));
 
-        IdleStateHandlerTrigger.ScheduleWriteTask writeTask = trigger.new ScheduleWriteTask();
+        Runnable writeTask = trigger.scheduleWriteTask;
         trigger.scheduleWriteTask = writeTask;
         trigger.writeIdleFuture = mock(ScheduledFuture.class);
         trigger.lastWriteNanos.set(System.nanoTime() - 10_000_000_000L);
-        setField(trigger, "writerIdleTimeNanos", 5_000_000_000L);
+        setFinalField(trigger, "writerIdleTimeNanos", 5_000_000_000L);
         try {
             writeTask.run();
         } catch (Exception ignored) {
@@ -245,12 +245,12 @@ public class IdleStateHandlerTest {
         RecordingHandler handler = new RecordingHandler(0, 0, TimeUnit.SECONDS);
         IdleStateHandlerTrigger trigger = new IdleStateHandlerTrigger(handler, mock(ChannelContext.class));
 
-        IdleStateHandlerTrigger.ScheduleReadTask readTask = trigger.new ScheduleReadTask();
+        Runnable readTask = trigger.scheduleReadTask;
         trigger.scheduleReadTask = readTask;
         trigger.readIdleFuture = mock(ScheduledFuture.class);
         // lastReadNanos set to roughly now → rem ≈ 5s > MIN_NANOS → reschedule
         trigger.lastReadNanos.set(System.nanoTime());
-        setField(trigger, "readerIdleTimeNanos", 5_000_000_000L);
+        setFinalField(trigger, "readerIdleTimeNanos", 5_000_000_000L);
         try {
             readTask.run();
         } catch (Exception ignored) {
@@ -267,11 +267,11 @@ public class IdleStateHandlerTest {
         RecordingHandler handler = new RecordingHandler(0, 0, TimeUnit.SECONDS);
         IdleStateHandlerTrigger trigger = new IdleStateHandlerTrigger(handler, mock(ChannelContext.class));
 
-        IdleStateHandlerTrigger.ScheduleWriteTask writeTask = trigger.new ScheduleWriteTask();
+        Runnable writeTask = trigger.scheduleWriteTask;
         trigger.scheduleWriteTask = writeTask;
         trigger.writeIdleFuture = mock(ScheduledFuture.class);
         trigger.lastWriteNanos.set(System.nanoTime());
-        setField(trigger, "writerIdleTimeNanos", 5_000_000_000L);
+        setFinalField(trigger, "writerIdleTimeNanos", 5_000_000_000L);
         try {
             writeTask.run();
         } catch (Exception ignored) {
@@ -286,9 +286,9 @@ public class IdleStateHandlerTest {
     public void testIncreaseTriggerWriteCountOverflow() throws Throwable {
         RecordingHandler handler = new RecordingHandler(0, 0, TimeUnit.SECONDS);
         IdleStateHandlerTrigger trigger = new IdleStateHandlerTrigger(handler, mock(ChannelContext.class));
-        setField(trigger, "idleWriteTriggerCnt", Long.MAX_VALUE);
+        trigger.idleWriteTriggerCnt = Long.MAX_VALUE;
         trigger.idleWriteTriggerConsecutiveCnt.set(Long.MAX_VALUE);
-        invokePrivate(trigger, "increaseTriggerWriteCount");
+        trigger.increaseTriggerWriteCount();
         Assertions.assertEquals(1, trigger.idleWriteTriggerCnt);
         Assertions.assertEquals(1, trigger.idleWriteTriggerConsecutiveCnt.get());
     }
@@ -297,9 +297,9 @@ public class IdleStateHandlerTest {
     public void testIncreaseTriggerReadCountOverflow() throws Throwable {
         RecordingHandler handler = new RecordingHandler(0, 0, TimeUnit.SECONDS);
         IdleStateHandlerTrigger trigger = new IdleStateHandlerTrigger(handler, mock(ChannelContext.class));
-        setField(trigger, "idleReadTriggerCnt", Long.MAX_VALUE);
+        trigger.idleReadTriggerCnt = Long.MAX_VALUE;
         trigger.idleReadTriggerConsecutiveCnt.set(Long.MAX_VALUE);
-        invokePrivate(trigger, "increaseTriggerReadCount");
+        trigger.increaseTriggerReadCount();
         Assertions.assertEquals(1, trigger.idleReadTriggerCnt);
         Assertions.assertEquals(1, trigger.idleReadTriggerConsecutiveCnt.get());
     }
@@ -386,8 +386,8 @@ public class IdleStateHandlerTest {
 
         Assertions.assertFalse(trigger.sharedMode);
         // Set timing via reflection to make scanIdle reachable without scheduling
-        setField(trigger, "readerIdleTimeNanos", 5_000_000_000L);
-        setField(trigger, "writerIdleTimeNanos", 5_000_000_000L);
+        setFinalField(trigger, "readerIdleTimeNanos", 5_000_000_000L);
+        setFinalField(trigger, "writerIdleTimeNanos", 5_000_000_000L);
         trigger.scanIdle(System.nanoTime());
 
         Assertions.assertEquals(0, handler.events.size());
@@ -410,7 +410,7 @@ public class IdleStateHandlerTest {
         RecordingHandler handler = new RecordingHandler(0, 0, TimeUnit.SECONDS);
         IdleStateHandlerTrigger trigger = new IdleStateHandlerTrigger(handler, mock(ChannelContext.class));
         trigger.release();
-        invokePrivate(trigger, "scheduleWriteTask", 1_000_000_000L);
+        trigger.scheduleWriteTask(1_000_000_000L);
     }
 
     @Test
@@ -418,30 +418,16 @@ public class IdleStateHandlerTest {
         RecordingHandler handler = new RecordingHandler(0, 0, TimeUnit.SECONDS);
         IdleStateHandlerTrigger trigger = new IdleStateHandlerTrigger(handler, mock(ChannelContext.class));
         trigger.release();
-        invokePrivate(trigger, "scheduleReadTask", 1_000_000_000L);
+        trigger.scheduleReadTask(1_000_000_000L);
     }
 
-    // ==================== Helper ====================
-
-    private static void setField(Object target, String fieldName, Object value) throws Exception {
-        java.lang.reflect.Field f = target.getClass().getDeclaredField(fieldName);
+    // Only used for the two final timing fields (readerIdleTimeNanos / writerIdleTimeNanos)
+    // which cannot be assigned directly without removing final. Other fields/methods are
+    // accessed directly (package-private), so no reflection is needed for them.
+    private static void setFinalField(Object target, String name, Object value) throws Exception {
+        java.lang.reflect.Field f = target.getClass().getDeclaredField(name);
         f.setAccessible(true);
         f.set(target, value);
-    }
-
-    private static void invokePrivate(Object target, String methodName, Object... args) throws Exception {
-        // Map boxed types to primitives for method lookup
-        Class<?>[] argTypes = new Class<?>[args.length];
-        for (int i = 0; i < args.length; ++i) {
-            Class<?> c = args[i].getClass();
-            if (c == Long.class) argTypes[i] = long.class;
-            else if (c == Integer.class) argTypes[i] = int.class;
-            else if (c == Boolean.class) argTypes[i] = boolean.class;
-            else argTypes[i] = c;
-        }
-        java.lang.reflect.Method m = target.getClass().getDeclaredMethod(methodName, argTypes);
-        m.setAccessible(true);
-        m.invoke(target, args);
     }
 
     static class RecordingHandler extends IdleStateHandler {

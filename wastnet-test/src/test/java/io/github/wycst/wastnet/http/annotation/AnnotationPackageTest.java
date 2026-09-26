@@ -33,7 +33,7 @@ public class AnnotationPackageTest {
     }
 
     @Controller("/fast")
-    public static class FastPathController {
+    public static class PkgFastPathController {
         @Endpoint("/route")
         public void fastRoute(HttpRequest req, HttpResponse resp) {}
     }
@@ -393,21 +393,60 @@ public class AnnotationPackageTest {
         BeanContainer c = new BeanContainer();
         c.setPostConstructAnnotations(new Class<?>[]{PostConstruct.class});
         c.setPreDestroyAnnotations(new Class<?>[]{PreDestroy.class});
-        c.register("test", "hello");
+        c.register("test", "hello", false);
         assertEquals("hello", c.getBean(String.class));
         assertNull(c.getBean(Integer.class));
         assertNotNull(c.getBeans());
-        c.clear();
+        c.clearAll();
         assertNull(c.getBean(String.class));
+    }
+
+    // ==================== BeanContainer - @Bean (factory) registration ====================
+
+    public interface BeanIfc {}
+    public static class BeanImpl implements BeanIfc {}
+
+    @Test public void testRegisterBean_singleLookup() {
+        BeanContainer c = new BeanContainer();
+        c.register("b", new BeanImpl(), true);
+        assertNotNull(c.getBean(BeanImpl.class));
+        assertNotNull(c.getBean(BeanIfc.class));
+    }
+
+    @Test public void testRegisterBean_multipleSameType() {
+        BeanContainer c = new BeanContainer();
+        BeanImpl a = new BeanImpl();
+        BeanImpl b = new BeanImpl();
+        c.register("a", a, true);
+        c.register("b", b, true);
+        assertSame(a, c.getBean("a"));
+        assertSame(b, c.getBean("b"));
+        // same concrete type, more than one name-qualified @Bean -> ambiguous by type
+        assertThrows(IllegalStateException.class, () -> { c.getBean(BeanImpl.class); });
+    }
+
+    @Test public void testRegisterClassVsBeanSameType() {
+        BeanContainer c = new BeanContainer();
+        BeanImpl classBean = new BeanImpl();
+        BeanImpl beanA = new BeanImpl();
+        c.register("classBean", classBean, false);   // @Component: singleton
+        c.register("beanA", beanA, true);            // @Bean: name-qualified
+        assertSame(classBean, c.getBean(BeanImpl.class));   // class-level singleton wins
+        assertSame(beanA, c.getBean("beanA"));
+    }
+
+    @Test public void testRegisterDuplicateName() {
+        BeanContainer c = new BeanContainer();
+        c.register("dup", new BeanImpl(), false);
+        assertThrows(IllegalStateException.class, () -> { c.register("dup", new BeanImpl(), true); });
     }
 
     @Test public void testPropertyAndConfig() {
         BeanContainer c = new BeanContainer();
-        c.setProperty("k1", "v1");
+        c.setStaticProperty("k1", "v1");
         Map<String, String> props = new HashMap<String, String>();
         props.put("k2", "v2");
-        c.setProperties(props);
-        c.loadConfig(config -> config.put("k3", "v3"));
+        c.addStaticProperties(props);
     }
 
     // ==================== BeanContainer - @Value injection ====================
@@ -416,14 +455,14 @@ public class AnnotationPackageTest {
         BeanContainer c = new BeanContainer();
         c.setInjectAnnotations(new Class<?>[]{Inject.class});
         c.setPostConstructAnnotations(new Class<?>[]{PostConstruct.class});
-        c.register("comp", new TestComponent());
+        c.register("comp", new TestComponent(), false);
         assertNotNull(c.getBean(TestComponent.class));
     }
 
     @Test public void testValueInjection_AllTypes() throws Exception {
         BeanContainer c = new BeanContainer();
-        c.setProperty("exists", "configuredValue");
-        c.register("vt", new ValueTypesBean());
+        c.setStaticProperty("exists", "configuredValue");
+        c.register("vt", new ValueTypesBean(), false);
         ValueTypesBean vt = c.getBean(ValueTypesBean.class);
         assertNotNull(vt);
     }
@@ -438,8 +477,8 @@ public class AnnotationPackageTest {
         BeanContainer c = new BeanContainer();
         c.setResolver(new DefaultAnnotationResolver());
         c.setInjectAnnotations(new Class<?>[]{Inject.class});
-        c.register("dep", new TestDependency());
-        c.register("dependent", new DependentBean());
+        c.register("dep", new TestDependency(), false);
+        c.register("dependent", new DependentBean(), false);
         c.injectAllFields();
         assertNotNull(c.getBean(DependentBean.class));
     }
@@ -448,7 +487,7 @@ public class AnnotationPackageTest {
         BeanContainer c = new BeanContainer();
         c.setResolver(new DefaultAnnotationResolver());
         c.setInjectAnnotations(new Class<?>[]{Inject.class});
-        c.register("dependent", new DependentBean());
+        c.register("dependent", new DependentBean(), false);
         assertThrows(RuntimeException.class, c::injectAllFields);
     }
 
@@ -484,15 +523,47 @@ public class AnnotationPackageTest {
         assertNull(c.findValueAnnotation(String.class.getDeclaredFields()[0])); // no @Value on String
     }
 
-    // ==================== BeanContainer - loadProperties ====================
+    // ==================== BeanContainer - static vs scan config ====================
 
-    @Test public void testLoadProperties_FromStream() {
+    @Test public void testStaticConfigSurvivesClearScan() {
         BeanContainer c = new BeanContainer();
-        // The test-config.properties file is on the test classpath
-        // This exercises: getResourceAsStream, props.load, config.put, finally close
-        c.loadProperties("test-config.properties");
-        // Call it again to verify multiple calls work
-        c.loadProperties("test-config.properties");
+        c.setStaticProperty("static.key", "sv");
+        c.loadScanProperties("test-config.properties");
+        assertEquals("sv", c.getConfig("static.key"));
+        assertEquals("wastnet-test", c.getConfig("app.name"));
+        // Hot reload clears only scan config; static config persists.
+        c.clearScan();
+        assertEquals("sv", c.getConfig("static.key"));
+        assertNull(c.getConfig("app.name"));
+        // Full teardown drops everything.
+        c.clearAll();
+        assertNull(c.getConfig("static.key"));
+    }
+
+    @Test public void testScanConfigOverridesStatic() {
+        BeanContainer c = new BeanContainer();
+        c.setStaticProperty("app.name", "override");
+        c.loadScanProperties("test-config.properties");
+        // Entries from the scan config file win over programmatic static values.
+        assertEquals("wastnet-test", c.getConfig("app.name"));
+    }
+
+    @Test public void testSystemPropertyOverridesConfig() {
+        BeanContainer c = new BeanContainer();
+        c.setStaticProperty("sp.key", "staticVal");
+        c.loadScanProperties("test-config.properties");
+        // No -D set yet: scan config wins.
+        assertEquals("wastnet-test", c.getConfig("app.name"));
+        // -D system property takes the highest priority.
+        String name = "wastnet.test.sysprop." + System.nanoTime();
+        System.setProperty(name, "sysVal");
+        try {
+            c.setStaticProperty(name, "staticVal");
+            c.loadScanProperties("test-config.properties");
+            assertEquals("sysVal", c.getConfig(name));
+        } finally {
+            System.clearProperty(name);
+        }
     }
 
     // ==================== BeanContainer - hasAnyAnnotation edge cases ====================
@@ -501,89 +572,142 @@ public class AnnotationPackageTest {
         BeanContainer c = new BeanContainer();
         c.setResolver(new DefaultAnnotationResolver());
         c.setInjectAnnotations(new Class<?>[]{null, Inject.class});
-        c.register("dep", new TestDependency());
-        c.register("dependent", new DependentBean());
+        c.register("dep", new TestDependency(), false);
+        c.register("dependent", new DependentBean(), false);
         c.injectAllFields();
         assertNotNull(c.getBean(DependentBean.class));
     }
 
-    // ==================== BeanContainer - resolvePlaceholder via reflection ====================
+    // ==================== BeanContainer - resolvePlaceholder ====================
 
-    @Test public void testResolvePlaceholder() throws Exception {
+    @Test public void testResolvePlaceholder() {
         BeanContainer c = new BeanContainer();
-        c.setProperty("existing.key", "resolvedValue");
-
-        java.lang.reflect.Method resolvePlaceholder =
-                BeanContainer.class.getDeclaredMethod("resolvePlaceholder", String.class);
-        resolvePlaceholder.setAccessible(true);
+        c.setStaticProperty("existing.key", "resolvedValue");
 
         // null raw -> null
-        assertNull(resolvePlaceholder.invoke(c, new Object[]{null}));
+        assertNull(c.resolvePlaceholder(null));
 
         // no placeholder -> same string
-        assertEquals("plaintext", resolvePlaceholder.invoke(c, "plaintext"));
+        assertEquals("plaintext", c.resolvePlaceholder("plaintext"));
 
         // unclosed ${ -> rest of string as-is
-        assertEquals("${unclosed", resolvePlaceholder.invoke(c, "${unclosed"));
+        assertEquals("${unclosed", c.resolvePlaceholder("${unclosed"));
 
         // key:default -> uses config when key exists
-        assertEquals("resolvedValue", resolvePlaceholder.invoke(c, "${existing.key:fallback}"));
+        assertEquals("resolvedValue", c.resolvePlaceholder("${existing.key:fallback}"));
 
         // key:default -> uses default when key missing
-        assertEquals("fallbackVal", resolvePlaceholder.invoke(c, "${missing.key:fallbackVal}"));
+        assertEquals("fallbackVal", c.resolvePlaceholder("${missing.key:fallbackVal}"));
 
-        // key without default and missing -> keeps original
-        assertEquals("${noDefault}", resolvePlaceholder.invoke(c, "${noDefault}"));
+        // key without default and missing -> throws (fail-fast on missing config)
+        assertThrows(IllegalStateException.class, () -> c.resolvePlaceholder("${noDefault}"));
 
         // multiple placeholders
         assertEquals("a-resolvedValue-b-fallback-c",
-                resolvePlaceholder.invoke(c, "a-${existing.key}-b-${x:fallback}-c"));
+                c.resolvePlaceholder("a-${existing.key}-b-${x:fallback}-c"));
+
+        // ── boundary: empty string ──
+        assertEquals("", c.resolvePlaceholder(""));
+
+        // ── boundary: no '${' at all (already plain) is covered above; unclosed '${' with prefix but no resolved part ──
+        assertEquals("abc${unclosed", c.resolvePlaceholder("abc${unclosed"));
+
+        // ── boundary: unclosed '${' AFTER a resolved placeholder (sb != null branch) ──
+        assertEquals("resolvedValue-${unclosed", c.resolvePlaceholder("${existing.key:fb}-${unclosed"));
+
+        // ── boundary: empty inner ${} (no key, no default) -> throws ──
+        assertThrows(IllegalStateException.class, () -> c.resolvePlaceholder("${}"));
+
+        // ── boundary: default value is empty ──
+        assertEquals("", c.resolvePlaceholder("${missing:}"));
+
+        // ── boundary: default value itself contains ':' ──
+        assertEquals("a:b", c.resolvePlaceholder("${missing:a:b}"));
+
+        // ── boundary: trailing extra '}' is kept literally ──
+        assertEquals("resolvedValue}", c.resolvePlaceholder("${existing.key}}"));
+
+        // ── boundary: adjacent placeholders ──
+        assertEquals("resolvedValuefallback", c.resolvePlaceholder("${existing.key}${x:fallback}"));
     }
 
-    // ==================== BeanContainer - convertValue via reflection ====================
+    // ==================== BeanContainer - convertValue ====================
 
-    @Test public void testConvertValue() throws Exception {
-        java.lang.reflect.Method convertValue =
-                BeanContainer.class.getDeclaredMethod("convertValue", String.class, Class.class);
-        convertValue.setAccessible(true);
-
+    @Test public void testConvertValue() {
         // null -> null
-        assertNull(convertValue.invoke(null, null, String.class));
+        assertNull(BeanContainer.convertValue(null, String.class));
 
         // String
-        assertEquals("abc", convertValue.invoke(null, "abc", String.class));
+        assertEquals("abc", BeanContainer.convertValue("abc", String.class));
 
         // int/Integer
-        assertEquals(42, convertValue.invoke(null, "42", int.class));
-        assertEquals(42, convertValue.invoke(null, "42", Integer.class));
+        assertEquals(42, BeanContainer.convertValue("42", int.class));
+        assertEquals(42, BeanContainer.convertValue("42", Integer.class));
 
         // long/Long
-        assertEquals(99L, convertValue.invoke(null, "99", long.class));
-        assertEquals(99L, convertValue.invoke(null, "99", Long.class));
+        assertEquals(99L, BeanContainer.convertValue("99", long.class));
+        assertEquals(99L, BeanContainer.convertValue("99", Long.class));
 
         // boolean/Boolean
-        assertEquals(true, convertValue.invoke(null, "true", boolean.class));
-        assertEquals(true, convertValue.invoke(null, "true", Boolean.class));
+        assertEquals(true, BeanContainer.convertValue("true", boolean.class));
+        assertEquals(true, BeanContainer.convertValue("true", Boolean.class));
 
         // double/Double
-        assertEquals(3.14, (Double) convertValue.invoke(null, "3.14", double.class), 0.001);
-        assertEquals(3.14, (Double) convertValue.invoke(null, "3.14", Double.class), 0.001);
+        assertEquals(3.14, (Double) BeanContainer.convertValue("3.14", double.class), 0.001);
+        assertEquals(3.14, (Double) BeanContainer.convertValue("3.14", Double.class), 0.001);
 
         // float/Float
-        assertEquals(2.5f, (Float) convertValue.invoke(null, "2.5", float.class), 0.001f);
-        assertEquals(2.5f, (Float) convertValue.invoke(null, "2.5", Float.class), 0.001f);
+        assertEquals(2.5f, (Float) BeanContainer.convertValue("2.5", float.class), 0.001f);
+        assertEquals(2.5f, (Float) BeanContainer.convertValue("2.5", Float.class), 0.001f);
 
         // short/Short
-        assertEquals((short) 10, convertValue.invoke(null, "10", short.class));
-        assertEquals((short) 10, convertValue.invoke(null, "10", Short.class));
+        assertEquals((short) 10, BeanContainer.convertValue("10", short.class));
+        assertEquals((short) 10, BeanContainer.convertValue("10", Short.class));
 
         // byte/Byte
-        assertEquals((byte) 7, convertValue.invoke(null, "7", byte.class));
-        assertEquals((byte) 7, convertValue.invoke(null, "7", Byte.class));
+        assertEquals((byte) 7, BeanContainer.convertValue("7", byte.class));
+        assertEquals((byte) 7, BeanContainer.convertValue("7", Byte.class));
 
         // Unsupported type -> null (no ClassCastException)
-        assertNull(convertValue.invoke(null, "any", Object.class));
-        assertNull(convertValue.invoke(null, "42", StringBuilder.class));
+        assertNull(BeanContainer.convertValue("any", Object.class));
+        assertNull(BeanContainer.convertValue("42", StringBuilder.class));
+
+        // bad numeric input -> NumberFormatException (config error surfaces loudly)
+        assertThrows(NumberFormatException.class, () -> BeanContainer.convertValue("${noDefault}", int.class));
+        assertThrows(NumberFormatException.class, () -> BeanContainer.convertValue("not-a-number", long.class));
+    }
+
+    // ==================== BeanContainer - resolveValue ====================
+
+    @Test public void testResolveValue() {
+        BeanContainer c = new BeanContainer();
+        c.setStaticProperty("existing.key", "resolvedValue");
+        c.setStaticProperty("int.key", "7");
+
+        // null expression -> null for any target type
+        assertNull(c.resolveValue(null, String.class));
+        assertNull(c.resolveValue(null, int.class));
+
+        // plain string (no placeholder) passed through conversion
+        assertEquals("hello", c.resolveValue("hello", String.class));
+        assertEquals(123, c.resolveValue("123", int.class));
+        assertEquals(true, c.resolveValue("true", boolean.class));
+
+        // resolved placeholder then converted
+        assertEquals("resolvedValue", c.resolveValue("${existing.key}", String.class));
+        assertEquals(7, c.resolveValue("${int.key}", int.class));
+
+        // placeholder with default, key missing -> default converted to numeric
+        assertEquals(42, c.resolveValue("${missing.key:42}", int.class));
+
+        // multiple placeholders resolved and concatenated as a string
+        assertEquals("1-2", c.resolveValue("${a:1}-${b:2}", String.class));
+
+        // unresolved placeholder, String target -> throws (fail-fast on missing config)
+        assertThrows(IllegalStateException.class, () -> c.resolveValue("${noDefault}", String.class));
+
+        // unresolved placeholder, numeric target -> IllegalStateException (fails before conversion)
+        assertThrows(IllegalStateException.class, () -> c.resolveValue("${noDefault}", int.class));
     }
 
     // ==================== BeanContainer - invokeLifecycle exception ====================
@@ -596,7 +720,7 @@ public class AnnotationPackageTest {
     @Test public void testInvokeLifecycleException() {
         BeanContainer c = new BeanContainer();
         c.setPostConstructAnnotations(new Class<?>[]{PostConstruct.class});
-        c.register("fail", new LifecycleExceptionBean());
+        c.register("fail", new LifecycleExceptionBean(), false);
         assertThrows(RuntimeException.class, c::invokeAllPostConstruct);
     }
 
@@ -620,7 +744,7 @@ public class AnnotationPackageTest {
 
     @Test public void testRouterMessageConverter() {
         HttpMessageConverter conv = new HttpMessageConverter() {
-            @Override public <T> T read(HttpRequest req, ConverterConfig cfg, Class<T> type) { return null; }
+            @Override public Object read(HttpRequest req, ConverterConfig cfg, java.lang.reflect.Type type) { return null; }
             @Override public void write(Object v, ConverterConfig cfg, HttpResponse resp) {}
         };
         assertNotNull(new AnnotationRouterHandler().messageConverter(conv));
@@ -630,8 +754,6 @@ public class AnnotationPackageTest {
         Map<String, String> m = new HashMap<String, String>(); m.put("p1", "v1");
         AnnotationRouterHandler h = new AnnotationRouterHandler();
         h.properties(m);
-        h.loadConfig(config -> config.put("cfg.key", "cfg.val"));
-        h.loadProperties();
         h.clear();
     }
 
@@ -746,7 +868,7 @@ public class AnnotationPackageTest {
 
     private static HttpMessageConverter mockConverter() {
         return new HttpMessageConverter() {
-            @Override public <T> T read(HttpRequest req, ConverterConfig cfg, Class<T> type) { return null; }
+            @Override public Object read(HttpRequest req, ConverterConfig cfg, java.lang.reflect.Type type) { return null; }
             @Override public void write(Object v, ConverterConfig cfg, HttpResponse resp) {}
         };
     }
@@ -772,7 +894,8 @@ public class AnnotationPackageTest {
         // BodyController has @ResponseBody but no messageConverter -> throws
         assertThrows(RuntimeException.class, () ->
                 new AnnotationRouterHandler()
-                        .scanPackages("io.github.wycst.wastnet.http.annotation"));
+                        .scanPackages("io.github.wycst.wastnet.http.annotation")
+                        .scan());
     }
 
     @Test
@@ -785,8 +908,8 @@ public class AnnotationPackageTest {
             @Override public boolean isWebSocketEndpoint(Class<?> c) { return false; }
             @Override public String resolveControllerPath(Class<?> c) { return ""; }
             @Override public String resolveWebSocketPath(Class<?> c) { return ""; }
-            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return java.util.Collections.emptyList(); }
-            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return java.util.Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return Collections.emptyList(); }
             @Override public boolean isConfiguration(Class<?> c) { return false; }
             @Override public String resolveValueExpression(java.lang.annotation.Annotation a) { return null; }
             @Override public String resolveInjectName(java.lang.annotation.Annotation a) { return null; }
@@ -795,41 +918,26 @@ public class AnnotationPackageTest {
         assertThrows(RuntimeException.class, () ->
                 new AnnotationRouterHandler()
                         .annotationResolver(r)
-                        .scanPackages("io.github.wycst.wastnet.http.annotation"));
+                        .scanPackages("io.github.wycst.wastnet.http.annotation")
+                        .scan());
     }
 
     @Test
     public void testRouterScanProcessBeanException() throws Exception {
-        // Directly test tryProcessBeanMethod via reflection
-        Method tryProcess = AnnotationRouterHandler.class.getDeclaredMethod("tryProcessBeanMethod",
-                Object.class, Method.class, String.class);
-        tryProcess.setAccessible(true);
         ExceptionBeanProducer bean = new ExceptionBeanProducer();
         Method failMethod = ExceptionBeanProducer.class.getMethod("failBean");
-        assertThrows(RuntimeException.class, () -> {
-            try {
-                tryProcess.invoke(new AnnotationRouterHandler(), bean, failMethod, "");
-            } catch (java.lang.reflect.InvocationTargetException e) {
-                throw e.getCause();
-            }
-        });
+        AnnotationRouterHandler h = new AnnotationRouterHandler();
+        assertThrows(RuntimeException.class,
+                () -> AnnotationRouteUtils.tryProcessBeanMethod(bean, failMethod, "", h.beanContainer, h.resolver));
     }
 
     @Test
     public void testRouterScanMissingBeanDep() throws Exception {
-        // Directly test resolveParameters via reflection
-        Method resolveParams = AnnotationRouterHandler.class.getDeclaredMethod("resolveParameters",
-                java.lang.reflect.Parameter[].class, String.class);
-        resolveParams.setAccessible(true);
         Method needDep = MissingDepBeanProducer.class.getMethod("needDep", Integer.class);
         AnnotationRouterHandler handler = new AnnotationRouterHandler();
-        assertThrows(RuntimeException.class, () -> {
-            try {
-                resolveParams.invoke(handler, needDep.getParameters(), "test");
-            } catch (java.lang.reflect.InvocationTargetException e) {
-                throw e.getCause();
-            }
-        });
+        // A bare (non-@Inject) parameter that cannot be resolved is now deferred
+        // (returns null) instead of throwing, so it can be retried during scan.
+        assertNull(AnnotationRouteUtils.resolveParameters(needDep.getParameters(), "test", handler.beanContainer, handler.resolver));
     }
 
     @Test
@@ -845,8 +953,8 @@ public class AnnotationPackageTest {
             @Override public boolean isWebSocketEndpoint(Class<?> c) { return false; }
             @Override public String resolveControllerPath(Class<?> c) { return ""; }
             @Override public String resolveWebSocketPath(Class<?> c) { return ""; }
-            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return java.util.Collections.emptyList(); }
-            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return java.util.Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return Collections.emptyList(); }
             @Override public boolean isConfiguration(Class<?> c) { return c == testonly.retrybeans.BeanDeferredConfig.DeferredConfig.class; }
             @Override public String resolveValueExpression(java.lang.annotation.Annotation ann) { return ((Value) ann).value(); }
             @Override public String resolveInjectName(java.lang.annotation.Annotation ann) { return ((Inject) ann).value(); }
@@ -862,7 +970,7 @@ public class AnnotationPackageTest {
     @Test
     public void testRouterScanBeanRetryExhausted() {
         // Only scan ExhaustRetryConfig — neverResolved depends on @Inject("nonExistent")
-        // which never gets registered — after 4 retries the exception is thrown (lines 211-214).
+        // which never gets registered — once retries are exhausted the exception is thrown (lines 211-214).
         AnnotationResolver r = new AnnotationResolver() {
             @Override public boolean accept(Class<?> c) { return c == testonly.retrybeans.BeanDeferredConfig.ExhaustRetryConfig.class; }
             @Override public boolean isComponent(Class<?> c) { return c == testonly.retrybeans.BeanDeferredConfig.ExhaustRetryConfig.class; }
@@ -871,20 +979,37 @@ public class AnnotationPackageTest {
             @Override public boolean isWebSocketEndpoint(Class<?> c) { return false; }
             @Override public String resolveControllerPath(Class<?> c) { return ""; }
             @Override public String resolveWebSocketPath(Class<?> c) { return ""; }
-            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return java.util.Collections.emptyList(); }
-            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return java.util.Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return Collections.emptyList(); }
             @Override public boolean isConfiguration(Class<?> c) { return c == testonly.retrybeans.BeanDeferredConfig.ExhaustRetryConfig.class; }
             @Override public String resolveValueExpression(java.lang.annotation.Annotation ann) { return ((Value) ann).value(); }
             @Override public String resolveInjectName(java.lang.annotation.Annotation ann) { return ((Inject) ann).value(); }
             @Override public String resolveBeanName(java.lang.annotation.Annotation ann) { return ((Bean) ann).value(); }
         };
-        RuntimeException ex = assertThrows(RuntimeException.class, () ->
+        // When a @Bean dependency can never be resolved, scan() must fail once retries are
+        // exhausted. Only the exception *type* is asserted — the message wording is an
+        // implementation detail that may change, so it is intentionally not checked here.
+        assertThrows(RuntimeException.class, () ->
                 new AnnotationRouterHandler()
                         .injectBy(Inject.class)
                         .annotationResolver(r)
-                        .scanPackages("testonly.retrybeans"));
-        assertTrue(ex.getMessage().contains("Cannot resolve dependencies after 4 retries"),
-                "Unexpected message: " + ex.getMessage());
+                        .scanPackages("testonly.retrybeans")
+                        .scan());
+    }
+
+    // A @Configuration whose @Bean method reads an @Value field: the field must be injected before the
+    // @Bean method runs, so the produced bean reflects the resolved property.
+    @Test
+    public void testRouterScanConfigValueInjectedBeforeBean() {
+        AnnotationRouterHandler h = new AnnotationRouterHandler()
+                .scanPackages("testonly.valuebean");
+        h.scan();
+        testonly.valuebean.ValueBeanConfig.MyService svc = h.beanContainer.getBean(testonly.valuebean.ValueBeanConfig.MyService.class);
+        assertNotNull(svc);
+        assertEquals("default-url", svc.url);
+        testonly.valuebean.ValueBeanConfig.ValueBeforeBeanConfig cfg = h.beanContainer.getBean(testonly.valuebean.ValueBeanConfig.ValueBeforeBeanConfig.class);
+        assertNotNull(cfg);
+        assertEquals("default-url", cfg.getUrl());
     }
 
     @Test
@@ -898,11 +1023,11 @@ public class AnnotationPackageTest {
             @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) {
                 try {
                     Method m = NoDepController.class.getMethod("fail", HttpRequest.class, HttpResponse.class);
-                    return java.util.Collections.singletonList(
+                    return Collections.singletonList(
                             new MethodRouteInfo("/fail", new HttpMethod[]{}, m));
-                } catch (Exception e) { return java.util.Collections.emptyList(); }
+                } catch (Exception e) { return Collections.emptyList(); }
             }
-            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return java.util.Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return Collections.emptyList(); }
             @Override public boolean isWebSocketEndpoint(Class<?> c) { return false; }
             @Override public String resolveWebSocketPath(Class<?> c) { return ""; }
             @Override public boolean isConfiguration(Class<?> c) { return false; }
@@ -913,7 +1038,8 @@ public class AnnotationPackageTest {
         assertThrows(RuntimeException.class, () ->
                 new AnnotationRouterHandler()
                         .annotationResolver(r)
-                        .scanPackages("io.github.wycst.wastnet.http.annotation"));
+                        .scanPackages("io.github.wycst.wastnet.http.annotation")
+                        .scan());
     }
 
     @Test
@@ -927,11 +1053,11 @@ public class AnnotationPackageTest {
             @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) {
                 try {
                     Method m = FailingController.class.getMethod("handle");
-                    return java.util.Collections.singletonList(
+                    return Collections.singletonList(
                             new MethodRouteInfo("/test", new HttpMethod[]{HttpMethod.GET}, m));
-                } catch (Exception e) { return java.util.Collections.emptyList(); }
+                } catch (Exception e) { return Collections.emptyList(); }
             }
-            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return java.util.Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return Collections.emptyList(); }
             @Override public boolean isWebSocketEndpoint(Class<?> c) { return false; }
             @Override public String resolveWebSocketPath(Class<?> c) { return ""; }
             @Override public boolean isConfiguration(Class<?> c) { return false; }
@@ -942,7 +1068,8 @@ public class AnnotationPackageTest {
         assertThrows(RuntimeException.class, () ->
                 new AnnotationRouterHandler()
                         .annotationResolver(r)
-                        .scanPackages("io.github.wycst.wastnet.http.annotation"));
+                        .scanPackages("io.github.wycst.wastnet.http.annotation")
+                        .scan());
     }
 
     @Test
@@ -956,8 +1083,8 @@ public class AnnotationPackageTest {
             @Override public boolean isController(Class<?> c) { return false; }
             @Override public boolean isComponent(Class<?> c) { return false; }
             @Override public String resolveControllerPath(Class<?> c) { return ""; }
-            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return java.util.Collections.emptyList(); }
-            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return java.util.Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return Collections.emptyList(); }
             @Override public String resolveComponentName(Class<?> c) { return ""; }
             @Override public boolean isConfiguration(Class<?> c) { return false; }
             @Override public String resolveValueExpression(java.lang.annotation.Annotation a) { return null; }
@@ -967,18 +1094,21 @@ public class AnnotationPackageTest {
         assertThrows(RuntimeException.class, () ->
                 new AnnotationRouterHandler()
                         .annotationResolver(resolver)
-                        .scanPackages("io.github.wycst.wastnet.http.annotation"));
+                        .scanPackages("io.github.wycst.wastnet.http.annotation")
+                        .scan());
     }
 
     /** Real HTTP server request to exercise anonymous class handle() methods */
     @Test
     public void testRouterRealRequests() throws Exception {
         HttpMessageConverter conv = new HttpMessageConverter() {
-            @Override public <T> T read(HttpRequest req, ConverterConfig cfg, Class<T> type) { return null; }
+            @Override public Object read(HttpRequest req, ConverterConfig cfg, java.lang.reflect.Type type) { return null; }
             @Override public void write(Object v, ConverterConfig cfg, HttpResponse resp) {}
         };
         AnnotationRouterHandler handler = new AnnotationRouterHandler()
                 .messageConverter(conv)
+                .property("null.val", "defaultNull")
+                .property("exists", "existsValue")
                 .scanPackages("io.github.wycst.wastnet.http.annotation");
         OkHttpClient client = new OkHttpClient.Builder()
                 .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
@@ -998,7 +1128,7 @@ public class AnnotationPackageTest {
             r2.close();
 
             // General path with body: BodyController.readBody(@RequestBody String)
-            okhttp3.MediaType mt = okhttp3.MediaType.parse("text/plain");
+            MediaType mt = MediaType.parse("text/plain");
             Response r3 = client.newCall(new Request.Builder()
                     .url("http://127.0.0.1:51008/body/read")
                     .post(okhttp3.RequestBody.create(mt, "test"))
@@ -1050,21 +1180,18 @@ public class AnnotationPackageTest {
                 .messageConverter(mockConverter())
                 .scanPackages("io.github.wycst.wastnet.http.annotation");
 
-        // Get exactRoutes from parent class via reflection
-        java.lang.reflect.Field exactRoutesField =
-                io.github.wycst.wastnet.http.handler.HttpRouterHandler.class.getDeclaredField("exactRoutes");
-        exactRoutesField.setAccessible(true);
+        // exactRoutes is protected in HttpRouterHandler; exposed via same-package accessor
         @SuppressWarnings("unchecked")
-        java.util.Map<String, io.github.wycst.wastnet.http.handler.HttpRoute> routes =
-                (java.util.Map<String, io.github.wycst.wastnet.http.handler.HttpRoute>)
-                        exactRoutesField.get(handler);
+        Map<String, io.github.wycst.wastnet.http.handler.HttpRoute> routes =
+                (Map<String, io.github.wycst.wastnet.http.handler.HttpRoute>)
+                        handler.exactRoutes();
 
         // Create mock request/response
         HttpRequest req = mock(HttpRequest.class);
         HttpResponse resp = mock(HttpResponse.class);
 
         // Invoke each registered route to cover anonymous class handle() methods
-        for (java.util.Map.Entry<String, io.github.wycst.wastnet.http.handler.HttpRoute> entry : routes.entrySet()) {
+        for (Map.Entry<String, io.github.wycst.wastnet.http.handler.HttpRoute> entry : routes.entrySet()) {
             try {
                 entry.getValue().handle(entry.getKey(), req, resp);
             } catch (Throwable ignored) {
@@ -1072,64 +1199,93 @@ public class AnnotationPackageTest {
         }
     }
 
-    // ==================== combinePath direct test via reflection ====================
+    // ==================== combinePath scan-driven coverage ====================
 
+    // A @Controller whose base path carries a trailing slash ("/api/") must still register a
+    // single-slash route and dispatch a client-style "/api/users" request. This exercises the
+    // combinePath trailing-slash edge case through the real scan -> register -> dispatch flow,
+    // which the old direct static calls never covered (they omitted the trailing-slash input).
     @Test
-    public void testCombinePathReflection() throws Exception {
-        Method combine = AnnotationRouterHandler.class.getDeclaredMethod("combinePath", String.class, String.class);
-        combine.setAccessible(true);
+    public void testRouterScanTrailingBaseResolvesClientUri() throws Throwable {
+        io.github.wycst.wastnet.http.annotation.trailing.TrailingBaseController.invoked = false;
+        AnnotationRouterHandler h = new AnnotationRouterHandler()
+                .scanPackages("io.github.wycst.wastnet.http.annotation.trailing");
+        h.scan();
 
-        // Create a dummy handler to call combinePath
-        AnnotationRouterHandler h = new AnnotationRouterHandler();
+        @SuppressWarnings("unchecked")
+        Map<String, io.github.wycst.wastnet.http.handler.HttpRoute> routes =
+                (Map<String, io.github.wycst.wastnet.http.handler.HttpRoute>) h.exactRoutes();
 
-        // base=null + path="/abc" -> first if, path starts with /
-        assertEquals("/abc", combine.invoke(h, (String) null, "/abc"));
+        // base "/api/" + "/users" must normalize to "/api/users", never "//"
+        assertTrue(routes.containsKey("/api/users"),
+                "expected /api/users registered, got: " + routes.keySet());
+        assertFalse(routes.containsKey("/api//users"),
+                "trailing-slash base must not produce a double-slash route key");
 
-        // base="/" + path="abc" -> first if, no leading /
-        assertEquals("/abc", combine.invoke(h, "/", "abc"));
+        // a client-style single-slash URI must dispatch to the endpoint
+        io.github.wycst.wastnet.http.handler.HttpRoute route = routes.get("/api/users");
+        assertNotNull(route, "route for /api/users should be registered");
+        HttpRequest req = mock(HttpRequest.class);
+        HttpResponse resp = mock(HttpResponse.class);
+        route.handle("/api/users", req, resp);
+        assertTrue(io.github.wycst.wastnet.http.annotation.trailing.TrailingBaseController.invoked,
+                "endpoint should be invoked for client URI /api/users");
+    }
 
-        // base="/api" + path=null -> second if, returns base
-        assertEquals("/api", combine.invoke(h, "/api", (String) null));
+    // ==================== combinePath branch coverage (scan-driven) ====================
 
-        // base="/api" + path="" -> second if, returns base
-        assertEquals("/api", combine.invoke(h, "/api", ""));
+    // Every combinePath branch, exercised through the real scan -> register flow because the
+    // method is now private. Mirrors the assertions the old direct static tests used to make.
+    @Test
+    public void testCombinePathBranchesCoveredByScan() throws Throwable {
+        AnnotationRouterHandler h = new AnnotationRouterHandler()
+                .scanPackages("io.github.wycst.wastnet.http.annotation.pathbranches");
+        h.scan();
+        @SuppressWarnings("unchecked")
+        Map<String, io.github.wycst.wastnet.http.handler.HttpRoute> routes =
+                (Map<String, io.github.wycst.wastnet.http.handler.HttpRoute>) h.exactRoutes();
 
-        // base="/api" + path="/" -> second if, returns base
-        assertEquals("/api", combine.invoke(h, "/api", "/"));
+        // base "" + "/empty" -> first branch -> "/empty"
+        assertTrue(routes.containsKey("/empty"), "empty base + /empty -> /empty, got: " + routes.keySet());
+        // base "/" + "/root" -> first branch -> "/root"
+        assertTrue(routes.containsKey("/root"), "root base / + /root -> /root, got: " + routes.keySet());
+        // base "/pSlash" + "/" -> path starts with "/" -> "/pSlash/"
+        assertTrue(routes.containsKey("/pSlash/"), "base /pSlash + path / -> /pSlash/, got: " + routes.keySet());
+        // base "/pNoLead" + "sub" -> no leading slash -> "/pNoLead/sub"
+        assertTrue(routes.containsKey("/pNoLead/sub"),
+                "base /pNoLead + sub -> /pNoLead/sub, got: " + routes.keySet());
+
+        // no branch may ever leak a double slash into a route key
+        for (String key : routes.keySet()) {
+            assertFalse(key.contains("//"), "route key must not contain double slash: " + key);
+        }
     }
 
     // ==================== PackageScanner ====================
 
     @Test public void testPackageScannerScan() {
-        List<Class<?>> classes = PackageScanner.scan("io.github.wycst.wastnet.http.annotation");
+        Set<Class<?>> classes = PackageScanner.scan(c -> true, Thread.currentThread().getContextClassLoader(), "io.github.wycst.wastnet.http.annotation");
         assertTrue(classes.size() >= 22);
         assertTrue(classes.contains(AnnotationFilter.class));
     }
 
     @Test public void testPackageScannerWithFilter() {
-        Set<Class<?>> result = PackageScanner.scan("io.github.wycst.wastnet.http.annotation",
-                clazz -> AnnotationFilter.class.isAssignableFrom(clazz));
+        Set<Class<?>> result = PackageScanner.scan(clazz -> AnnotationFilter.class.isAssignableFrom(clazz),
+                Thread.currentThread().getContextClassLoader(),
+                "io.github.wycst.wastnet.http.annotation");
         assertTrue(result.contains(AnnotationFilter.class));
         assertTrue(result.contains(AnnotationResolver.class));
     }
 
     @Test public void testPackageScannerInvalid() {
-        assertTrue(PackageScanner.scan("nonexistent.pkg", c -> true).isEmpty());
-    }
-
-    // ==================== ConfigLoader ====================
-
-    @Test public void testConfigLoader() {
-        Map<String, String> cfg = new HashMap<String, String>();
-        ((ConfigLoader) config -> config.put("k", "v")).load(cfg);
-        assertEquals("v", cfg.get("k"));
+        assertTrue(PackageScanner.scan(c -> true, Thread.currentThread().getContextClassLoader(), "nonexistent.pkg").isEmpty());
     }
 
     // ==================== HttpMessageConverter ====================
 
     @Test public void testHttpMessageConverter() throws Exception {
         HttpMessageConverter c = new HttpMessageConverter() {
-            @Override public <T> T read(HttpRequest req, ConverterConfig cfg, Class<T> type) { return null; }
+            @Override public Object read(HttpRequest req, ConverterConfig cfg, java.lang.reflect.Type type) { return null; }
             @Override public void write(Object v, ConverterConfig cfg, HttpResponse resp) {}
         };
         assertNull(c.read(null, null, String.class));

@@ -182,7 +182,7 @@ public class Http2OverTlsIntegrationTest {
 
     @Test
     public void testH2PostEcho() throws Exception {
-        okhttp3.MediaType mediaType = okhttp3.MediaType.parse("text/plain; charset=utf-8");
+        MediaType mediaType = MediaType.parse("text/plain; charset=utf-8");
         RequestBody reqBody = RequestBody.create(mediaType, ECHO_BODY);
 
         Request request = new Request.Builder()
@@ -271,7 +271,7 @@ public class Http2OverTlsIntegrationTest {
         AtomicInteger successCount = new AtomicInteger(0);
         AtomicReference<String> failureInfo = new AtomicReference<>(null);
 
-        okhttp3.MediaType mediaType = okhttp3.MediaType.parse("text/plain; charset=utf-8");
+        MediaType mediaType = MediaType.parse("text/plain; charset=utf-8");
 
         for (int i = 0; i < n; ++i) {
             final String payload = "payload-" + i;
@@ -343,7 +343,7 @@ public class Http2OverTlsIntegrationTest {
                 .sslSocketFactory(sslContext.getSocketFactory(), trustManager)
                 .hostnameVerifier((hostname, session) -> true)
                 .protocols(Arrays.asList(Protocol.HTTP_2, Protocol.HTTP_1_1))
-                .connectionPool(new ConnectionPool(0, 1, java.util.concurrent.TimeUnit.NANOSECONDS))
+                .connectionPool(new ConnectionPool(0, 1, TimeUnit.NANOSECONDS))
                 .build();
 
         RequestBody reqBody = RequestBody.create(null, binaryData);

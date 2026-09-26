@@ -49,7 +49,7 @@ public class HttpDate extends GeneralDate {
 
     // Date header line cached byte array: "Date: EEE, dd MMM yyyy HH:mm:ss GMT\r\n" (37 bytes)
     private static final byte[] DATE_HEADER_LINE_BYTES = new byte[37];
-    private static long lastUpdateMillis;
+    static long lastUpdateMillis;
     private static final long DAY_MILLIS = 24 * 60 * 60 * 1000L;
     private static final long SECOND_MILLIS = 1000L;
 
@@ -101,21 +101,21 @@ public class HttpDate extends GeneralDate {
     static void updateDatePart(long currentTimeMillis, byte[] targetBytes, int offset) {
         HttpDate gd = new HttpDate(currentTimeMillis, GMT_TIMEZONE);
         int dayOfWeek = gd.getDayOfWeek();
-        int year = gd.getYear();
+        int year = gd.year;
 
         // Update only the dynamic parts (weekday, day, month, year, time)
         System.arraycopy(WEEK_DAYS[dayOfWeek - 1], 0, targetBytes, offset, 3);
-        HttpUnsafe.writeTwoDigitChar(targetBytes, offset + 5, gd.getDay());
-        System.arraycopy(MONTHS[gd.getMonth() - 1], 0, targetBytes, offset + 8, 3);
+        HttpUnsafe.writeTwoDigitChar(targetBytes, offset + 5, gd.day);
+        System.arraycopy(MONTHS[gd.month - 1], 0, targetBytes, offset + 8, 3);
         // Full year update using arithmetic optimization
         int yearDiv100 = (int) (year * 1374389535L >> 37);
         HttpUnsafe.writeTwoDigitChar(targetBytes, offset + 12, yearDiv100);
         HttpUnsafe.writeTwoDigitChar(targetBytes, offset + 14, year - yearDiv100 * 100);
 
         // Update time portion (hour, minute, second)
-        HttpUnsafe.writeTwoDigitChar(targetBytes, offset + 17, gd.getHourOfDay());
-        HttpUnsafe.writeTwoDigitChar(targetBytes, offset + 20, gd.getMinute());
-        HttpUnsafe.writeTwoDigitChar(targetBytes, offset + 23, gd.getSecond());
+        HttpUnsafe.writeTwoDigitChar(targetBytes, offset + 17, gd.hourOfDay);
+        HttpUnsafe.writeTwoDigitChar(targetBytes, offset + 20, gd.minute);
+        HttpUnsafe.writeTwoDigitChar(targetBytes, offset + 23, gd.second);
     }
 
     private static void updateDateCache(long currentTimeMillis) {
@@ -127,9 +127,9 @@ public class HttpDate extends GeneralDate {
 
         // Only update time portion - all static characters are already set
         // Offset by 6 to skip "Date: " prefix
-        HttpUnsafe.writeTwoDigitChar(DATE_HEADER_LINE_BYTES, 23, gd.getHourOfDay());
-        HttpUnsafe.writeTwoDigitChar(DATE_HEADER_LINE_BYTES, 26, gd.getMinute());
-        HttpUnsafe.writeTwoDigitChar(DATE_HEADER_LINE_BYTES, 29, gd.getSecond());
+        HttpUnsafe.writeTwoDigitChar(DATE_HEADER_LINE_BYTES, 23, gd.hourOfDay);
+        HttpUnsafe.writeTwoDigitChar(DATE_HEADER_LINE_BYTES, 26, gd.minute);
+        HttpUnsafe.writeTwoDigitChar(DATE_HEADER_LINE_BYTES, 29, gd.second);
         lastUpdateMillis = currentTimeMillis;
     }
 

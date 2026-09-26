@@ -7,8 +7,6 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -84,7 +82,7 @@ public class HttpResourceRouteTest {
         try {
             // Create an actual file to serve
             File testFile = new File(tempDir, "test.txt");
-            java.nio.file.Files.write(testFile.toPath(), "hello".getBytes());
+            Files.write(testFile.toPath(), "hello".getBytes());
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
             final HttpStatus[] capturedStatus = {null};
             handler.handle("/test.txt", MockHttpTestBase.mockRequest(HttpMethod.GET),
@@ -100,7 +98,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File indexFile = new File(tempDir, "index.html");
-            java.nio.file.Files.write(indexFile.toPath(), "<html></html>".getBytes());
+            Files.write(indexFile.toPath(), "<html></html>".getBytes());
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
             final HttpStatus[] capturedStatus = {null};
             handler.handle("/", MockHttpTestBase.mockRequest(HttpMethod.GET),
@@ -116,7 +114,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File indexFile = new File(tempDir, "index.html");
-            java.nio.file.Files.write(indexFile.toPath(), "<html></html>".getBytes());
+            Files.write(indexFile.toPath(), "<html></html>".getBytes());
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
             handler.earlyHints("<style.css>; rel=preload; as=style");
             final HttpStatus[] capturedStatus = {null};
@@ -134,28 +132,28 @@ public class HttpResourceRouteTest {
     public void testEarlyHintsNullInput() {
         HttpResourceRoute handler = new HttpResourceRoute("/", ".");
         handler.earlyHints((String[]) null);
-        Assertions.assertNull(getEarlyHintLinks(handler));
+        Assertions.assertNull(handler.earlyHintLinks);
     }
 
     @Test
     public void testEarlyHintsEmptyArray() {
         HttpResourceRoute handler = new HttpResourceRoute("/", ".");
         handler.earlyHints();
-        Assertions.assertNull(getEarlyHintLinks(handler));
+        Assertions.assertNull(handler.earlyHintLinks);
     }
 
     @Test
     public void testEarlyHintsArrayWithEmptyString() {
         HttpResourceRoute handler = new HttpResourceRoute("/", ".");
         handler.earlyHints("");
-        Assertions.assertNull(getEarlyHintLinks(handler));
+        Assertions.assertNull(handler.earlyHintLinks);
     }
 
     @Test
     public void testEarlyHintsValidLinks() {
         HttpResourceRoute handler = new HttpResourceRoute("/", ".");
         handler.earlyHints("<a.css>; rel=preload", "<b.js>; rel=preload");
-        String[] links = getEarlyHintLinks(handler);
+        String[] links = handler.earlyHintLinks;
         Assertions.assertNotNull(links);
         Assertions.assertEquals(2, links.length);
         Assertions.assertEquals("<a.css>; rel=preload", links[0]);
@@ -166,7 +164,7 @@ public class HttpResourceRouteTest {
     public void testEarlyHintsFiltersNullAndEmptyEntries() {
         HttpResourceRoute handler = new HttpResourceRoute("/", ".");
         handler.earlyHints("<valid.css>; rel=preload", null, "", "<also.css>; rel=preload");
-        String[] links = getEarlyHintLinks(handler);
+        String[] links = handler.earlyHintLinks;
         Assertions.assertNotNull(links);
         Assertions.assertEquals(2, links.length);
         Assertions.assertEquals("<valid.css>; rel=preload", links[0]);
@@ -177,7 +175,7 @@ public class HttpResourceRouteTest {
     public void testEarlyHintsAllEntriesNullResultsInNull() {
         HttpResourceRoute handler = new HttpResourceRoute("/", ".");
         handler.earlyHints(null, "", null);
-        Assertions.assertNull(getEarlyHintLinks(handler));
+        Assertions.assertNull(handler.earlyHintLinks);
     }
 
     @Test
@@ -185,18 +183,8 @@ public class HttpResourceRouteTest {
         HttpResourceRoute handler = new HttpResourceRoute("/", ".");
         handler.earlyHints("<style.css>; rel=preload");
         // no setBasePath → resolveEarlyHintBase returns early (earlyHintLinks != null but basePath == null)
-        String[] links = getEarlyHintLinks(handler);
+        String[] links = handler.earlyHintLinks;
         Assertions.assertEquals("<style.css>; rel=preload", links[0]);
-    }
-
-    private static String[] getEarlyHintLinks(HttpResourceRoute handler) {
-        try {
-            Field field = HttpResourceRoute.class.getDeclaredField("earlyHintLinks");
-            field.setAccessible(true);
-            return (String[]) field.get(handler);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
     }
 
     private static File createTempDir(String prefix) {
@@ -224,7 +212,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File testFile = new File(tempDir, "style.css");
-            java.nio.file.Files.write(testFile.toPath(), "body {}".getBytes());
+            Files.write(testFile.toPath(), "body {}".getBytes());
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
             handler.cacheControl("text/css", "public, max-age=31536000");
             final HttpStatus[] capturedStatus = {null};
@@ -241,7 +229,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File testFile = new File(tempDir, "photo.png");
-            java.nio.file.Files.write(testFile.toPath(), new byte[100]);
+            Files.write(testFile.toPath(), new byte[100]);
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
             handler.cacheControl("image/*", "public, max-age=2592000");
             final HttpStatus[] capturedStatus = {null};
@@ -258,7 +246,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File testFile = new File(tempDir, "data.bin");
-            java.nio.file.Files.write(testFile.toPath(), new byte[50]);
+            Files.write(testFile.toPath(), new byte[50]);
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
             // rules exist but don't match text/html or application/octet-stream
             handler.cacheControl("image/*", "public, max-age=2592000");
@@ -285,7 +273,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File testFile = new File(tempDir, "app.js");
-            java.nio.file.Files.write(testFile.toPath(), "var x=1;".getBytes());
+            Files.write(testFile.toPath(), "var x=1;".getBytes());
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
             handler.cacheEnabled(false);
             handler.cacheControl("application/javascript", "public, max-age=31536000");
@@ -305,7 +293,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File indexFile = new File(tempDir, "index.html");
-            java.nio.file.Files.write(indexFile.toPath(), "home".getBytes());
+            Files.write(indexFile.toPath(), "home".getBytes());
             HttpResourceRoute handler = new HttpResourceRoute(tempDir.getAbsolutePath());
             final HttpStatus[] capturedStatus = {null};
             handler.handle("/", MockHttpTestBase.mockRequest(HttpMethod.GET),
@@ -339,7 +327,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File testFile = new File(tempDir, "test.txt");
-            java.nio.file.Files.write(testFile.toPath(), "hello".getBytes());
+            Files.write(testFile.toPath(), "hello".getBytes());
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
             final HttpStatus[] capturedStatus = {null};
             // Double // prefix triggers the while loop in handle()
@@ -373,7 +361,7 @@ public class HttpResourceRouteTest {
             Files.write(notADir.toPath(), "x".getBytes());
             // docBase is a regular file -> isDirectory() is false, so the scan is short-circuited
             HttpResourceRoute handler = new HttpResourceRoute("/", notADir.getAbsolutePath(), null);
-            Assertions.assertFalse(getCheckSymlinks(handler));
+            Assertions.assertFalse(handler.checkSymlinks);
         } finally {
             deleteDir(tempDir);
         }
@@ -385,23 +373,23 @@ public class HttpResourceRouteTest {
     public void testForbiddenBodyCustomized() throws Exception {
         HttpResourceRoute handler = new HttpResourceRoute("/", ".");
         Assertions.assertSame(handler, handler.forbiddenBody("CUSTOM 403"));
-        Assertions.assertEquals("CUSTOM 403", new String(getForbiddenBytes(handler)));
+        Assertions.assertEquals("CUSTOM 403", new String(handler.forbiddenBytes));
     }
 
     @Test
     public void testAllowSymlinksTogglesCheckSymlinks() throws Exception {
         HttpResourceRoute handler = new HttpResourceRoute("/", ".");
         handler.allowSymlinks(true);
-        Assertions.assertFalse(getCheckSymlinks(handler), "allow=true must skip the runtime check");
+        Assertions.assertFalse(handler.checkSymlinks, "allow=true must skip the runtime check");
         handler.allowSymlinks(false);
-        Assertions.assertTrue(getCheckSymlinks(handler), "allow=false must enable the runtime check");
+        Assertions.assertTrue(handler.checkSymlinks, "allow=false must enable the runtime check");
     }
 
     @Test
     public void testDefaultCacheControlCustomized() throws Exception {
         HttpResourceRoute handler = new HttpResourceRoute("/", ".");
         Assertions.assertSame(handler, handler.defaultCacheControl("public, max-age=3600"));
-        Assertions.assertEquals("public, max-age=3600", getDefaultCacheControl(handler));
+        Assertions.assertEquals("public, max-age=3600", handler.defaultCacheControl);
     }
 
     // ==================== hasSymlinkInPath ====================
@@ -475,7 +463,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             // expired deadline -> conservative "assume symlink" to avoid an unbounded scan
-            Assertions.assertTrue(invokeScanHasSymlink(tempDir, System.currentTimeMillis() - 1));
+            Assertions.assertTrue(HttpResourceRoute.scanHasSymlink(tempDir, System.currentTimeMillis() - 1));
         } finally {
             deleteRecursively(tempDir);
         }
@@ -487,7 +475,7 @@ public class HttpResourceRouteTest {
         Files.write(notADir.toPath(), "x".getBytes());
         try {
             // listFiles() returns null for a non-directory -> treated as "no symlink"
-            Assertions.assertFalse(invokeScanHasSymlink(notADir, System.currentTimeMillis() + 3000));
+            Assertions.assertFalse(HttpResourceRoute.scanHasSymlink(notADir, System.currentTimeMillis() + 3000));
         } finally {
             notADir.delete();
         }
@@ -500,7 +488,7 @@ public class HttpResourceRouteTest {
             File sub = new File(tempDir, "sub");
             sub.mkdirs();
             Files.write(new File(sub, "a.txt").toPath(), "x".getBytes());
-            Assertions.assertFalse(invokeScanHasSymlink(tempDir, System.currentTimeMillis() + 3000));
+            Assertions.assertFalse(HttpResourceRoute.scanHasSymlink(tempDir, System.currentTimeMillis() + 3000));
         } finally {
             deleteRecursively(tempDir);
         }
@@ -553,7 +541,7 @@ public class HttpResourceRouteTest {
                 Assumptions.abort("symlink creation not permitted on this host: " + e.getMessage());
             }
             // file symlink -> symlink=true && !isDirectory -> return true
-            Assertions.assertTrue(invokeScanHasSymlink(tempDir, System.currentTimeMillis() + 3000));
+            Assertions.assertTrue(HttpResourceRoute.scanHasSymlink(tempDir, System.currentTimeMillis() + 3000));
 
             // symlink nested in a sub directory -> recursion reports true
             File csub = new File(clean, "sub");
@@ -563,37 +551,11 @@ public class HttpResourceRouteTest {
             } catch (Exception e) {
                 Assumptions.abort("symlink creation not permitted on this host: " + e.getMessage());
             }
-            Assertions.assertTrue(invokeScanHasSymlink(clean, System.currentTimeMillis() + 3000));
+            Assertions.assertTrue(HttpResourceRoute.scanHasSymlink(clean, System.currentTimeMillis() + 3000));
         } finally {
             deleteRecursively(tempDir);
             deleteRecursively(clean);
         }
-    }
-
-    // ==================== reflection helpers ====================
-
-    private static boolean getCheckSymlinks(HttpResourceRoute handler) throws Exception {
-        Field f = HttpResourceRoute.class.getDeclaredField("checkSymlinks");
-        f.setAccessible(true);
-        return (Boolean) f.get(handler);
-    }
-
-    private static byte[] getForbiddenBytes(HttpResourceRoute handler) throws Exception {
-        Field f = HttpResourceRoute.class.getDeclaredField("forbiddenBytes");
-        f.setAccessible(true);
-        return (byte[]) f.get(handler);
-    }
-
-    private static String getDefaultCacheControl(HttpResourceRoute handler) throws Exception {
-        Field f = HttpResourceRoute.class.getDeclaredField("defaultCacheControl");
-        f.setAccessible(true);
-        return (String) f.get(handler);
-    }
-
-    private static boolean invokeScanHasSymlink(File dir, long deadline) throws Exception {
-        Method m = HttpResourceRoute.class.getDeclaredMethod("scanHasSymlink", File.class, long.class);
-        m.setAccessible(true);
-        return (Boolean) m.invoke(null, dir, deadline);
     }
 
     private static void deleteRecursively(File file) {

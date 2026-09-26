@@ -97,6 +97,20 @@ public class SseEmitter {
         this.onClose = callback;
     }
 
+    /**
+     * Access the underlying HTTP request that opened this SSE connection.
+     * <p>
+     * Handy inside {@code router.sse()} handlers to read query parameters,
+     * headers, path variables, etc. — information that the {@link SseHandler}
+     * lambda alone does not receive.
+     *
+     * @return the HTTP request for this SSE connection
+     */
+    public HttpRequest request() {
+        // response is always an HttpInternalResponse in production, read its inner request
+        return response instanceof HttpInternalResponse ? ((HttpInternalResponse) response).request : null;
+    }
+
     public boolean isClosed() {
         return closed;
     }

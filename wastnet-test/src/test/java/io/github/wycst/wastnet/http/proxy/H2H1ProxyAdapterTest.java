@@ -59,7 +59,7 @@ public class H2H1ProxyAdapterTest {
 
     private static Http2MessageReader createReader() throws Exception {
         Http2MessageReader reader = mock(Http2MessageReader.class);
-        io.github.wycst.wastnet.http.h2.H2TestHelper.initMockReader(reader);
+        H2TestHelper.initMockReader(reader);
         setFinalInt(reader, "streamInitSendWindowSize", 65535);
         setFinalInt(reader, "maxSendPayloadSize", 16384);
         setFinalInt(reader, "connectSendWindow", 65535);

@@ -423,7 +423,7 @@ public class WebSocketResource extends UpgradeResource {
 
     /**
      * Sets the maximum WebSocket payload size for this endpoint.
-     * This overrides the global default ({@link io.github.wycst.wastnet.http.HttpConf#MAX_WS_FRAME_SIZE}).
+     * This overrides the global default ({@link HttpConf#MAX_WS_FRAME_SIZE}).
      *
      * @param maxPayloadSize max payload size in bytes (capped at Integer.MAX_VALUE)
      * @return this instance for chaining

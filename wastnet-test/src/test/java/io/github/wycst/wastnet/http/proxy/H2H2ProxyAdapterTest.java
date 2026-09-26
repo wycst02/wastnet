@@ -220,13 +220,12 @@ public class H2H2ProxyAdapterTest {
         ChannelContext clientCtx = createRealCtx();
         ChannelContext targetCtx = mockCtx(false);
         HttpProxyConnection conn = newConn(clientCtx, targetCtx);
-        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn);
 
         Http2ClientReader reader = mock(Http2ClientReader.class);
         when(reader.nextStreamId()).thenReturn(1);
         // returning null makes sendH2RequestHeaders NPE -> catch -> sendGatewayError
         when(reader.getOrCreateStream(eq(1), any())).thenReturn(null);
-        setFinalField(adapter, "clientReader", reader);
+        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn, reader);
 
         Http2MessageReader r = createReader();
         TestStream serverStream = new TestStream(r, 1, clientCtx);
@@ -249,12 +248,11 @@ public class H2H2ProxyAdapterTest {
         ChannelContext clientCtx = createRealCtx();
         ChannelContext targetCtx = mockCtx(true);
         HttpProxyConnection conn = newConn(clientCtx, targetCtx);
-        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn);
 
         Http2ClientReader reader = mock(Http2ClientReader.class);
         when(reader.nextStreamId()).thenReturn(1);
         when(reader.getOrCreateStream(eq(1), any())).thenReturn(null);
-        setFinalField(adapter, "clientReader", reader);
+        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn, reader);
 
         Http2MessageReader r = createReader();
         TestStream serverStream = new TestStream(r, 1, clientCtx);
@@ -275,10 +273,9 @@ public class H2H2ProxyAdapterTest {
     public void testOnDataNotTargetReturnsEarly() throws Exception {
         ChannelContext ctx = createRealCtx();
         HttpProxyConnection conn = newConn(ctx, ctx);
-        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn);
 
         Http2ClientReader reader = mock(Http2ClientReader.class);
-        setFinalField(adapter, "clientReader", reader);
+        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn, reader);
 
         ByteBuffer buf = ByteBuffer.wrap("HTTP/2 frames".getBytes());
         adapter.onData(buf, ctx, false, conn);
@@ -293,10 +290,9 @@ public class H2H2ProxyAdapterTest {
         ChannelContext clientCtx = createRealCtx();
         ChannelContext targetCtx = createRealCtx();
         HttpProxyConnection conn = newConn(clientCtx, targetCtx);
-        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn);
 
         Http2ClientReader reader = mock(Http2ClientReader.class);
-        setFinalField(adapter, "clientReader", reader);
+        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn, reader);
 
         ByteBuffer buf = ByteBuffer.wrap("HTTP/2 frames".getBytes());
         adapter.onData(buf, targetCtx, true, conn);
@@ -310,10 +306,9 @@ public class H2H2ProxyAdapterTest {
         ChannelContext clientCtx = createRealCtx();
         ChannelContext targetCtx = createRealCtx();
         HttpProxyConnection conn = newConn(clientCtx, targetCtx);
-        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn);
 
         Http2ClientReader reader = mock(Http2ClientReader.class);
-        setFinalField(adapter, "clientReader", reader);
+        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn, reader);
 
         Http2ClientStream clientStream = mock(Http2ClientStream.class);
         when(clientStream.getStreamId()).thenReturn(999);
@@ -328,15 +323,14 @@ public class H2H2ProxyAdapterTest {
         ChannelContext clientCtx = createRealCtx();
         ChannelContext targetCtx = createRealCtx();
         HttpProxyConnection conn = newConn(clientCtx, targetCtx);
-        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn);
 
         Http2ClientReader reader = mock(Http2ClientReader.class);
-        setFinalField(adapter, "clientReader", reader);
+        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn, reader);
 
         Http2ServerStream serverStream = mock(Http2ServerStream.class);
         when(serverStream.isRemoved()).thenReturn(true);
         when(serverStream.getStreamId()).thenReturn(1);
-        getServerStreamMap(adapter).put(1, serverStream);
+        adapter.serverStreamMap.put(1, serverStream);
 
         Http2ClientStream clientStream = mock(Http2ClientStream.class);
         when(clientStream.getStreamId()).thenReturn(1);
@@ -350,18 +344,17 @@ public class H2H2ProxyAdapterTest {
         ChannelContext clientCtx = createRealCtx();
         ChannelContext targetCtx = createRealCtx();
         HttpProxyConnection conn = newConn(clientCtx, targetCtx);
-        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn);
 
         Http2ClientReader reader = mock(Http2ClientReader.class);
         HttpDecodedResponse decoded = new HttpDecodedResponse(HttpVersion.HTTP_2, 200, "OK",
                 new LinkedHashMap<String, Object>(), null, 0, "text/plain");
         when(reader.buildResponse(any())).thenReturn(decoded);
-        setFinalField(adapter, "clientReader", reader);
+        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn, reader);
 
         Http2ServerStream serverStream = mock(Http2ServerStream.class);
         when(serverStream.isRemoved()).thenReturn(false);
         when(serverStream.getStreamId()).thenReturn(1);
-        getServerStreamMap(adapter).put(1, serverStream);
+        adapter.serverStreamMap.put(1, serverStream);
 
         Http2ClientStream clientStream = mock(Http2ClientStream.class);
         when(clientStream.getStreamId()).thenReturn(1);
@@ -377,16 +370,15 @@ public class H2H2ProxyAdapterTest {
         ChannelContext clientCtx = createRealCtx();
         ChannelContext targetCtx = createRealCtx();
         HttpProxyConnection conn = newConn(clientCtx, targetCtx);
-        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn);
 
         Http2ClientReader reader = mock(Http2ClientReader.class);
         when(reader.buildResponse(any())).thenThrow(new RuntimeException("decode failed"));
-        setFinalField(adapter, "clientReader", reader);
+        H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn, reader);
 
         Http2ServerStream serverStream = mock(Http2ServerStream.class);
         when(serverStream.isRemoved()).thenReturn(false);
         when(serverStream.getStreamId()).thenReturn(1);
-        getServerStreamMap(adapter).put(1, serverStream);
+        adapter.serverStreamMap.put(1, serverStream);
 
         Http2ClientStream clientStream = mock(Http2ClientStream.class);
         when(clientStream.getStreamId()).thenReturn(1);
@@ -394,12 +386,4 @@ public class H2H2ProxyAdapterTest {
         adapter.onHandle(targetCtx, clientStream);
     }
 
-    // ==================== helper to access package-private serverStreamMap ====================
-
-    @SuppressWarnings("unchecked")
-    private static java.util.concurrent.ConcurrentHashMap<Integer, Http2ServerStream> getServerStreamMap(H2H2ProxyAdapter adapter) throws Exception {
-        Field f = H2H2ProxyAdapter.class.getDeclaredField("serverStreamMap");
-        f.setAccessible(true);
-        return (java.util.concurrent.ConcurrentHashMap<Integer, Http2ServerStream>) f.get(adapter);
-    }
 }

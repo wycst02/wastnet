@@ -134,7 +134,7 @@ public class HttpResponseTest {
         HttpDefaultResponse resp = (HttpDefaultResponse) req.getResponse();
         resp.setChunked(true);
         // streamingGzipCompress wraps ChunkedOutputStream with GZIPOutputStream
-        try (java.io.ByteArrayInputStream in = new java.io.ByteArrayInputStream("hello".getBytes())) {
+        try (ByteArrayInputStream in = new ByteArrayInputStream("hello".getBytes())) {
             resp.streamingGzipCompress(in);
         } finally {
             accepted.close();

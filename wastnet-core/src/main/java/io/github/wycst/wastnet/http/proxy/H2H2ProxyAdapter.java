@@ -59,13 +59,19 @@ public class H2H2ProxyAdapter implements ChannelHandler<Object>, HttpProxyAdapte
 
     public H2H2ProxyAdapter(HttpProxyConnection connection) {
         this.connection = connection;
-        this.clientReader = new Http2ClientReader(connection.targetCtx);
         connection.targetCtx.setChannelHandler(this);
+        this.clientReader = new Http2ClientReader(connection.targetCtx);
         try {
             clientReader.init(connection.targetCtx);
         } catch (Exception e) {
             throw new RuntimeException("H2 handshake with target failed", e);
         }
+    }
+
+    public H2H2ProxyAdapter(HttpProxyConnection connection, Http2ClientReader clientReader) {
+        this.connection = connection;
+        connection.targetCtx.setChannelHandler(this);
+        this.clientReader = clientReader;
     }
 
     // ==================== Request: H2 -> H2 ====================

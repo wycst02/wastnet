@@ -122,7 +122,7 @@ class RotatingFileHandler {
         this.buf = new byte[size];
     }
 
-    private void ensureOpen() throws IOException {
+    void ensureOpen() throws IOException {
         if (outputStream != null) {
             return;
         }
@@ -319,7 +319,7 @@ class RotatingFileHandler {
      * stop the timer (idle). The whole body is guarded by try/catch because a thrown exception
      * from a {@code ScheduledExecutorService} task would silently cancel all future executions.
      */
-    private void flushTick() {
+    void flushTick() {
         try {
             if (pending.getAndSet(0) > 0) {
                 flush();
@@ -424,7 +424,7 @@ class RotatingFileHandler {
      *   <li>Create a new current file</li>
      * </ol>
      */
-    private void rotate() throws IOException {
+    void rotate() throws IOException {
         // Flush + release the OS handle so the file can be renamed (a held handle makes renameTo
         // fail silently on Windows); do NOT close() or the scheduler/shutdown hook would be torn down.
         flushBufToStream();

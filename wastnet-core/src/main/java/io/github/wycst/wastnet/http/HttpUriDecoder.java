@@ -16,7 +16,7 @@ public final class HttpUriDecoder {
     String queryString;
     boolean asciiMode = true;
     byte codecState;
-    int hex;
+    int hexByte;
 
     /**
      * Parameter parsing mode flag.
@@ -130,8 +130,7 @@ public final class HttpUriDecoder {
                 }
             }
         } else if (codecState == 1) {
-            hex = Utils.hexNibble(b & 0xFF);
-            if (hex != -1) {
+            if (Utils.hexNibble((hexByte = b) & 0xFF) != -1) {
                 codecState = 2;
             } else {
                 if (strict) {
@@ -146,17 +145,18 @@ public final class HttpUriDecoder {
             codecState = 0;
             byte lowHex = Utils.hexNibble(b & 0xFF);
             if (lowHex != -1) {
-                byte decoded = (byte) (hex << 4 | lowHex);
+                byte highHex = Utils.hexNibble(hexByte);
+                byte decoded = (byte) (highHex << 4 | lowHex);
                 if (decoded < 0) {
                     asciiMode = false;
                 }
                 contentBa.write(decoded);
             } else {
                 if (strict) {
-                    throw new IllegalArgumentException("HttpUriDecoder Error: Illegal hex characters in escape (%) " + (char) hex + (char) b);
+                    throw new IllegalArgumentException("HttpUriDecoder Error: Illegal hex characters in escape (%) " + (char) hexByte + (char) b);
                 } else {
                     contentBa.write((byte) '%');
-                    contentBa.write((byte) (hex | 48));
+                    contentBa.write((byte) hexByte);
                     codec(b);
                 }
             }

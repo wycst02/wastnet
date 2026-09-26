@@ -26,7 +26,7 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
     private static final byte[] _CRLF_CRLF = "\r\n\r\n".getBytes();
 
     private long flushCount;
-    private int responseState = STATE_NOT_STARTED;
+    int responseState = STATE_NOT_STARTED;
 
     /**
      * Main constructor with request context for keep-alive support
@@ -51,7 +51,7 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
      * @throws IllegalArgumentException if value is invalid or negative
      * @throws IllegalStateException    if chunked encoding is enabled
      */
-    private long toContentLength(Serializable value) {
+    long toContentLength(Serializable value) {
         if (chunked) {
             throw new IllegalStateException("Cannot set Content-Length header when chunked encoding is enabled");
         }
@@ -483,17 +483,8 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
     }
 
     /**
-     * Write bytes to the response body buffer.
-     * When the data size would exceed the body memory threshold (see {@link HttpOptions#BODY_MEMORY_THRESHOLD}),
-     * data is flushed first and then written directly to the channel to prevent OOM.
-     * For chunked encoding, large data is sent as a separate chunk immediately.
-     * <p>
-     * Note: The actual bodyBuf size will not exceed {@code bodyMemoryThreshold() << 1}.
-     *
-     * @param bytes  the byte array to write
-     * @param offset the starting offset in the byte array
-     * @param count  the number of bytes to write
-     * @throws IOException if an I/O error occurs during flush
+     * Buffers into bodyBuf, or flushes and writes straight to the channel once the
+     * threshold is exceeded, so bodyBuf stays bounded.
      */
     @Override
     public void write(byte[] bytes, int offset, int count) throws IOException {
@@ -518,21 +509,18 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
     }
 
     /**
-     * Write chunked data for Transfer-Encoding: chunked responses
-     * This method handles the chunked transfer encoding format automatically
-     *
-     * @param data the data to write as a chunk
-     * @throws IOException           if an I/O error occurs
-     * @throws IllegalStateException if chunked encoding is not supported or enabled
+     * Emits one chunk immediately; null or non-positive count is ignored.
      */
     @Override
-    public void writeChunked(byte[] data) throws IOException {
+    public void writeChunked(byte[] data, int offset, int count) throws IOException {
+        if (data == null) return;
         if (isSilentlyUnavailable()) {
             return;  // silently ignore
         }
         if (!chunked) {
             throw new IllegalStateException("Chunked encoding not enabled - call setChunked(true) or chunked() first");
         }
+        if (count <= 0) return;  // empty data: skip after the chunked-enabled check
 
         // Ensure headers are sent before writing chunked data
         ensureHeadersSent();
@@ -543,9 +531,7 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
         }
 
         // Write the new chunk data
-        if (data != null && data.length > 0) {
-            writeFlushChunk(ByteBuffer.wrap(data), data.length);
-        }
+        writeFlushChunk(ByteBuffer.wrap(data, offset, count), count);
     }
 
     @Override

@@ -5,7 +5,10 @@ import io.github.wycst.wastnet.log.Log;
 import io.github.wycst.wastnet.log.LogFactory;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 
-import java.io.*;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.util.concurrent.ScheduledFuture;
@@ -28,10 +31,10 @@ final class WebSocketConnectionImpl implements WebSocketConnection {
     private Serializable account;
     private Serializable groupId;
     // Last active timestamp
-    private volatile long lastActiveTime = System.currentTimeMillis();
+    volatile long lastActiveTime = System.currentTimeMillis();
     // Timeout task Future
-    private ScheduledFuture<?> timeoutTaskFuture;
-    private Runnable detectionTask;
+    ScheduledFuture<?> timeoutTaskFuture;
+    Runnable detectionTask;
 
     static final byte[] PING_FRAME = new byte[]{(byte) 0x89, 0x00};
     static final byte[] PONG_FRAME = new byte[]{(byte) 0x8A, 0x00};

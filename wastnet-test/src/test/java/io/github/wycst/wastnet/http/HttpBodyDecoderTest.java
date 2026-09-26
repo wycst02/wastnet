@@ -585,7 +585,7 @@ public class HttpBodyDecoderTest {
         HttpBodyDefaultDecoder decoder = new HttpBodyDefaultDecoder(
                 "multipart/form-data; boundary=bound", body);
         // With filename, getMultipartFields returns non-null list
-        java.util.List<MultipartField> fields = decoder.getMultipartFields("file");
+        List<MultipartField> fields = decoder.getMultipartFields("file");
         assertNotNull(fields, "Should have file field");
         assertFalse(fields.isEmpty(), "File field list should not be empty");
     }
@@ -818,8 +818,8 @@ public class HttpBodyDecoderTest {
                 + boundary + "--\r\n").getBytes();
         HttpBodyDefaultDecoder dec = new HttpBodyDefaultDecoder(
                 "multipart/form-data; boundary=bound", body);
-        // File field is ignored in getMultipartFieldValues → returns empty list
-        assertTrue(dec.getMultipartFieldValues("f").isEmpty());
+        // File field is ignored in getMultipartFieldValues → returns null (no form-field value)
+        assertTrue(dec.getMultipartFieldValues("f") == null);
     }
 
 

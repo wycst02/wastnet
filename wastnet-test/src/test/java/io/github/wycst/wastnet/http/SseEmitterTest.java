@@ -148,6 +148,7 @@ public class SseEmitterTest {
         @Override public void flush() {}
         @Override public void commit() {}
         @Override public void writeChunked(byte[] data) {}
+        @Override public void writeChunked(byte[] data, int offset, int count) {}
         @Override public void write(byte[] buf) {}
         @Override public void write(byte[] buf, int offset, int count) {}
         @Override public java.io.OutputStream outputStream() { return null; }

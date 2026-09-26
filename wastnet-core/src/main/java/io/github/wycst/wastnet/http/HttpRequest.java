@@ -300,7 +300,9 @@ public interface HttpRequest extends HttpMessage {
      *
      * @return true if request is a bad request, false otherwise
      */
-    boolean isBad();
+    default boolean isBad() {
+        return false;
+    }
 
     /**
      * Check if request is a multipart request.
@@ -358,11 +360,13 @@ public interface HttpRequest extends HttpMessage {
     String getMultipartFieldValue(String name);
 
     /**
-     * Get all multipart field values as string by name.
-     * File fields are ignored, only returns values of form fields.
+     * Get all multipart form-field values as string by name.
+     * File fields are ignored, only values of non-file form fields are returned.
      *
      * @param name field name
-     * @return list of field values, empty list if not found
+     * @return list of form-field values (non-empty), or null if there is no form-field value
+     *         for the name (the field is not found, is a file upload, or the content type
+     *         is not multipart)
      */
     List<String> getMultipartFieldValues(String name);
 
@@ -384,7 +388,7 @@ public interface HttpRequest extends HttpMessage {
      * Get all parameter values by name (supports both multipart and form-urlencoded).
      *
      * @param name parameter name
-     * @return list of parameter values, empty list if not found
+     * @return list of parameter values, or null if not found
      */
     List<String> getParameterValues(String name);
 

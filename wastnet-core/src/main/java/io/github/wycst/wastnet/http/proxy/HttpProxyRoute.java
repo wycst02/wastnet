@@ -55,7 +55,7 @@ public class HttpProxyRoute implements HttpRoute, ClearableHandler {
     private final String hostPort;
     private final String targetPath;
     private final HttpProxyWorker worker;
-    private final String loopMarker;
+    final String loopMarker;
 
     public HttpProxyRoute(HttpProxyConfig config) {
         this(config, HttpProxyWorkerManager.GLOBAL_WORKER_MANAGER);

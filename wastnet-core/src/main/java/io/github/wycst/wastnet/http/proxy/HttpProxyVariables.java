@@ -30,7 +30,7 @@ import java.util.Map;
  */
 final class HttpProxyVariables {
 
-    private static final Map<String, HttpProxyConfig.HeaderValueResolver> BUILTINS = new HashMap<>();
+    static final Map<String, HttpProxyConfig.HeaderValueResolver> BUILTINS = new HashMap<>();
 
     static {
         // $remote_addr - client IP address

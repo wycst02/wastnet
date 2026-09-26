@@ -106,14 +106,13 @@ public class Http2ServerStream extends Http2Stream {
                 }
                 // RFC 7230 asterisk-form: a valid request target, handed to the application layer
             }
+            // URI parsing applies to non-CONNECT only: CONNECT omits :path (RFC 7540 §8.3)
+            HttpUriDecoder uriDecoder = new HttpUriDecoder(false);
+            uriDecoder.codec(path.getBytes());
+            uriDecoder.endCodec();
+            requestUri = uriDecoder.getUri();
+            parameters = uriDecoder.getParameters();
         }
-
-        // path/scheme may be null (CONNECT / malformed request): NPE here closes the stream via onHeadersFrame() -> RST_STREAM + removeStream
-        HttpUriDecoder uriDecoder = new HttpUriDecoder(false);
-        uriDecoder.codec(path.getBytes());
-        uriDecoder.endCodec();
-        requestUri = uriDecoder.getUri();
-        parameters = uriDecoder.getParameters();
     }
 
     @Override

@@ -26,7 +26,7 @@ public class IdleStateHandlerExample {
         HTTPServer server = HTTPServer.of(8080)
                 .idleStateHandler(new IdleStateHandler(10, 0, TimeUnit.SECONDS) {
                     @Override
-                    public void onIdleTriggered(ChannelContext ctx, IdleStateHandler.IdleType idleType,
+                    public void onIdleTriggered(ChannelContext ctx, IdleType idleType,
                                                  long triggerTotalCount, long triggerConsecutiveCount) {
                         System.out.println("[Idle] connection=" + ctx.getId()
                                 + " type=" + idleType

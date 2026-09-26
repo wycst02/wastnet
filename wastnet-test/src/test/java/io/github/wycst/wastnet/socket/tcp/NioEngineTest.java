@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import javax.net.ssl.SSLContext;
-import java.lang.reflect.Field;
 
 import static org.mockito.Mockito.*;
 
@@ -334,12 +333,7 @@ public class NioEngineTest {
     // ==================== Helpers ====================
 
     private static void setEngineRunFlag(NioEngine<?> engine, boolean value) {
-        try {
-            Field f = NioEngine.class.getDeclaredField("engineRunFlag");
-            f.setAccessible(true);
-            f.setBoolean(engine, value);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
+        // engineRunFlag is package-private (same package), assign directly.
+        engine.engineRunFlag = value;
     }
 }

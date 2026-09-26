@@ -107,8 +107,8 @@ public class WebSocketOriginCheckTest {
 
             @Override public String getHost() { return null; }
             @Override public void removeAttribute(String key) {}
-            @Override public java.util.Enumeration<String> getAttributeNames() { return java.util.Collections.emptyEnumeration(); }
-            @Override public java.util.Map<String, String[]> getParameterMap() { return java.util.Collections.emptyMap(); }
+            @Override public java.util.Enumeration<String> getAttributeNames() { return Collections.emptyEnumeration(); }
+            @Override public Map<String, String[]> getParameterMap() { return Collections.emptyMap(); }
         };
     }
 

@@ -285,9 +285,7 @@ public class LogTest {
         File f = File.createTempFile("open", ".log");
         RotatingFileHandler h = new RotatingFileHandler(f.getAbsolutePath(), 1024 * 1024, 2, 16 * 1024);
         h.publish("open it", true);
-        java.lang.reflect.Method m = RotatingFileHandler.class.getDeclaredMethod("ensureOpen");
-        m.setAccessible(true);
-        m.invoke(h);
+        h.ensureOpen();
         h.close();
     }
 
@@ -346,9 +344,7 @@ public class LogTest {
         File dir = Files.createTempDirectory("rot").toFile();
         File f = new File(dir, "gone.log");
         RotatingFileHandler h = new RotatingFileHandler(f.getAbsolutePath(), 1024, 2, 16 * 1024);
-        java.lang.reflect.Method m = RotatingFileHandler.class.getDeclaredMethod("rotate");
-        m.setAccessible(true);
-        m.invoke(h);
+        h.rotate();
         h.close();
     }
 
@@ -394,10 +390,8 @@ public class LogTest {
     void testFlushTickIdleStopsTimer() throws Exception {
         File f = File.createTempFile("tick", ".log");
         RotatingFileHandler h = new RotatingFileHandler(f.getAbsolutePath(), 1024 * 1024, 2, 16 * 1024);
-        java.lang.reflect.Method m = RotatingFileHandler.class.getDeclaredMethod("flushTick");
-        m.setAccessible(true);
-        m.invoke(h);
-        m.invoke(h);
+        h.flushTick();
+        h.flushTick();
         h.close();
     }
 }

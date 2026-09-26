@@ -3,8 +3,13 @@ package io.github.wycst.wastnet.http;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
-import java.lang.reflect.Method;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.UncheckedIOException;
 import java.nio.channels.SocketChannel;
+
+import io.github.wycst.wastnet.socket.tcp.ChannelContext;
+import io.github.wycst.wastnet.socket.tcp.NioConfig;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -164,13 +169,13 @@ public class HttpBodyStreamDecoderReadFieldTest {
 
         SocketChannel ch = SocketChannel.open();
         ch.configureBlocking(false);
-        io.github.wycst.wastnet.socket.tcp.ChannelContext ctx =
-                new io.github.wycst.wastnet.socket.tcp.ChannelContext(ch, 4096);
+        ChannelContext ctx =
+                new ChannelContext(ch, 4096);
         io.github.wycst.wastnet.socket.handler.ChannelHandler<Object> handler =
                 new io.github.wycst.wastnet.socket.handler.ChannelHandler<Object>() {
-                    public void onHandle(io.github.wycst.wastnet.socket.tcp.ChannelContext c, Object msg) {}
+                    public void onHandle(ChannelContext c, Object msg) {}
                 };
-        java.lang.reflect.Field f = io.github.wycst.wastnet.socket.tcp.ChannelContext.class
+        java.lang.reflect.Field f = ChannelContext.class
                 .getDeclaredField("channelHandler");
         f.setAccessible(true);
         f.set(ctx, handler);
@@ -193,13 +198,13 @@ public class HttpBodyStreamDecoderReadFieldTest {
         // Chunked stream: pre-read data consumed, next chunk read fails → IOException caught
         SocketChannel ch = SocketChannel.open();
         ch.configureBlocking(false);
-        io.github.wycst.wastnet.socket.tcp.ChannelContext ctx =
-                new io.github.wycst.wastnet.socket.tcp.ChannelContext(ch, 4096);
+        ChannelContext ctx =
+                new ChannelContext(ch, 4096);
         io.github.wycst.wastnet.socket.handler.ChannelHandler<Object> handler =
                 new io.github.wycst.wastnet.socket.handler.ChannelHandler<Object>() {
-                    public void onHandle(io.github.wycst.wastnet.socket.tcp.ChannelContext c, Object msg) {}
+                    public void onHandle(ChannelContext c, Object msg) {}
                 };
-        java.lang.reflect.Field hf = io.github.wycst.wastnet.socket.tcp.ChannelContext.class
+        java.lang.reflect.Field hf = ChannelContext.class
                 .getDeclaredField("channelHandler");
         hf.setAccessible(true);
         hf.set(ctx, handler);
@@ -216,8 +221,144 @@ public class HttpBodyStreamDecoderReadFieldTest {
     }
 
     private static void invokeDecode(HttpBodyStreamDecoder dec, byte[] b) throws Exception {
-        Method m = HttpBodyStreamDecoder.class.getDeclaredMethod("doDecodeMultipartFields", byte[].class);
-        m.setAccessible(true);
-        m.invoke(dec, new Object[]{b});
+        // doDecodeMultipartFields is protected (same package), callable directly
+        dec.doDecodeMultipartFields(b);
+    }
+
+    // ==================== Large-field coverage for readFieldToFile ====================
+    // bufferSize = max(8192, MAX_BODY_IN_MEMORY); with MAX_BODY_IN_MEMORY=1 it is 8192,
+    // so a field with content > ~8120 bytes cannot fit in the initial buffer and
+    // doDecodeMultipartFields delegates to readFieldToFile (boundary not in buffer).
+
+    private static byte[] buildField(int contentSize, String disposition, String trailing) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("--boundary\r\n").append(disposition).append("\r\n\r\n");
+        for (int i = 0; i < contentSize; ++i) sb.append('Z');
+        sb.append("\r\n--boundary");
+        if (trailing != null) sb.append(trailing);
+        return sb.toString().getBytes();
+    }
+
+    private static ChannelContext newCtx(boolean enableTempFile) throws IOException {
+        SocketChannel ch = SocketChannel.open();
+        ch.configureBlocking(false);
+        ChannelContext ctx = new ChannelContext(ch, 4096);
+        NioConfig cfg = new NioConfig().option(HttpOptions.MAX_BODY_IN_MEMORY, 1);
+        if (!enableTempFile) {
+            cfg.option(HttpOptions.ENABLE_TEMP_FILE, false);
+        }
+        ctx.attachNioConfig(cfg);
+        return ctx;
+    }
+
+    /** First read fills the buffer (parses headers); the 2nd read (inside readFieldToFile, after the
+     *  temp file is created) throws, so the finally block must delete the temp file (L274). */
+    static class FailingInputStream extends InputStream {
+        private final byte[] data;
+        private int pos;
+        private int calls;
+        FailingInputStream(byte[] data) { this.data = data; }
+        @Override public int read() {
+            if (calls >= 1) throw new UncheckedIOException("forced read failure", new IOException("forced"));
+            if (pos >= data.length) return -1;
+            int v = data[pos++] & 0xFF;
+            calls++;
+            return v;
+        }
+        @Override public int read(byte[] b, int off, int len) {
+            if (calls >= 1) throw new UncheckedIOException("forced read failure", new IOException("forced"));
+            int max = calls == 0 ? (data.length - pos) : Math.min(8, data.length - pos);
+            int n = Math.min(len, max);
+            if (n <= 0) return -1;
+            System.arraycopy(data, pos, b, off, n);
+            pos += n;
+            calls++;
+            return n;
+        }
+    }
+
+    // skipContent = true via fieldName == null (large unnamed field reaches readFieldToFile)
+    @Test
+    public void testReadFieldToFileSkipContentUnnamedLarge() throws Exception {
+        byte[] body = buildField(9000, "Content-Disposition: form-data", "--\r\n");
+        HttpBodyStreamDecoder dec = new HttpBodyStreamDecoder(
+                "multipart/form-data; boundary=boundary", new ByteArrayInputStream(body), newCtx(true));
+        invokeDecode(dec, "--boundary".getBytes());
+        assertTrue(dec.getMultipartFieldNames().isEmpty());
+    }
+
+    // skipContent = true via !ENABLE_TEMP_FILE (large named field, option disabled)
+    @Test
+    public void testReadFieldToFileSkipContentTempFileDisabled() throws Exception {
+        byte[] body = buildField(9000, "Content-Disposition: form-data; name=\"f\"", "--\r\n");
+        HttpBodyStreamDecoder dec = new HttpBodyStreamDecoder(
+                "multipart/form-data; boundary=boundary", new ByteArrayInputStream(body), newCtx(false));
+        invokeDecode(dec, "--boundary".getBytes());
+        assertTrue(dec.getMultipartFieldNames().isEmpty());
+    }
+
+    // read throws after temp file created -> finally deletes temp file (failure cleanup / L274)
+    @Test
+    public void testReadFieldToFileFailureCleanup() throws Exception {
+        byte[] body = buildField(9000, "Content-Disposition: form-data; name=\"f\"", "--\r\n");
+        HttpBodyStreamDecoder dec = new HttpBodyStreamDecoder(
+                "multipart/form-data; boundary=boundary", new FailingInputStream(body), newCtx(true));
+        assertThrows(UncheckedIOException.class, () -> invokeDecode(dec, "--boundary".getBytes()));
+        assertNull(dec.getMultipartField("f"));
+    }
+
+    // successful large named field -> content streamed to temp file, MultipartFieldFile returned
+    /** Returns at most {@code chunk} bytes per read so the boundary is found only across multiple reads. */
+    static class ChunkedInputStream extends InputStream {
+        private final byte[] data;
+        private final int chunk;
+        private int pos;
+        ChunkedInputStream(byte[] data, int chunk) { this.data = data; this.chunk = chunk; }
+        @Override public int read() { return pos < data.length ? data[pos++] & 0xFF : -1; }
+        @Override public int read(byte[] b, int off, int len) {
+            if (pos >= data.length) return -1;
+            int n = Math.min(len, Math.min(chunk, data.length - pos));
+            System.arraycopy(data, pos, b, off, n);
+            pos += n;
+            return n;
+        }
+    }
+
+    // successful large named field -> content streamed to temp file, MultipartFieldFile returned
+    // (covers L240 true, L242 true, L266 false)
+    @Test
+    public void testReadFieldToFileSuccessNamedLarge() throws Exception {
+        byte[] body = buildField(9000, "Content-Disposition: form-data; name=\"f\"", "--\r\n");
+        HttpBodyStreamDecoder dec = new HttpBodyStreamDecoder(
+                "multipart/form-data; boundary=boundary", new ByteArrayInputStream(body), newCtx(true));
+        invokeDecode(dec, "--boundary".getBytes());
+        MultipartField field = dec.getMultipartField("f");
+        assertNotNull(field);
+        assertTrue(field.isTempFile());
+        assertEquals(9000L, field.size());
+        // verify content integrity (all 'Z'), JDK8-safe
+        int total = 0, b;
+        try (InputStream in = field.getInputStream()) {
+            while ((b = in.read()) != -1) {
+                assertEquals('Z', b);
+                ++total;
+            }
+        }
+        assertEquals(9000, total);
+        dec.release();
+    }
+
+    // boundary not found within a single internal read -> loop continues (cross-buffer / L240 false)
+    @Test
+    public void testReadFieldToFileBoundaryCrossBuffer() throws Exception {
+        byte[] body = buildField(9000, "Content-Disposition: form-data; name=\"f\"", "--\r\n");
+        HttpBodyStreamDecoder dec = new HttpBodyStreamDecoder(
+                "multipart/form-data; boundary=boundary", new ChunkedInputStream(body, 500), newCtx(true));
+        invokeDecode(dec, "--boundary".getBytes());
+        MultipartField field = dec.getMultipartField("f");
+        assertNotNull(field);
+        assertTrue(field.isTempFile());
+        assertEquals(9000L, field.size());
+        dec.release();
     }
 }

@@ -34,8 +34,8 @@ public class H2MonitorDemo {
                     }
 
                     @Override
-                    public <T> T read(io.github.wycst.wastnet.http.HttpRequest request,
-                                      ConverterConfig config, Class<T> type) {
+                    public Object read(io.github.wycst.wastnet.http.HttpRequest request,
+                                      ConverterConfig config, java.lang.reflect.Type type) {
                         return null;
                     }
                 })

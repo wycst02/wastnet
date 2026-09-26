@@ -431,7 +431,7 @@ public class Http2StreamTest {
         ChannelContext ctx = mock(ChannelContext.class);
         when(ctx.getWriteBufferSize()).thenReturn(65536);
         TestStream stream = new TestStream(reader, 1, ctx);
-        setField(stream, "frameBuf", HttpBuf.of(64));
+        stream.frameBuf = HttpBuf.of(64);
         return new Fixture(reader, ctx, stream);
     }
 
@@ -551,7 +551,7 @@ public class Http2StreamTest {
 
     @Test void testWriteFrameAfterEndStream() throws Exception {
         Fixture f = createFixture(); f.stream.endStreamSent = true;
-        f.stream.writeFrame(java.nio.ByteBuffer.allocate(9));
+        f.stream.writeFrame(ByteBuffer.allocate(9));
     }
 
     @Test void testOnDataFrameEndStreamEmptyBody() throws Exception {
@@ -596,9 +596,9 @@ public class Http2StreamTest {
     @Test void testOnDataFrameRecvWindowZeroCapacityStreaming() throws Exception {
         Fixture f = createFixture();
         f.stream.endHeaders();
-        setField(f.stream, "receiveWindow", 1);
+        f.stream.receiveWindow = 1;
         int capacity = Math.max(HttpOptions.HTTP2_INITIAL_SEND_WINDOW_SIZE.value << 1, HttpConf.MAX_BODY_IN_MEMORY);
-        setField(f.stream, "dataFramesTotalLength", capacity - 1);
+        f.stream.dataFramesTotalLength = capacity - 1;
         Http2Frame frame = new Http2Frame(new byte[]{0}, 0, 0, 1, 1, null, 0, 1);
         f.stream.onDataFrame(frame, f.ctx);
         assertTrue(f.stream.needStreaming);
@@ -663,16 +663,16 @@ public class Http2StreamTest {
     @Test void testFillDiagnosticWithBodyStream() throws Exception {
         Fixture f = createFixture();
         f.stream.prepareSubmit(false);
-        java.util.Map<String, Object> m = new java.util.HashMap<String, Object>();
+        Map<String, Object> m = new HashMap<String, Object>();
         f.stream.fillDiagnostic(m);
         assertTrue(m.containsKey("bodyUnconsumed"));
     }
 
     @Test void testWriteFramesBatch() throws Exception {
         Fixture f = createFixture();
-        List<java.nio.ByteBuffer> frames = new ArrayList<java.nio.ByteBuffer>();
-        frames.add(java.nio.ByteBuffer.allocate(9));
-        frames.add(java.nio.ByteBuffer.allocate(9));
+        List<ByteBuffer> frames = new ArrayList<ByteBuffer>();
+        frames.add(ByteBuffer.allocate(9));
+        frames.add(ByteBuffer.allocate(9));
         f.stream.writeFrames(frames);
         assertEquals(2, frames.size());
     }
@@ -693,7 +693,7 @@ public class Http2StreamTest {
     @Test void testOnDataFrameEndStreamWithRefill() throws Exception {
         Fixture f = createFixture();
         f.stream.endHeaders();
-        setField(f.stream, "refilled", 2);
+        f.stream.refilled = 2;
         Http2Frame frame = new Http2Frame("abcd".getBytes(), 0, 0, 4, 4, null, 1, 1);
         f.stream.onDataFrame(frame, f.ctx);
         assertTrue(f.stream.endStream);

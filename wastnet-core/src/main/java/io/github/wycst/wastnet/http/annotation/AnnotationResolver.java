@@ -17,6 +17,21 @@ import java.util.List;
 public interface AnnotationResolver extends AnnotationFilter {
 
     /**
+     * Resolve the default bean name by decapitalizing the first letter of the class simple name
+     * (e.g. {@code UserService} -> {@code userService}); anonymous/local classes are excluded
+     * upstream by {@code AnnotationRouterHandler.isEligibleClass} and must not be passed here.
+     *
+     * @param clazz the class to resolve a bean name for
+     * @return the default bean name
+     * @throws StringIndexOutOfBoundsException if {@code clazz.getSimpleName()} is empty
+     *         (e.g. an anonymous class), causing {@code charAt(0)} to be out of range
+     */
+    static String resolveBeanName(Class<?> clazz) {
+        String simpleName = clazz.getSimpleName();
+        return Character.toLowerCase(simpleName.charAt(0)) + simpleName.substring(1);
+    }
+
+    /**
      * Returns {@code true} if the class is a request-handling controller.
      */
     boolean isController(Class<?> clazz);

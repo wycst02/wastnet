@@ -14,9 +14,14 @@ public class HttpHeaderUtils {
 
     static HeaderConfig headerConfig = HeaderConfig.defaultConfig();
 
+    final static byte MERGE_COMMA_SEPARATED = 0;
+    final static byte MERGE_ALLOW_DUPLICATES = 1;
+
+    final static byte FORMAT_LOWERCASE = 0;
+    final static byte FORMAT_TITLE_CASE = 1;
+
     // Pre-calculated Server header line bytes (initialized with lowercase "server")
     private static final byte[] SERVER_HEADER_LINE_BYTES;
-
 
     private static final Map<String, String> STANDARD_HEADERS_MAP = new HashMap<>();
     private static final Map<String, String> MIME_TYPES = new HashMap<>();
@@ -153,14 +158,6 @@ public class HttpHeaderUtils {
     }
 
     /**
-     * Get configuration value with priority: System Properties > Environment Variables
-     */
-    private static String getConfigValue(String key) {
-        String propertyValue = System.getProperty(key);
-        return propertyValue != null ? propertyValue : System.getenv(key);
-    }
-
-    /**
      * Initialize configuration from environment variables
      * Supported environment variables:
      * - wastnet.http.header.format: lowercase(default) or titlecase
@@ -169,18 +166,17 @@ public class HttpHeaderUtils {
     private static void initializeConfigFromEnvironment() {
         try {
             // Read configuration values
-            String formatValue = getConfigValue("wastnet.http.header.format");
-            String mergeValue = getConfigValue("wastnet.http.header.merge");
+            String formatValue = System.getProperty("wastnet.http.header.format", "");
+            String mergeValue = System.getProperty("wastnet.http.header.merge", "");
 
-            HeaderFormatStrategy formatStrategy = HeaderFormatStrategy.LOWERCASE;
-            HeaderMergeStrategy mergeStrategy = HeaderMergeStrategy.COMMA_SEPARATED;
+            byte formatStrategy = FORMAT_LOWERCASE;
+            byte mergeStrategy = MERGE_COMMA_SEPARATED;
 
-            if (formatValue != null && "titlecase".equalsIgnoreCase(formatValue.trim())) {
-                formatStrategy = HeaderFormatStrategy.TITLE_CASE;
+            if ("titlecase".equalsIgnoreCase(formatValue.trim())) {
+                formatStrategy = FORMAT_TITLE_CASE;
             }
-
-            if (mergeValue != null && "allow_duplicates".equalsIgnoreCase(mergeValue.trim())) {
-                mergeStrategy = HeaderMergeStrategy.ALLOW_DUPLICATES;
+            if ("allow_duplicates".equalsIgnoreCase(mergeValue.trim())) {
+                mergeStrategy = MERGE_ALLOW_DUPLICATES;
             }
 
             // Create and set configuration
@@ -215,7 +211,7 @@ public class HttpHeaderUtils {
     }
 
     public static boolean isTitleCase() {
-        return headerConfig.formatStrategy == HeaderFormatStrategy.TITLE_CASE;
+        return headerConfig.formatStrategy == FORMAT_TITLE_CASE;
     }
 
     public static void setHeaderConfig(HeaderConfig config) {
@@ -242,14 +238,14 @@ public class HttpHeaderUtils {
      * Check if current configuration uses comma-separated merge strategy
      */
     public static boolean isCommaSeparated() {
-        return headerConfig.isCommaSeparated();
+        return headerConfig.mergeStrategy == MERGE_COMMA_SEPARATED;
     }
 
     /**
      * Check if current configuration allows duplicate header keys
      */
     public static boolean isAllowDuplicates() {
-        return headerConfig.isAllowDuplicates();
+        return headerConfig.mergeStrategy == MERGE_ALLOW_DUPLICATES;
     }
 
     /**
@@ -260,8 +256,7 @@ public class HttpHeaderUtils {
             return key;
         }
 
-        String lowerKey = key.toLowerCase();
-        String standardFormat = STANDARD_HEADERS_MAP.get(lowerKey);
+        String standardFormat = STANDARD_HEADERS_MAP.get(key.toLowerCase());
         return standardFormat != null ? standardFormat : toTitleCase(key);
     }
 
@@ -269,8 +264,7 @@ public class HttpHeaderUtils {
      * Normalize header key using global configuration
      */
     public static String normalizeHeaderKey(String key) {
-        HeaderFormatStrategy strategy = headerConfig.formatStrategy;
-        if (strategy == HeaderFormatStrategy.TITLE_CASE) {
+        if (headerConfig.formatStrategy == FORMAT_TITLE_CASE) {
             return toStandardFormat(key);
         } else {
             return key.toLowerCase();
@@ -318,22 +312,6 @@ public class HttpHeaderUtils {
             if (mime != null) return mime;
         }
         return defaultType;
-    }
-
-    /**
-     * Header formatting strategy enumeration
-     */
-    public enum HeaderFormatStrategy {
-        LOWERCASE,
-        TITLE_CASE
-    }
-
-    /**
-     * Header merging strategy enumeration
-     */
-    public enum HeaderMergeStrategy {
-        COMMA_SEPARATED,
-        ALLOW_DUPLICATES
     }
 
     /**
@@ -412,7 +390,7 @@ public class HttpHeaderUtils {
      * @param len    length of header key data
      */
     public static void normalizedKeyBuffer(byte[] buf, int offset, int len) {
-        if (headerConfig.formatStrategy == HeaderFormatStrategy.TITLE_CASE) {
+        if (headerConfig.formatStrategy == FORMAT_TITLE_CASE) {
             toTitleCase(buf, offset, len);
         } else {
             toLowerCase(buf, offset, len);
@@ -424,51 +402,27 @@ public class HttpHeaderUtils {
      * Used to manage HeaderMergeStrategy and HeaderFormatStrategy configuration
      */
     public static class HeaderConfig {
-        public final HeaderMergeStrategy mergeStrategy;
-        public final HeaderFormatStrategy formatStrategy;
 
-        public HeaderConfig() {
-            this(HeaderMergeStrategy.COMMA_SEPARATED, HeaderFormatStrategy.LOWERCASE);
-        }
+        public final byte mergeStrategy;
+        public final byte formatStrategy;
 
-        public HeaderConfig(HeaderMergeStrategy mergeStrategy, HeaderFormatStrategy formatStrategy) {
+        public HeaderConfig(byte mergeStrategy, byte formatStrategy) {
             this.mergeStrategy = mergeStrategy;
             this.formatStrategy = formatStrategy;
-        }
-
-        /**
-         * Check if comma-separated merge strategy is used
-         */
-        public boolean isCommaSeparated() {
-            return mergeStrategy == HeaderMergeStrategy.COMMA_SEPARATED;
-        }
-
-        /**
-         * Check if duplicate header keys are allowed
-         */
-        public boolean isAllowDuplicates() {
-            return mergeStrategy == HeaderMergeStrategy.ALLOW_DUPLICATES;
         }
 
         /**
          * Create default configuration
          */
         public static HeaderConfig defaultConfig() {
-            return new HeaderConfig(HeaderMergeStrategy.COMMA_SEPARATED, HeaderFormatStrategy.LOWERCASE);
+            return new HeaderConfig(MERGE_COMMA_SEPARATED, FORMAT_LOWERCASE);
         }
 
         /**
          * Create standard compatible configuration
          */
         public static HeaderConfig standardConfig() {
-            return new HeaderConfig(HeaderMergeStrategy.COMMA_SEPARATED, HeaderFormatStrategy.TITLE_CASE);
-        }
-
-        /**
-         * Create allow duplicates configuration
-         */
-        public static HeaderConfig allowDuplicatesConfig() {
-            return new HeaderConfig(HeaderMergeStrategy.ALLOW_DUPLICATES, HeaderFormatStrategy.TITLE_CASE);
+            return new HeaderConfig(MERGE_COMMA_SEPARATED, FORMAT_TITLE_CASE);
         }
     }
 

@@ -57,7 +57,7 @@ public class Http2Response extends HttpInternalResponse {
     };
 
     final Http2Stream stream;
-    final Map<String, Object> h2Headers = new HashMap<String, Object>();
+    final Map<String, Object> h2Headers = new HashMap<>();
 
     public Http2Response(Http2Request request, Http2Stream stream, ChannelContext ctx) {
         super(request, ctx);
@@ -69,6 +69,16 @@ public class Http2Response extends HttpInternalResponse {
     @Override
     public HttpVersion getHttpVersion() {
         return HttpVersion.HTTP_2;
+    }
+
+    /**
+     * Reject application-supplied pseudo-header fields; only the framework's own {@code :status} is allowed (RFC 7540 §8.1.2.4).
+     */
+    @Override
+    protected void validateHeaderByProtocol(String key, Serializable value) {
+        if (key.startsWith(":")) {
+            throw new IllegalArgumentException("HTTP/2 response must not contain pseudo-header fields: " + key);
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -218,7 +228,7 @@ public class Http2Response extends HttpInternalResponse {
 
     // ==================== sendFile / 404 / GZIP ====================
     @Override
-    protected void addCacheHeaders(long fileSize, long lastModified) throws IOException {
+    protected void addCacheHeaders(long fileSize, long lastModified) {
         addHeader(HttpHeaderNames.LAST_MODIFIED, HttpHeaderUtils.getDateHeaderValue(lastModified));
         addHeader(HttpHeaderNames.ETAG, generateETag(fileSize, lastModified));
     }
@@ -380,8 +390,8 @@ public class Http2Response extends HttpInternalResponse {
             int headerLen = hb.size();
             mergeable = windowReady && headerLen <= stream.sendChunkSize();
             if (mergeable) {
-                // One allocation: HEADERS(header+block) + DATA(header+body) written contiguously.
-                ByteBuffer frame = ByteBuffer.allocate(9 + headerLen + 9 + bodyLen);
+                // Reuse the per-connection frame buffer; safe under the ctx lock (write is synchronous).
+                ByteBuffer frame = stream.reader.obtainReusableFrame(18 + headerLen + bodyLen);
                 frame.put((byte) (headerLen >> 16)).put((byte) (headerLen >> 8)).put((byte) headerLen)
                         .put(Http2Frame.FRAME_TYPE_HEADERS).put((byte) Http2Frame.END_HEADERS)
                         .putInt(stream.streamId);
@@ -390,9 +400,9 @@ public class Http2Response extends HttpInternalResponse {
                         .put(Http2Frame.FRAME_TYPE_DATA).put((byte) Http2Frame.END_STREAM)
                         .putInt(stream.streamId);
                 frame.put(bodyBuf.getBuf(), bodyBuf.getBegin(), bodyLen).flip();
-                // prepareFrame applies the end-stream guard + DEBUG log (reads HEADERS flags only;
-                // END_STREAM lives on the DATA frame, so mark it explicitly after the write).
-                stream.prepareFrame(frame);
+                // HEADERS+DATA merged into one frame; END_STREAM lives on the DATA sub-frame, so
+                // endStreamSent is set explicitly below. Log (DEBUG) without the end-stream guard.
+                stream.debugLogFrame(frame);
                 stream.ctx.write(frame);                  // lock already held; skip re-sync
                 stream.endStreamSent = true;              // DATA frame carried END_STREAM
             } else {
@@ -423,35 +433,49 @@ public class Http2Response extends HttpInternalResponse {
     // Encode all headers except content-type (static refs / never-indexed, no dynamic table use).
     // Reuses the stream's frameBuf, which is free once the request body has been consumed.
     private HttpBuf buildStaticHeaderBlock() {
-        HttpBuf buf = stream.frameBuf; // always cleared
+        HttpBuf buf = stream.frameBuf; // always cleared; initial capacity 64 bytes
         Http2Helper.writeHpackStatus(buf, status.code);
         if (contentLength > 0) {
-            buf.write(_H2_CONTENT_LENGTH_PREFIX);
+            buf.writeUnchecked(_H2_CONTENT_LENGTH_PREFIX);
             Http2Helper.writeHpackString(buf, String.valueOf(contentLength));
         }
-        buf.write(_H2_DATE_PREFIX);
-        Http2Helper.writeHpackString(buf, HttpHeaderUtils.getDateHeaderValue(System.currentTimeMillis()));
+        if(!h2Headers.containsKey(HttpHeaderNames.DATE)) {
+            buf.writeUnchecked(_H2_DATE_PREFIX);
+            // Shared, thread-mutated Date cache (offset 6, len 29); single-pass Huffman.
+            writeHpackDate(buf, getCurrentDateHeaderLineBytes());
+        }
         if (exposeServerHeader() && !h2Headers.containsKey(HttpHeaderNames.SERVER)) {
             buf.write(_H2_SERVER_PREFIX);
             Http2Helper.writeHpackString(buf, SERVER_VALUE);
         }
-        for (Map.Entry<String, Object> entry : h2Headers.entrySet()) {
-            String key = entry.getKey();
-            if (HttpHeaderNames.CONTENT_TYPE.equals(key) || HttpHeaderNames.CONTENT_LENGTH.equals(key)) continue;
-            Object val = entry.getValue();
-            if (val.getClass() == String.class) {
-                buf.write((byte) 0x10);
-                Http2Helper.writeHpackString(buf, key);
-                Http2Helper.writeHpackString(buf, (String) val);
-            } else {
-                for (String v : (List<String>) val) {
-                    buf.write((byte) 0x10);
-                    Http2Helper.writeHpackString(buf, key);
-                    Http2Helper.writeHpackString(buf, v);
+        if(!h2Headers.isEmpty()) {
+            if(contentType != null) {
+                h2Headers.remove(HttpHeaderNames.CONTENT_TYPE);
+            }
+            for (Map.Entry<String, Object> entry : h2Headers.entrySet()) {
+                String key = entry.getKey();
+                if (HttpHeaderNames.CONTENT_LENGTH.equals(key)) continue;
+                Object val = entry.getValue();
+                if (val.getClass() == String.class) {
+                    Http2Helper.writeHpackLiteral(buf, key, (String) val);
+                } else {
+                    for (String v : (List<String>) val) {
+                        Http2Helper.writeHpackLiteral(buf, key, v);
+                    }
                 }
             }
         }
         return buf;
+    }
+
+    // Date value (offset 6, len 29) from the shared, thread-mutated cache; single-pass Huffman.
+    private static void writeHpackDate(HttpBuf buf, byte[] dateLine) {
+        buf.incrementCapacity(30); // 30 = prefix(1) + data(≤29); each Date byte encodes to <8 bits, so Huffman never expands
+        byte[] dst = buf.getBuf();
+        int off = buf.getWriteIndex();
+        int actual = HuffmanByteCodec.encodeData(dateLine, 6, 29, dst, off + 1); // 6 = value start (skip "Date: " prefix), 29 = value length
+        dst[off] = (byte) (0x80 | actual); // single-byte HPACK string header: Huffman flag + 7-bit length
+        buf.setCount(buf.size() + 1 + actual);
     }
 
     // Write response headers: content-type via the HPACK dynamic table, the rest as
@@ -477,6 +501,5 @@ public class Http2Response extends HttpInternalResponse {
             // additional headers appended here as sibling blocks, not blocked by content-type
         }
     }
-
 
 }

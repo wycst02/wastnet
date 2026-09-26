@@ -5,7 +5,7 @@ import io.github.wycst.wastnet.http.extension.HttpServerObserver;
 import io.github.wycst.wastnet.http.handler.HttpExceptionHandler;
 import io.github.wycst.wastnet.http.handler.HttpRequestHandler;
 import io.github.wycst.wastnet.http.handler.HttpServerChannelHandler;
-import io.github.wycst.wastnet.http.reader.HttpChannelReaderFactory;
+import io.github.wycst.wastnet.http.reader.HttpChannelProtocolReader;
 import io.github.wycst.wastnet.http.upgrade.UpgradeHandler;
 import io.github.wycst.wastnet.socket.channel.ChannelReader;
 import io.github.wycst.wastnet.socket.conf.Option;
@@ -22,6 +22,7 @@ import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.util.Enumeration;
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Base NIO HTTP server.
@@ -49,7 +50,7 @@ public class HTTPServer extends TCPServer {
 
     public HTTPServer(int port, NioConfig nioConfig) {
         super(port, nioConfig);
-        super.channelReaderFactory(new HttpChannelReaderFactory());
+        super.channelReaderFactory(HttpChannelProtocolReader::new);
         super.channelHandler(serverChannelHandler = new HttpServerChannelHandler());
     }
 
@@ -236,7 +237,7 @@ public class HTTPServer extends TCPServer {
         return this;
     }
 
-    private boolean startupBannerEnabled = true;
+    boolean startupBannerEnabled = true;
     private long startMillis;
 
     /**
@@ -249,9 +250,13 @@ public class HTTPServer extends TCPServer {
 
     public HTTPServer start() {
         this.startMillis = System.currentTimeMillis();
-        serverChannelHandler.prepare();
         super.start();
         return this;
+    }
+
+    @Override
+    protected CompletableFuture<Void> prepare() {
+        return CompletableFuture.runAsync(serverChannelHandler::prepare);
     }
 
     @Override
@@ -283,7 +288,7 @@ public class HTTPServer extends TCPServer {
                 while (addrs.hasMoreElements()) {
                     InetAddress addr = addrs.nextElement();
                     if (addr instanceof Inet4Address) {
-                        System.out.println("  >>  Network:" + " " + scheme + "://" + addr.getHostAddress() + ":" + port);
+                        System.out.println("  >>  Network: " +  scheme + "://" + addr.getHostAddress() + ":" + port);
                     }
                 }
             }

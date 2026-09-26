@@ -157,7 +157,7 @@ public class SslTlsIntegrationTest {
             resp.close();
             Assertions.fail("Plain HTTP to TLS port should fail");
         } catch (Exception e) {
-            Assertions.assertTrue(e instanceof java.io.IOException || e instanceof javax.net.ssl.SSLException,
+            Assertions.assertTrue(e instanceof IOException || e instanceof SSLException,
                     "Should fail with IO or SSL exception");
         }
     }

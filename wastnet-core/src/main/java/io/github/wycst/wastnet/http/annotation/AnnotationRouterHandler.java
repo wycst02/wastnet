@@ -12,8 +12,15 @@ import java.lang.annotation.Annotation;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.reflect.*;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
+import java.util.function.Function;
 import java.util.regex.Pattern;
+
+import static io.github.wycst.wastnet.http.annotation.AnnotationRouteUtils.*;
 
 /**
  * An extension of {@link HttpRouterHandler} that automatically scans packages
@@ -38,19 +45,62 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
 
     private static final Log log = LogFactory.getLog(AnnotationRouterHandler.class);
 
-    private final BeanContainer beanContainer;
+    final BeanContainer beanContainer;
 
-    private AnnotationResolver resolver;
-    private HttpMessageConverter messageConverter;
-    private Class<?>[] requestBodyAnnotations = new Class<?>[]{RequestBody.class};
-    private Class<?>[] responseBodyAnnotations = new Class<?>[]{ResponseBody.class, RestController.class};
-    private Class<?>[] pathParamAnnotations = new Class<?>[]{PathParam.class};
-    private Class<?>[] requestParamAnnotations = new Class<?>[]{RequestParam.class};
+    private final Set<Class<? extends Annotation>> enabledAnnotations = new LinkedHashSet<>();
+    private final List<BeanRegistrationHandler> registrationHandlers = new ArrayList<>();
+
+    AnnotationResolver resolver;
+    HttpMessageConverter messageConverter;
+    Class<?>[] requestBodyAnnotations = new Class<?>[]{RequestBody.class};
+    Class<?>[] responseBodyAnnotations = new Class<?>[]{ResponseBody.class, RestController.class};
+    Class<?>[] pathParamAnnotations = new Class<?>[]{PathParam.class};
+    Class<?>[] requestParamAnnotations = new Class<?>[]{RequestParam.class};
+    Class<?>[] headerParamAnnotations = new Class<?>[]{RequestHeader.class};
+
+    private String[] scanPackages;
+    private volatile String defaultScanPackage;
+    boolean prepared;
+
+    // Classpath config files auto-loaded each scan (incl. hot reload); feed @Value injection. Default: application.properties.
+    private String[] configFiles = new String[]{"application.properties"};
+
+    // If true, skip jar-internal config and load only external overrides (JAR dir, JAR /config, parent /config). Default false.
+    private boolean ignoreInternalConfig;
+
+    // Component proxy hook: requiresProxy gates wrapping, enhance builds the proxy (@Component/@Controller only; @Bean excluded). Null = disabled.
+    private ComponentEnhancer componentEnhancer;
+
+    // Dev hot-reload engine; re-scans in place. Pass a custom DevHotReloader.ReloadAction (e.g. rebuild-and-swap) to use a different strategy.
+    final DevHotReloader hotReloader = new DevHotReloader((cl, trigger) -> doScanAndReprepare());
+
+    // Context-prefixed paths of WebSocket endpoints registered by scanning; cleared (not all) on hot reload.
+    private final Set<String> scannedUpgradePaths = new HashSet<>();
+    // Interceptors registered from scanning; cleared (not all) on hot reload.
+    private final Set<RouterInterceptor> scannedInterceptors = new HashSet<>();
+
+    // Parameter-kind tags for precomputed route argument metadata (0 reserved = no kind matched).
+    private static final int KIND_REQUEST = 1;
+    private static final int KIND_RESPONSE = 2;
+    private static final int KIND_BODY = 3;
+    private static final int KIND_PATH = 4;
+    private static final int KIND_PARAM = 5;
+    private static final int KIND_HEADER = 6; // @RequestHeader parameter slot
+    private static final int KIND_SSE = 7; // SseEmitter parameter slot; only on @Sse endpoints
 
     public AnnotationRouterHandler() {
         resolver = new DefaultAnnotationResolver();
         beanContainer = new BeanContainer();
         beanContainer.setResolver(resolver);
+        applyReloadTrigger();
+    }
+
+    Map<String, HttpRoute> exactRoutes() {
+        return exactRoutes;
+    }
+
+    List<RouterInterceptor> interceptors() {
+        return interceptors;
     }
 
     /**
@@ -109,737 +159,15 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
     }
 
     /**
-     * Set the message converter for processing {@code @RequestBody} and
-     * {@code @ResponseBody} annotations.
+     * Set the annotation classes recognized as {@code @RequestHeader}.
      * <p>
-     * When configured, {@code @RequestBody} parameters are automatically deserialized
-     * from the HTTP request body, and controller methods annotated with
-     * {@code @ResponseBody} are wired so their return values are automatically
-     * serialized to the HTTP response body.
-     * <p>
-     * Default is {@code null} (annotations are ignored). Configure this to enable
-     * automatic serialization/deserialization via e.g. JSON.
+     * Default is the framework's own {@code @RequestHeader}. Pass Spring's
+     * {@code org.springframework.web.bind.annotation.RequestHeader.class} to bridge existing code
+     * (its {@code value()}, {@code required()} and {@code defaultValue()} are read reflectively).
      */
-    public AnnotationRouterHandler messageConverter(HttpMessageConverter converter) {
-        this.messageConverter = converter;
+    public AnnotationRouterHandler headerParamBy(Class<?>... anns) {
+        this.headerParamAnnotations = anns;
         return this;
-    }
-
-    /**
-     * Set a custom {@link AnnotationResolver} to bridge third-party annotation
-     * systems (e.g. Spring Boot, Micronaut, etc.).
-     * <p>
-     * This is the central extension point of the framework. By implementing
-     * {@link AnnotationResolver}, users can:
-     * <ul>
-     *   <li>Map third-party annotations (e.g. {@code @RestController},
-     *       {@code @Service}, {@code @GetMapping}) to the framework's
-     *       controller/component/endpoint model</li>
-     *   <li>Provide a custom scanner filter via {@link AnnotationFilter#accept(Class)}
-     *       to avoid loading irrelevant classes during package scanning</li>
-     *   <li>Control how route paths, component names, and lifecycle annotations
-     *       are resolved from external annotation libraries</li>
-     * </ul>
-     * <p>
-     * Default is {@link DefaultAnnotationResolver}, which resolves the
-     * framework's own annotations ({@code @Controller}, {@code @Component},
-     * {@code @Endpoint}, {@code @Sse}, {@code @WebSocket}).
-     * <p>
-     * Example for Spring Boot bridging:
-     * <pre>{@code
-     * new AnnotationRouterHandler()
-     *     .annotationResolver(new AnnotationResolver() {
-     *         public boolean accept(Class<?> c) {
-     *             return c.isAnnotationPresent(RestController.class)
-     *                 || c.isAnnotationPresent(Component.class);
-     *         }
-     *         public boolean isController(Class<?> c) { ... }
-     *         public boolean isComponent(Class<?> c)   { ... }
-     *         // ... other methods
-     *     })
-     *     .scanPackages("com.example.controller");
-     * }</pre>
-     */
-    public AnnotationRouterHandler annotationResolver(AnnotationResolver resolver) {
-        this.resolver = resolver;
-        beanContainer.setResolver(resolver);
-        return this;
-    }
-
-    /**
-     * Scan one or more packages for {@code @Controller}, {@code @Component}
-     * and {@code @WebSocket} classes.
-     * Components are registered first so they are available for constructor injection
-     * into controllers.
-     */
-    public AnnotationRouterHandler scanPackages(String... packageNames) {
-        Set<Class<?>> allControllers = new LinkedHashSet<>();
-        Set<Class<?>> allComponents = new LinkedHashSet<>();
-        Set<Class<?>> allConfigurations = new LinkedHashSet<>();
-        Set<Class<?>> allWebSocketClasses = new LinkedHashSet<>();
-        for (String pkg : packageNames) {
-            for (Class<?> clazz : classifyClasses(pkg)) {
-                if (resolver.isController(clazz)) {
-                    allControllers.add(clazz);
-                } else if (resolver.isConfiguration(clazz)) {
-                    allConfigurations.add(clazz);
-                } else if (resolver.isComponent(clazz)) {
-                    // @Interceptor classes are recognized as components and registered as beans here
-                    allComponents.add(clazz);
-                } else if (resolver.isWebSocketEndpoint(clazz)) {
-                    allWebSocketClasses.add(clazz);
-                }
-            }
-        }
-        // Phase 1: @Configuration, @Bean and @Component registration
-        processBeanMethods(allConfigurations, allComponents);
-        // Phase 2: register controllers and websocket endpoints
-        for (Class<?> c : allControllers) registerController(c);
-        for (Class<?> c : allWebSocketClasses) registerWebSocketEndpoint(c);
-        // Phase 3: bulk field injection
-        beanContainer.injectAllFields();
-        // Phase 4: @PostConstruct on all beans
-        beanContainer.invokeAllPostConstruct();
-        // Phase 5: register route-level interceptors (@Interceptor) ordered by order()
-        registerInterceptors();
-        return this;
-    }
-
-    /** Register PRE_ROUTE @Interceptor beans into the parent chain, ordered by @Interceptor.order(). */
-    private void registerInterceptors() {
-        if (isInterceptorsDisabled()) return;
-        Collection<Object> beans = beanContainer.getBeans();
-        if (beans == null || beans.isEmpty()) return;
-        List<RouterInterceptor> chain = null;
-        for (Object bean : beans) {
-            // read @Interceptor meta once; beans without it are skipped (not auto PRE_ROUTE)
-            Interceptor ann = bean.getClass().getAnnotation(Interceptor.class);
-            // only PRE_ROUTE run unconditionally; ENDPOINT ones are bound per endpoint;
-            // skip @Interceptor(disabled = true)
-            if (!(bean instanceof RouterInterceptor) || ann == null || ann.disabled() || ann.type() == InterceptorType.ENDPOINT) continue;
-            if (chain == null) chain = new ArrayList<>();
-            chain.add((RouterInterceptor) bean);
-        }
-        if (chain == null) return;
-        sortByOrder(chain);
-        for (RouterInterceptor interceptor : chain) {
-            interceptor(interceptor);
-        }
-    }
-
-    /** Stable sort by @Interceptor.order(). */
-    private static void sortByOrder(List<RouterInterceptor> chain) {
-        chain.sort((a, b) -> {
-            Integer oa = a.getClass().getAnnotation(Interceptor.class).order();
-            Integer ob = b.getClass().getAnnotation(Interceptor.class).order();
-            return oa.compareTo(ob);
-        });
-    }
-
-    /**
-     * Resolve the ENDPOINT interceptors bound to a route via {@code @WithInterceptor}.
-     *
-     * @return the ordered interceptor list, or an empty list if the route declares none
-     */
-    private List<RouterInterceptor> resolveEndpointInterceptors(MethodRouteInfo routeInfo) {
-        String[] names = routeInfo.getInterceptorNames();
-        if (isInterceptorsDisabled() || names == null) return Collections.emptyList();
-        List<RouterInterceptor> chain = new ArrayList<>(names.length);
-        for (String name : names) {
-            Object bean = beanContainer.getBean(name);
-            if (bean == null) {
-                throw new RuntimeException("@WithInterceptor(\"" + name + "\") on "
-                        + routeInfo.getMethod() + " refers to an unknown interceptor bean");
-            }
-            if (!(bean instanceof RouterInterceptor)) {
-                throw new RuntimeException("@WithInterceptor(\"" + name + "\") on "
-                        + routeInfo.getMethod() + " refers to " + bean.getClass().getName()
-                        + " which does not implement RouterInterceptor");
-            }
-            // no @Interceptor annotation (or PRE_ROUTE) is skipped here; only ENDPOINT ones are bound.
-            Interceptor ann = bean.getClass().getAnnotation(Interceptor.class);
-            // skip non-ENDPOINT (no @Interceptor, PRE_ROUTE) or @Interceptor(disabled = true)
-            if (ann == null || ann.type() != InterceptorType.ENDPOINT || ann.disabled()) continue;
-            // de-duplicate in case the same interceptor is referenced by both class and method level
-            RouterInterceptor interceptor = (RouterInterceptor) bean;
-            if (!chain.contains(interceptor)) chain.add(interceptor);
-        }
-        if (chain.isEmpty()) return Collections.emptyList();
-        sortByOrder(chain);
-        return chain;
-    }
-
-    /** Scan a package and return eligible classes. */
-    private Set<Class<?>> classifyClasses(String packageName) {
-        Set<Class<?>> classes = PackageScanner.scan(packageName, resolver);
-        Set<Class<?>> result = new LinkedHashSet<>();
-        for (Class<?> clazz : classes) {
-            if (isEligibleClass(clazz)) result.add(clazz);
-        }
-        return result;
-    }
-
-    /**
-     * Scan {@code @Bean} methods on all registered component instances and
-     * register their return values back into the container.
-     */
-    private void processBeanMethods(Set<Class<?>> configurations, Set<Class<?>> components) {
-        List<Executable> deferred = new ArrayList<>();
-        // Register @Configuration and process @Bean methods
-        for (Class<?> configClass : configurations) {
-            Constructor<?> ctor = configClass.getConstructors().length > 0 ? configClass.getConstructors()[0] : null;
-            if (ctor != null && ctor.getParameterCount() > 0) continue; // only no-arg supported
-            String name = Character.toLowerCase(configClass.getSimpleName().charAt(0)) + configClass.getSimpleName().substring(1);
-            Object configInstance;
-            try {
-                configInstance = configClass.getDeclaredConstructor().newInstance();
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to instantiate @Configuration: " + configClass.getName(), e);
-            }
-            beanContainer.register(name, configInstance);
-            for (Method method : configClass.getDeclaredMethods()) {
-                int mod = method.getModifiers();
-                if (!Modifier.isPublic(mod) || Modifier.isStatic(mod)) continue;
-                Annotation beanAnn = beanContainer.findBeanAnnotation(method);
-                if (beanAnn == null) continue;
-                if (!tryProcessBeanMethod(configInstance, method, resolver.resolveBeanName(beanAnn))) {
-                    deferred.add(method);
-                }
-            }
-        }
-        // Register @Component classes
-        for (Class<?> c : components) {
-            if (!registerComponent(c)) {
-                Constructor<?> ctor = c.getConstructors().length > 0 ? c.getConstructors()[0] : null;
-                if (ctor != null) deferred.add(ctor);
-            }
-        }
-        // Unified retry (up to 4 retries)
-        if (!deferred.isEmpty()) {
-            List<Executable> pending = deferred;
-            int retry = 4;
-            while (--retry > -1 && !pending.isEmpty()) {
-                List<Executable> next = new ArrayList<>();
-                for (Executable exec : pending) {
-                    if (exec instanceof Method) {
-                        Method method = (Method) exec;
-                        Object configInstance = beanContainer.getBean(method.getDeclaringClass());
-                        if (configInstance != null) {
-                            Annotation beanAnn = beanContainer.findBeanAnnotation(method);
-                            if (beanAnn != null && tryProcessBeanMethod(configInstance, method, resolver.resolveBeanName(beanAnn))) {
-                                continue;
-                            }
-                        }
-                    } else if (exec instanceof Constructor) {
-                        if (registerComponent(exec.getDeclaringClass())) continue;
-                    }
-                    next.add(exec);
-                }
-                pending = next;
-            }
-            if (!pending.isEmpty()) {
-                throw new RuntimeException("Cannot resolve dependencies after "
-                        + "4 retries: " + pending);
-            }
-        }
-    }
-
-    /** @return true if resolved and invoked, false if deferred due to missing deps */
-    private boolean tryProcessBeanMethod(Object bean, Method method, String beanName) {
-        try {
-            Object[] args = resolveParameters(method.getParameters(),
-                    "@Bean method " + method.getName() + " on " + bean.getClass().getName());
-            if (args == null) return false;
-            invokeBeanMethod(bean, method, beanName, args);
-            return true;
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to process @Bean method " + method.getName()
-                    + " on " + bean.getClass().getName(), e);
-        }
-    }
-
-    private void invokeBeanMethod(Object bean, Method method, String beanName, Object[] args) throws Exception {
-        Object result = method.invoke(bean, args);
-        String name = beanName.isEmpty() ? method.getName() : beanName;
-        beanContainer.register(name, result);
-    }
-
-    private void registerWebSocketEndpoint(Class<?> clazz) {
-        try {
-            String path = resolver.resolveWebSocketPath(clazz);
-            if (path.isEmpty()) return;
-            WebSocketResource resource = (WebSocketResource) clazz.getDeclaredConstructor().newInstance();
-            ws(path, resource);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to register WebSocket endpoint: " + clazz.getName(), e);
-        }
-    }
-
-    private boolean registerComponent(Class<?> clazz) {
-        try {
-            Object instance = resolveInstance(clazz);
-            if (instance == null) return false;
-            String name = resolver.resolveComponentName(clazz);
-            beanContainer.register(name, instance);
-            return true;
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to register component: " + clazz.getName(), e);
-        }
-    }
-
-    /**
-     * Register a controller's bean in the container so it is also managed
-     * and receives lifecycle callbacks.
-     */
-    private void registerControllerBean(String name, Object controller) {
-        try {
-            beanContainer.register(name, controller);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to initialize controller: " + controller.getClass().getName(), e);
-        }
-    }
-
-    private void registerController(Class<?> clazz) {
-        String basePath = resolver.resolveControllerPath(clazz);
-        List<MethodRouteInfo> routes = resolver.resolveEndpointRoutes(clazz);
-        List<MethodRouteInfo> sseEndpoints = resolver.resolveSseEndpoints(clazz);
-        if (routes.isEmpty() && sseEndpoints.isEmpty()) return;
-
-        try {
-            final Object controller = resolveInstance(clazz);
-            registerControllerBean(clazz.getSimpleName(), controller);
-
-            // Controller-class-level response-body annotations (e.g. @RestController)
-            // apply to every @Endpoint method in the class.
-            final boolean classHasResponseBody = hasAnyAnnotation(clazz.getAnnotations(), responseBodyAnnotations);
-
-            // HTTP routes
-            for (final MethodRouteInfo routeInfo : routes) {
-                final String fullPath = combinePath(basePath, routeInfo.getPath());
-
-                // Pre-compute parameter kinds at scan time
-                Method endpointMethod = routeInfo.getMethod();
-                Parameter[] params = endpointMethod.getParameters();
-                final int[] argKinds = new int[params.length];
-                final Class<?>[] argBodyTypes = new Class<?>[params.length];
-                final Class<?>[] argPathTypes = new Class<?>[params.length];
-                final int[] argPathSegIndex = new int[params.length];
-                final String[] argParamNames = new String[params.length];
-                final Class<?>[] argParamTypes = new Class<?>[params.length];
-                final boolean[] argParamRequired = new boolean[params.length];
-                final String[] argParamDefaults = new String[params.length];
-                final boolean[] argParamIsFile = new boolean[params.length];
-                final boolean[] argParamIsMulti = new boolean[params.length];
-                final Class<?>[] argParamComponentTypes = new Class<?>[params.length];
-
-                // Parse path template variables: ${name} (wastnet) or Spring's {name}, with optional inline regex {name:pattern}
-                final Map<String, Integer> pathVarSegIndex;
-                final String routePattern;
-                if (fullPath.indexOf('{') > -1) {
-                    if (!fullPath.startsWith("/")) {
-                        throw new IllegalArgumentException("Path must start with '/': " + fullPath);
-                    }
-                    String[] segs = fullPath.split("/", -1);
-                    StringBuilder rb = new StringBuilder();
-                    pathVarSegIndex = new HashMap<>(segs.length);
-                    for (int si = 0; si < segs.length; ++si) {
-                        String seg = segs[si];
-                        if (si == 0) continue; // leading slash
-                        rb.append("/");
-                        String[] pv = parsePathVar(seg);
-                        if (pv != null) {
-                            pathVarSegIndex.put(pv[0], si);
-                            rb.append(pv[1] != null ? "(" + pv[1] + ")" : "([^/]+)");
-                        } else {
-                            rb.append(Pattern.quote(seg));
-                        }
-                    }
-                    routePattern = "^" + rb + "$";
-                } else {
-                    pathVarSegIndex = null;
-                    routePattern = null;
-                }
-
-                for (int i = 0; i < params.length; ++i) {
-                    Class<?> pType = params[i].getType();
-                    if (pType == HttpRequest.class) {
-                        argKinds[i] = KIND_REQUEST;
-                    } else if (pType == HttpResponse.class) {
-                        argKinds[i] = KIND_RESPONSE;
-                    } else if (hasAnyAnnotation(params[i].getAnnotations(), requestBodyAnnotations)) {
-                        argKinds[i] = KIND_BODY;
-                        argBodyTypes[i] = pType;
-                    } else {
-                        for (Annotation ann : params[i].getAnnotations()) {
-                            if (isInList(ann, pathParamAnnotations)) {
-                                String name = readStringAttr(ann, "value", "");
-                                if (pathVarSegIndex == null || !pathVarSegIndex.containsKey(name)) {
-                                    throw new IllegalArgumentException("Path variable \""
-                                            + name + "\" has no matching ${" + name + "} or {" + name + "} in path " + fullPath);
-                                }
-                                argKinds[i] = KIND_PATH;
-                                argPathSegIndex[i] = pathVarSegIndex.get(name);
-                                argPathTypes[i] = pType;
-                                break;
-                            }
-                            if (isInList(ann, requestParamAnnotations)) {
-                                argKinds[i] = KIND_PARAM;
-                                argParamNames[i] = readStringAttr(ann, "value", "");
-                                argParamTypes[i] = pType;
-                                argParamRequired[i] = readBooleanAttr(ann, "required", true);
-                                argParamDefaults[i] = readStringAttr(ann, "defaultValue", "");
-                                Class<?> elemType = resolveParamElementType(params[i], pType);
-                                argParamIsFile[i] = pType == MultipartField.class || pType == MultipartField[].class;
-                                argParamIsMulti[i] = pType.isArray() || Collection.class.isAssignableFrom(pType);
-                                argParamComponentTypes[i] = elemType;
-                                break;
-                            }
-                        }
-                    }
-                }
-                final boolean isFastPath = argKinds.length == 2 && argKinds[0] == KIND_REQUEST && argKinds[1] == KIND_RESPONSE;
-                final boolean hasResponseBody = endpointMethod.getReturnType() != void.class
-                        && (classHasResponseBody
-                                || hasAnyAnnotation(endpointMethod.getAnnotations(), responseBodyAnnotations));
-                if (hasResponseBody && messageConverter == null) {
-                    throw new RuntimeException("@ResponseBody on " + endpointMethod.getName()
-                            + " requires a messageConverter configured via .messageConverter()");
-                }
-                final ConverterConfig converterConfig = buildConverterConfig(routeInfo);
-                final List<RouterInterceptor> endpointInterceptors = resolveEndpointInterceptors(routeInfo);
-
-                // Build MethodHandle bound to the controller instance
-                MethodHandle mh = MethodHandles.lookup().unreflect(endpointMethod);
-                final MethodHandle bound = MethodHandles.insertArguments(mh, 0, controller);
-
-                HttpRoute handler;
-                if (isFastPath) {
-                    // Fast path: (HttpRequest, HttpResponse) — avoid array allocation
-                    handler = (p, request, response) -> {
-                        if (!applyInterceptors(endpointInterceptors, p, request, response)) {
-                            return;
-                        }
-                        if (hasResponseBody) {
-                            Object result = bound.invoke((HttpRequest) request, (HttpResponse) response);
-                            converterConfig.beforeResponseBody(request, response, result);
-                            messageConverter.write(result, converterConfig, response);
-                        } else {
-                            bound.invokeExact((HttpRequest) request, (HttpResponse) response);
-                        }
-                    };
-                } else {
-                    // General path: unusual signatures (incl. @PathParam)
-                    handler = (p, request, response) -> {
-                        if (!applyInterceptors(endpointInterceptors, p, request, response)) {
-                            return;
-                        }
-                        Object[] args = new Object[argKinds.length];
-                        try {
-                            for (int i = 0; i < argKinds.length; ++i) {
-                                switch (argKinds[i]) {
-                                    case KIND_REQUEST:  args[i] = request; break;
-                                    case KIND_RESPONSE: args[i] = response; break;
-                                    case KIND_BODY:     args[i] = messageConverter != null
-                                            ? messageConverter.read(request, converterConfig, argBodyTypes[i]) : null; break;
-                                    case KIND_PATH:     args[i] = convertParamValue(segmentAt(p, argPathSegIndex[i]), argPathTypes[i]); break;
-                                    case KIND_PARAM:
-                                        args[i] = resolveRequestParam(request, argParamNames[i], argParamTypes[i],
-                                                argParamComponentTypes[i], argParamRequired[i], argParamDefaults[i],
-                                                argParamIsFile[i], argParamIsMulti[i]);
-                                        break;
-                                }
-                            }
-                        } catch (Exception e) {
-                            // param/path binding or body parse failed -> client error 400
-                            log.warn("Bad request param binding failed: {}", e.getMessage());
-                            response.status(HttpStatus.BAD_REQUEST)
-                                    .contentType("text/plain;charset=utf-8")
-                                    .body("400 Bad Request".getBytes());
-                            return;
-                        }
-                        Object result = bound.invokeWithArguments(args);
-                        if (hasResponseBody) {
-                            converterConfig.beforeResponseBody(request, response, result);
-                            messageConverter.write(result, converterConfig, response);
-                        }
-                    };
-                }
-
-                HttpMethod[] httpMethods = routeInfo.getHttpMethods();
-                if (routePattern != null) {
-                    route(routePattern, handler, httpMethods);
-                } else {
-                    exactRoute(fullPath, handler, httpMethods);
-                }
-            }
-
-            // SSE endpoints
-            for (final MethodRouteInfo routeInfo : sseEndpoints) {
-                final String fullPath = combinePath(basePath, routeInfo.getPath());
-
-                MethodHandle mh = MethodHandles.lookup().unreflect(routeInfo.getMethod());
-                final MethodHandle bound = MethodHandles.insertArguments(mh, 0, controller);
-
-                sse(fullPath, emitter -> {
-                    try {
-                        bound.invokeExact(emitter);
-                    } catch (Throwable e) {
-                        throw new RuntimeException(e);
-                    }
-                });
-
-                // Interceptors must run before the emitter sends its headers, so guard the
-                // registered SSE route rather than the handler itself.
-                final List<RouterInterceptor> endpointInterceptors = resolveEndpointInterceptors(routeInfo);
-                final HttpRoute sseRoute = exactRoutes.get(fullPath);
-                if (sseRoute != null) {
-                    exactRoute(fullPath, (p, request, response) -> {
-                        if (!applyInterceptors(endpointInterceptors, p, request, response)) return;
-                        sseRoute.handle(p, request, response);
-                    });
-                }
-            }
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to register controller: " + clazz.getName(), e);
-        }
-    }
-
-    /**
-     * Check if a class is eligible for registration: must be public and non-abstract.
-     */
-    private static boolean isEligibleClass(Class<?> clazz) {
-        int mod = clazz.getModifiers();
-        return Modifier.isPublic(mod) && !Modifier.isAbstract(mod);
-    }
-
-    private Object resolveInstance(Class<?> clazz) throws Exception {
-        Constructor<?> ctor = findConstructor(clazz.getConstructors());
-        Parameter[] params;
-        if (ctor == null || (params = ctor.getParameters()).length == 0) return clazz.getDeclaredConstructor().newInstance();
-        Object[] args = resolveParameters(params, clazz.getName());
-        if (args == null) return null;
-        return ctor.newInstance(args);
-    }
-
-    /**
-     * Select a constructor for injection, preferring one annotated with {@code @Inject}.
-     *
-     * @param constructors all public constructors of the class
-     * @return the {@code @Inject}-annotated constructor if exactly one found,
-     *         or the first constructor as fallback
-     * @throws RuntimeException if multiple constructors are annotated with {@code @Inject}
-     */
-    private Constructor<?> findConstructor(Constructor<?>[] constructors) {
-        Constructor<?> injectCtor = null;
-        Constructor<?> first = null;
-        for (Constructor<?> ctor : constructors) {
-            if (first == null) first = ctor;
-            if (beanContainer.findInjectAnnotation(ctor) != null) {
-                if (injectCtor != null) {
-                    throw new RuntimeException("Multiple @Inject constructors in "
-                            + ctor.getDeclaringClass().getName());
-                }
-                injectCtor = ctor;
-            }
-        }
-        return injectCtor != null ? injectCtor : first;
-    }
-
-    /**
-     * Resolve method/constructor parameters supporting {@code @Value}, {@code @Inject(name)},
-     * or by-type lookup from the container.
-     *
-     * @return args if all resolved, or null if any {@code @Inject} dependency is not yet available
-     */
-    private Object[] resolveParameters(Parameter[] params, String context) {
-        Object[] args = new Object[params.length];
-        for (int i = 0; i < params.length; ++i) {
-            Parameter param = params[i];
-            Annotation valueAnn = beanContainer.findValueAnnotation(param);
-            if (valueAnn != null) {
-                String expression = resolver.resolveValueExpression(valueAnn);
-                args[i] = beanContainer.resolveValue(expression, param.getType());
-                continue;
-            }
-            Annotation injectAnn = beanContainer.findInjectAnnotation(param);
-            if (injectAnn != null) {
-                String injectName = resolver.resolveInjectName(injectAnn);
-                args[i] = !injectName.isEmpty()
-                        ? beanContainer.getBean(injectName) : beanContainer.getBean(param.getType());
-                if (args[i] == null) return null; // deferrable
-                continue;
-            }
-            args[i] = beanContainer.getBean(param.getType());
-            if (args[i] == null) {
-                throw new RuntimeException("Cannot resolve dependency '"
-                        + param.getType().getSimpleName() + "' for " + context);
-            }
-        }
-        return args;
-    }
-
-    protected ConverterConfig buildConverterConfig(MethodRouteInfo routeInfo) {
-        ConverterConfig config = new ConverterConfig();
-        if (routeInfo.getResponseType() != null) {
-            config.responseType(routeInfo.getResponseType());
-        }
-        return config;
-    }
-
-    private static final int KIND_REQUEST = 0;
-    private static final int KIND_RESPONSE = 1;
-    private static final int KIND_BODY = 2;
-    private static final int KIND_PATH = 3;
-    private static final int KIND_PARAM = 4;
-
-    private static boolean hasAnyAnnotation(Annotation[] anns, Class<?>[] list) {
-        for (Annotation ann : anns) {
-            if (isInList(ann, list)) return true;
-        }
-        return false;
-    }
-
-    private static boolean isInList(Annotation ann, Class<?>[] list) {
-        Class<? extends Annotation> t = ann.annotationType();
-        for (Class<?> c : list) {
-            if (c.equals(t)) return true;
-        }
-        return false;
-    }
-
-    private static String readStringAttr(Annotation ann, String method, String def) {
-        try {
-            Method m = ann.annotationType().getMethod(method);
-            Object v = m.invoke(ann);
-            return v != null ? v.toString() : def;
-        } catch (Exception e) {
-            return def;
-        }
-    }
-
-    private static boolean readBooleanAttr(Annotation ann, String method, boolean def) {
-        try {
-            Method m = ann.annotationType().getMethod(method);
-            return ((Boolean) m.invoke(ann)).booleanValue();
-        } catch (Exception e) {
-            return def;
-        }
-    }
-
-    private static Object convertParamValue(String value, Class<?> type) {
-        if (value == null) value = "";
-        if (type == String.class) return value;
-        if (type == int.class || type == Integer.class) return Integer.parseInt(value);
-        if (type == long.class || type == Long.class) return Long.parseLong(value);
-        if (type == short.class || type == Short.class) return Short.parseShort(value);
-        if (type == byte.class || type == Byte.class) return Byte.parseByte(value);
-        if (type == boolean.class || type == Boolean.class) return Boolean.parseBoolean(value);
-        if (type == double.class || type == Double.class) return Double.parseDouble(value);
-        if (type == float.class || type == Float.class) return Float.parseFloat(value);
-        return value;
-    }
-
-    // Resolve the element type of an array or collection request parameter (String fallback for raw collections).
-    private static Class<?> resolveParamElementType(Parameter param, Class<?> type) {
-        if (type.isArray()) return type.getComponentType();
-        if (Collection.class.isAssignableFrom(type)) {
-            Type gt = param.getParameterizedType();
-            if (gt instanceof ParameterizedType) {
-                Type[] tas = ((ParameterizedType) gt).getActualTypeArguments();
-                if (tas.length > 0 && tas[0] instanceof Class) return (Class<?>) tas[0];
-            }
-            return String.class;
-        }
-        return type;
-    }
-
-    // Bind a @RequestParam parameter: scalar, multi-value (array/Collection) or file (MultipartField).
-    private static Object resolveRequestParam(HttpRequest request, String name, Class<?> type,
-            Class<?> elemType, boolean required, String def, boolean isFile, boolean isMulti) {
-        if (isFile) return resolveFileParam(request, name, type, required);
-        if (isMulti) {
-            List<String> vals = request.getParameterValues(name);
-            if (vals == null) {
-                if (required) throw new IllegalArgumentException("Missing required parameter: " + name);
-                return null;
-            }
-            // List<String> keeps the raw value list; other element types fall through to conversion.
-            if (elemType == String.class && List.class.isAssignableFrom(type)) {
-                return vals;
-            }
-            Object array = Array.newInstance(elemType, vals.size());
-            for (int k = 0; k < vals.size(); ++k) Array.set(array, k, convertParamValue(vals.get(k), elemType));
-            return type.isArray() ? array : toCollection(type, (Object[]) array);
-        }
-        String pv = request.getParameter(name);
-        if (pv == null) {
-            if (required) throw new IllegalArgumentException("Missing required parameter: " + name);
-            pv = def.isEmpty() ? null : def;
-        }
-        return pv == null ? null : convertParamValue(pv, type);
-    }
-
-    // Bind a multipart file parameter: single MultipartField or MultipartField[] only.
-    private static Object resolveFileParam(HttpRequest request, String name, Class<?> type, boolean required) {
-        if (type.isArray()) {
-            List<MultipartField> fields = request.getMultipartFields(name);
-            if (fields == null) {
-                if (required) throw new IllegalArgumentException("Missing required file parameter: " + name);
-                return null;
-            }
-            return fields.toArray(new MultipartField[0]);
-        }
-        MultipartField field = request.getMultipartField(name);
-        if (field == null && required) throw new IllegalArgumentException("Missing required file parameter: " + name);
-        return field;
-    }
-
-    private static Object toCollection(Class<?> type, Object[] arr) {
-        if (Set.class.isAssignableFrom(type) || SortedSet.class.isAssignableFrom(type)) {
-            return new LinkedHashSet<>(Arrays.asList(arr));
-        }
-        List<Object> list = new ArrayList<>(arr.length);
-        list.addAll(Arrays.asList(arr));
-        return list;
-    }
-
-    // Fetch the 1-based path segment at the precomputed position (see argPathSegIndex),
-    // avoiding the cost of String.split at request time.
-    private static String segmentAt(String p, int pos) {
-        int start = -1, seg = 0, n = p.length();
-        for (int i = 0; i < n; ++i) {
-            if (p.charAt(i) == '/') {
-                if (start >= 0 && seg == pos) return p.substring(start, i);
-                start = i + 1;
-                ++seg;
-            }
-        }
-        return start >= 0 && seg == pos ? p.substring(start) : "";
-    }
-
-    // Parse a path segment as a variable placeholder: supports ${name} (wastnet) and Spring's
-    // {name}, with optional inline regex {name:pattern}. Returns [name, regex] or null for a
-    // non-variable segment (including an empty "{}" placeholder).
-    private static String[] parsePathVar(String seg) {
-        int len = seg.length();
-        boolean dbl = seg.startsWith("${") && seg.endsWith("}");
-        boolean sgl = !dbl && seg.startsWith("{") && seg.endsWith("}");
-        if (len < 2 || (!dbl && !sgl)) return null;
-        String inner = seg.substring(dbl ? 2 : 1, len - 1);
-        if (inner.isEmpty()) return null;
-        int colon = inner.indexOf(':');
-        if (colon > -1) return new String[]{inner.substring(0, colon), inner.substring(colon + 1)};
-        return new String[]{inner, null};
-    }
-
-    private static String combinePath(String base, String path) {
-        if (base == null || base.isEmpty() || "/".equals(base)) {
-            return path.startsWith("/") ? path : "/" + path;
-        }
-        if (path == null || path.isEmpty() || "/".equals(path)) {
-            return base;
-        }
-        return base + (path.startsWith("/") ? path : "/" + path);
     }
 
     /**
@@ -862,6 +190,17 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
      */
     public AnnotationRouterHandler injectBy(Class<?>... anns) {
         beanContainer.setInjectAnnotations(anns);
+        return this;
+    }
+
+    /**
+     * Set the annotation classes recognized as {@code @Bean} (factory-method bean definitions).
+     * <p>
+     * Default is {@link Bean @Bean}. Pass e.g. Spring's
+     * {@code org.springframework.context.annotation.Bean} to bridge third-party annotations.
+     */
+    public AnnotationRouterHandler beanBy(Class<?>... anns) {
+        beanContainer.setBeanAnnotations(anns);
         return this;
     }
 
@@ -889,7 +228,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
      * Set a configuration property available for {@code @Value} injection.
      */
     public AnnotationRouterHandler property(String key, String value) {
-        beanContainer.setProperty(key, value);
+        beanContainer.setStaticProperty(key, value);
         return this;
     }
 
@@ -897,44 +236,856 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
      * Set multiple configuration properties available for {@code @Value} injection.
      */
     public AnnotationRouterHandler properties(Map<String, String> props) {
-        beanContainer.setProperties(props);
+        beanContainer.addStaticProperties(props);
         return this;
     }
 
     /**
-     * Load configuration from one or more classpath {@code .properties} files.
+     * Set the message converter for processing {@code @RequestBody} and
+     * {@code @ResponseBody} annotations.
      * <p>
-     * Example:
-     * <pre>{@code
-     * new AnnotationRouterHandler().loadProperties("application.properties")
-     * }</pre>
-     */
-    public AnnotationRouterHandler loadProperties(String... classpathResources) {
-        beanContainer.loadProperties(classpathResources);
-        return this;
-    }
-
-    /**
-     * Load configuration via a custom {@link ConfigLoader}.
+     * When configured, {@code @RequestBody} parameters are automatically deserialized
+     * from the HTTP request body, and controller methods annotated with
+     * {@code @ResponseBody} are wired so their return values are automatically
+     * serialized to the HTTP response body.
      * <p>
-     * Example:
-     * <pre>{@code
-     * new AnnotationRouterHandler().loadConfig(config -> {
-     *     config.put("key", value);
-     * })
-     * }</pre>
+     * Default is {@code null} (annotations are ignored). Configure this to enable
+     * automatic serialization/deserialization via e.g. JSON.
      */
-    public AnnotationRouterHandler loadConfig(ConfigLoader loader) {
-        beanContainer.loadConfig(loader);
+    public AnnotationRouterHandler messageConverter(HttpMessageConverter converter) {
+        this.messageConverter = converter;
         return this;
     }
 
     /**
-     * Clear all registered routes and release component instances.
+     * Set a custom {@link AnnotationResolver} to bridge third-party annotation
+     * systems (e.g. Spring Boot). Default is {@link DefaultAnnotationResolver}.
+     */
+    public AnnotationRouterHandler annotationResolver(AnnotationResolver resolver) {
+        this.resolver = resolver;
+        beanContainer.setResolver(resolver);
+        return this;
+    }
+
+    /**
+     * Set (replace) the packages to be scanned for {@code @Controller}, {@code @Component}
+     * and {@code @WebSocket} classes. The actual scanning is deferred until {@link #prepare()}
+     * (invoked once as part of {@code server.start()}), so the scan cost is included in the
+     * server's startup timing. Call with no arguments to clear the list.
+     * <p>
+     * Once {@link #prepare()} has run, this method throws {@link IllegalStateException}
+     * because the scan list is frozen for the server's lifetime.
+     */
+    public AnnotationRouterHandler scanPackages(String... packageNames) {
+        if (prepared) {
+            throw new IllegalStateException(
+                    "scanPackages() must be called before the server starts (prepare())");
+        }
+        scanPackages = packageNames;
+        return this;
+    }
+
+    /**
+     * Enable one or more {@code @EnableXxx} switches. Registrar classes
+     * (see {@link BeanRegistrationHandler}) bound to these annotations will be
+     * discovered and activated during the package scan.
+     * <p>
+     * Each call replaces the previously enabled set (no accumulation).
+     */
+    public AnnotationRouterHandler enables(Class<? extends Annotation>... annotations) {
+        enabledAnnotations.clear();
+        if (annotations != null) {
+            Collections.addAll(enabledAnnotations, annotations);
+        }
+        return this;
+    }
+
+    /**
+     * Set the component proxy hook: requiresProxy gates wrapping and enhance
+     * builds the proxy (returning the original instance means no enhancement).
+     * Applies to constructed @Component and @Controller instances; @Bean results excluded.
+     * Pass {@code null} to disable wrapping.
+     *
+     * @param enhancer the enhancer, or {@code null} to disable wrapping
+     * @return this for chaining
+     */
+    public AnnotationRouterHandler componentEnhancer(ComponentEnhancer enhancer) {
+        this.componentEnhancer = enhancer;
+        return this;
+    }
+
+    /**
+     * Set the classpath config file(s) auto-loaded at the start of each scan (and on every hot reload).
+     * Defaults to {@code application.properties}; call with no argument to disable.
+     */
+    public AnnotationRouterHandler configFiles(String... classpathResources) {
+        if (prepared) {
+            throw new IllegalStateException(
+                    "configFiles() must be called before the server starts (prepare())");
+        }
+        configFiles = classpathResources;
+        applyReloadTrigger();
+        return this;
+    }
+
+    /**
+     * Skip classpath (jar-internal) config resources when loading scan configuration.
+     * When enabled, only external files — JAR directory, JAR /config, parent /config — are read,
+     * so nothing bundled inside the jar is ever loaded. Default false.
+     */
+    public AnnotationRouterHandler ignoreInternalConfig(boolean ignore) {
+        if (prepared) {
+            throw new IllegalStateException(
+                    "ignoreInternalConfig() must be called before the server starts (prepare())");
+        }
+        this.ignoreInternalConfig = ignore;
+        return this;
+    }
+
+    /**
+     * Packages whose compiled output directories should never be watched for changes. Delegates to
+     * {@link DevHotReloader}; must be called before the server starts.
+     */
+    public AnnotationRouterHandler hotReloadWatchExclude(String... packageNames) {
+        if (prepared) {
+            throw new IllegalStateException(
+                    "hotReloadWatchExclude() must be called before the server starts (prepare())");
+        }
+        hotReloader.setWatchExcludes(packageNames);
+        return this;
+    }
+
+    /**
+     * One-time startup preparation: run the deferred package scan (if any) and then let the
+     * parent sort the registered routes. Called once by the server before it starts serving,
+     * so the scan cost is counted in the startup timing.
+     */
+    @Override
+    public void prepare() {
+        if (!prepared) {
+            scan();
+            prepared = true;
+        }
+        super.prepare();
+        hotReloader.startWatcher();
+    }
+
+    /**
+     * Re-run the package scan and re-sort routes on top of the current (reload) class loader. Used by
+     * {@link DevHotReloader#reload(Path)} so the dev re-scan path mirrors startup without re-triggering
+     * {@link #prepare()}'s own scan/watcher bootstrap.
+     */
+    void doScanAndReprepare() {
+        doScan();
+        super.prepare();
+    }
+
+    /**
+     * Perform the classpath scan and bean/route registration. Clears previous scan results first.
+     * <p>
+     * Only safe to call once, during startup (via {@link #prepare()}) before the handler is
+     * prepared. Calling it at runtime would {@link #clear()} the live route table and
+     * re-instantiate every bean mid-traffic, which is unsafe — in-flight requests would hit
+     * vanished routes, and the route tables are not safe to mutate concurrently with request
+     * dispatch. Hence the guard below rejects any call made after {@link #prepare()}.
+     */
+    public void scan() {
+        if (prepared) {
+            throw new IllegalStateException(
+                    "scan() may only run once during startup (before prepare()); it must not be called at runtime");
+        }
+        doScan();
+    }
+
+    // Effective scan packages: those set via scan(...), or the main class's package by default.
+    String[] effectiveScanPackages() {
+        if (scanPackages != null) return scanPackages;
+        String defaultPkg = resolveDefaultScanPackage();
+        return defaultPkg == null ? null : new String[]{defaultPkg};
+    }
+
+    // Lazily resolve the main class's package; caches "" when no package can be determined.
+    String resolveDefaultScanPackage() {
+        String pkg = defaultScanPackage;
+        if (pkg == null) {
+            pkg = "";
+            String mainName = DevHotReloader.getMainClassName();
+            if (mainName != null) {
+                int idx = mainName.lastIndexOf('.');
+                if (idx > -1) pkg = mainName.substring(0, idx);
+            }
+            defaultScanPackage = pkg;
+        }
+        return pkg.isEmpty() ? null : pkg;
+    }
+
+    /**
+     * Enable or disable dev hot reload. Delegates to {@link DevHotReloader}; call before
+     * {@code server.start()}. Default is enabled (auto-started in a dev environment).
+     */
+    public AnnotationRouterHandler hotReload(boolean enabled) {
+        hotReloader.setEnabled(enabled);
+        return this;
+    }
+
+    /**
+     * Enable or disable dev hot reload and its console feedback in one call.
+     *
+     * @param enabled whether the dev watcher is active
+     * @param log     whether each reload prints a line to the console
+     */
+    public AnnotationRouterHandler hotReload(boolean enabled, boolean log) {
+        hotReloader.setEnabled(enabled);
+        hotReloader.setConsoleOnReload(log);
+        return this;
+    }
+
+    /**
+     * Build the hot-reload trigger from {@link #configFiles}: a change to any config file's real
+     * on-disk path re-triggers the scan. Each entry is resolved to its file path, so jar / non-watched
+     * resources are safely ignored. Called on construction and whenever {@code configFiles(...)} changes.
+     */
+    private void applyReloadTrigger() {
+        Set<String> paths = null;
+        if (configFiles.length != 0) {
+            ClassLoader cl = scanClassLoader();
+            Set<String> set = new HashSet<>();
+            for (String name : configFiles) {
+                if (name == null || name.isEmpty()) continue;
+                URL url = cl.getResource(name);
+                if (url == null || !"file".equals(url.getProtocol())) continue;
+                try {
+                    set.add(Paths.get(url.toURI()).toAbsolutePath().normalize().toString());
+                } catch (URISyntaxException ignored) {}
+            }
+            if (!set.isEmpty()) paths = set;
+        }
+        hotReloader.setReloadTriggerPaths(paths);
+    }
+
+    /**
+     * Resolve the class loader for scanning: the active reload loader, else the thread context
+     * loader, else this class's own loader.
+     */
+    private ClassLoader scanClassLoader() {
+        ClassLoader cl = hotReloader.scanClassLoader;
+        if (cl == null) {
+            cl = Thread.currentThread().getContextClassLoader();
+            if (cl == null) cl = AnnotationRouterHandler.class.getClassLoader();
+        }
+        return cl;
+    }
+
+    // Core scan routine: classify classes, register beans/controllers/websocket endpoints, inject fields,
+    // run @PostConstruct, then register interceptors. Called at startup and on every hot reload.
+    final void doScan() {
+        clearScanResources();
+        // Reload scan config first; resolve it with the same class loader used for class scanning.
+        beanContainer.loadScanProperties(scanClassLoader(), ignoreInternalConfig, configFiles);
+        String[] pkgs = effectiveScanPackages();
+        Set<Class<?>> allControllers = new HashSet<>();
+        Set<Class<?>> allComponents = new HashSet<>();
+        Set<Class<?>> allConfigurations = new HashSet<>();
+        Set<Class<?>> allWebSocketClasses = new HashSet<>();
+        // Business scan is gated by configured packages; registrar activation below is independent of it.
+        if (pkgs != null) {
+            for (Class<?> clazz : classifyClasses(pkgs)) {
+                if (resolver.isController(clazz)) {
+                    allControllers.add(clazz);
+                } else if (resolver.isConfiguration(clazz)) {
+                    allConfigurations.add(clazz);
+                } else if (resolver.isComponent(clazz)) {
+                    // @Interceptor classes are recognized as components and registered as beans here
+                    allComponents.add(clazz);
+                } else if (resolver.isWebSocketEndpoint(clazz)) {
+                    allWebSocketClasses.add(clazz);
+                }
+            }
+        }
+        // Phase 0: register all registrars (read config + register beans) before components exist
+        scanAndRegisterRegistrars();
+        // Phase 1: register @Configuration/@Bean/@Component (may @Inject registrar beans)
+        processBeanMethods(allConfigurations, allComponents);
+        // Phase 2: register controllers and websocket endpoints
+        for (Class<?> c : allControllers) registerController(c);
+        for (Class<?> c : allWebSocketClasses) registerWebSocketEndpoint(c);
+        // Phase 3: inject all fields (@Value / @Inject)
+        beanContainer.injectAllFields();
+        // Phase 4: @PostConstruct
+        beanContainer.invokeAllPostConstruct();
+        // Phase 5: notify registrars (onAllReady)
+        invokeRegistrarsAllReady();
+        // Phase 6: register @Interceptor chain
+        registerInterceptors();
+    }
+
+    void clearScanResources() {
+        // Drop only scanned HTTP / SSE routes, preserving manual ones.
+        clearRoutesIf(r -> r.target() instanceof AnnotationRoute);
+        // WebSocket endpoints: drop only the scanned ones.
+        removeResources(scannedUpgradePaths);
+        scannedUpgradePaths.clear();
+        // Drop only scanned interceptors, preserving manual ones.
+        clearInterceptorsIf(scannedInterceptors::contains);
+        scannedInterceptors.clear();
+        // Controllers / components are always scan products.
+        clearRegistrars();
+        beanContainer.clearScan();
+    }
+
+    /** Destroy and drop previously activated registrars (called before each re-scan / hot reload). */
+    private void clearRegistrars() {
+        for (BeanRegistrationHandler handler : registrationHandlers) {
+            try {
+                handler.onDestroy();
+            } catch (Exception ignored) {
+            }
+        }
+        registrationHandlers.clear();
+    }
+
+    /**
+     * Phase 0 registrar discovery &amp; registration — independent of the business-bean scan in
+     * {@link #doScan()}.
+     * <p>
+     * Derives one scan root per enabled {@code @EnableXxx} annotation (its first package segment),
+     * scans those roots once, instantiates every candidate whose bound annotation is enabled, sorts
+     * them by {@link Registration#order()}, then invokes {@link BeanRegistrationHandler#onRegister}
+     * once each — BEFORE component instantiation.
+     */
+    private void scanAndRegisterRegistrars() {
+        if (enabledAnnotations.isEmpty()) return;
+        // one root per enabled annotation: its first package segment, deduped
+        String[] roots = new String[enabledAnnotations.size()];
+        int i = 0;
+        for (Class<? extends Annotation> enableAnno : enabledAnnotations) {
+            String pkg = enableAnno.getPackage().getName();
+            int idx = pkg.indexOf('.');
+            roots[i++] = idx > -1 ? pkg.substring(0, idx) : pkg;
+        }
+        // single scan across all roots; keep only enabled candidates
+        for (Class<?> clazz : PackageScanner.scan(
+                c -> isEligibleClass(c) && isRegistrar(c), scanClassLoader(),
+                roots)) {
+            Registration registration = clazz.getAnnotation(Registration.class);
+            if (!enabledAnnotations.contains(registration.value())) continue;
+            // Prefer a single RegistrarContext constructor when present; otherwise a public no-arg one.
+            Constructor<?> ctor = findRegistrarConstructor(clazz);
+            if (ctor != null) {
+                registrationHandlers.add((BeanRegistrationHandler) instantiateAndInject(clazz, ctor, beanContainer, beanContainer));
+            } else {
+                ctor = findPublicNoArgConstructor(clazz);
+                if (ctor == null) {
+                    throw new RuntimeException("Registrar " + clazz.getName()
+                            + " must declare a public no-arg constructor or one accepting RegistrarContext");
+                }
+                registrationHandlers.add((BeanRegistrationHandler) instantiateAndInject(clazz, ctor, beanContainer));
+            }
+        }
+        // sort by @Registration.order() ascending, tie-break by class name for determinism
+        registrationHandlers.sort((a, b) -> {
+            int oa = registrarOrder(a), ob = registrarOrder(b);
+            if (oa != ob) return Integer.compare(oa, ob);
+            return a.getClass().getName().compareTo(b.getClass().getName());
+        });
+        // single sorted pass: each registrar reads config and registers its beans
+        for (BeanRegistrationHandler handler : registrationHandlers) {
+            try {
+                handler.onRegister(beanContainer);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to register beans via BeanRegistrationHandler: "
+                        + handler.getClass().getName(), e);
+            }
+        }
+    }
+
+    /**
+     * Phase 5 — notify every activated registrar that the whole container is ready.
+     * Runs after all beans are field-injected and their {@code @PostConstruct} executed, so a
+     * registrar can safely rely on other beans being fully initialized.
+     */
+    private void invokeRegistrarsAllReady() {
+        if (registrationHandlers.isEmpty()) return;
+        for (BeanRegistrationHandler handler : registrationHandlers) {
+            try {
+                handler.onAllReady(beanContainer);
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to notify BeanRegistrationHandler onAllReady: "
+                        + handler.getClass().getName(), e);
+            }
+        }
+    }
+
+    /** Register PRE_ROUTE @Interceptor beans into the parent chain, ordered by @Interceptor.order(). */
+    void registerInterceptors() {
+        if (isInterceptorsDisabled()) return;
+        Collection<BeanDefinition> beans = beanContainer.getBeans();
+        if (beans.isEmpty()) return;
+        List<BeanDefinition> chain = null;
+        for (BeanDefinition bd : beans) {
+            Object bean = bd.getInstance();
+            // keep PRE_ROUTE interceptors only: skip non-interceptor, unannotated, ENDPOINT and disabled beans
+            Interceptor ann = bd.getSourceClass().getAnnotation(Interceptor.class);
+            if (!(bean instanceof RouterInterceptor) || ann == null || ann.disabled() || ann.type() == InterceptorType.ENDPOINT) continue;
+            if (chain == null) chain = new ArrayList<>();
+            chain.add(bd);
+        }
+        if (chain == null) return;
+        sortByOrder(chain);
+        for (BeanDefinition bd : chain) {
+            RouterInterceptor interceptor = (RouterInterceptor) bd.getInstance();
+            scannedInterceptors.add(interceptor);
+            interceptor(interceptor);
+        }
+    }
+
+    /**
+     * Resolve the ENDPOINT interceptors bound to a route via {@code @WithInterceptor}.
+     *
+     * @return the ordered interceptor list, or an empty list if the route declares none
+     */
+    List<RouterInterceptor> resolveEndpointInterceptors(MethodRouteInfo routeInfo) {
+        String[] names = routeInfo.getInterceptorNames();
+        if (isInterceptorsDisabled() || names == null) return Collections.emptyList();
+        List<BeanDefinition> chain = new ArrayList<>(names.length);
+        for (String name : names) {
+            BeanDefinition bd = beanContainer.getBeanDefinition(name);
+            if (bd == null) {
+                throw new RuntimeException("@WithInterceptor(\"" + name + "\") on "
+                        + routeInfo.getMethod() + " refers to an unknown interceptor bean");
+            }
+            Object bean = bd.getInstance();
+            if (!(bean instanceof RouterInterceptor)) {
+                throw new RuntimeException("@WithInterceptor(\"" + name + "\") on "
+                        + routeInfo.getMethod() + " refers to " + bean.getClass().getName()
+                        + " which does not implement RouterInterceptor");
+            }
+            // bind ENDPOINT interceptors only: skip unannotated, PRE_ROUTE and disabled ones
+            Interceptor ann = bd.getSourceClass().getAnnotation(Interceptor.class);
+            if (ann == null || ann.type() != InterceptorType.ENDPOINT || ann.disabled()) continue;
+            // de-duplicate in case the same interceptor is referenced by both class and method level
+            if (!chain.contains(bd)) chain.add(bd);
+        }
+        if (chain.isEmpty()) return Collections.emptyList();
+        sortByOrder(chain);
+        List<RouterInterceptor> result = new ArrayList<>(chain.size());
+        for (BeanDefinition bd : chain) result.add((RouterInterceptor) bd.getInstance());
+        return result;
+    }
+
+    /** Scan the given packages in one pass and return eligible classes, using the active (reload) class loader if set. */
+    private Set<Class<?>> classifyClasses(String... packageNames) {
+        return PackageScanner.scan(c -> resolver.accept(c) && isEligibleClass(c), scanClassLoader(), packageNames);
+    }
+
+    /**
+     * Register {@code @Configuration} classes and process their {@code @Bean} methods, then register
+     * {@code @Component} classes, retrying deferred dependencies up to 5 times.
+     * <p>
+     * See {@link Configuration} for the no-arg constructor requirement.
+     */
+    void processBeanMethods(Set<Class<?>> configurations, Set<Class<?>> components) {
+        List<Executable> deferred = new ArrayList<>();
+        // @Configuration requires a no-arg constructor; otherwise it's skipped (with a warning) and its @Bean methods are ignored.
+        for (Class<?> configClass : configurations) {
+            Constructor<?> noArgCtor = findPublicNoArgConstructor(configClass);
+            if (noArgCtor == null) {
+                log.warn("@Configuration {} has no no-arg constructor; its @Bean methods will not be registered", configClass.getName());
+                continue;
+            }
+            Object configInstance = instantiateAndInject(configClass, noArgCtor, beanContainer);
+            // Register by FQN to avoid simple-name collisions across packages.
+            beanContainer.register(configClass.getName(), configInstance, false);
+            for (Method method : configClass.getDeclaredMethods()) {
+                int mod = method.getModifiers();
+                // void and primitive return types yield no usable bean type (a primitive resolves via
+                // Class.cast → ClassCastException); skip so they're silently ignored like non-@Bean methods.
+                if (!Modifier.isPublic(mod) || Modifier.isStatic(mod)
+                        || method.getReturnType() == void.class || method.getReturnType().isPrimitive()) continue;
+                Annotation beanAnn = beanContainer.findBeanAnnotation(method);
+                if (beanAnn == null) continue;
+                if (!tryProcessBeanMethod(configInstance, method, resolver.resolveBeanName(beanAnn), beanContainer, resolver)) {
+                    deferred.add(method);
+                }
+            }
+        }
+        // Register @Component classes
+        for (Class<?> c : components) {
+            if (!registerComponent(c)) {
+                Constructor<?>[] ctors = c.getConstructors();
+                // marker only; retry consumes declaringClass and re-selects the ctor via findConstructor
+                Constructor<?> ctor = ctors.length > 0 ? ctors[0] : null;
+                if (ctor != null) deferred.add(ctor);
+            }
+        }
+        // Unified retry (up to 5 retries)
+        if (!deferred.isEmpty()) {
+            List<Executable> pending = deferred;
+            int retry = 5;
+            while (--retry > -1 && !pending.isEmpty()) {
+                List<Executable> next = new ArrayList<>();
+                for (Executable exec : pending) {
+                    if (exec instanceof Method) {
+                        Method method = (Method) exec;
+                        Object configInstance = beanContainer.getBean(method.getDeclaringClass());
+                        if (configInstance != null) {
+                            Annotation beanAnn = beanContainer.findBeanAnnotation(method);
+                            if (beanAnn != null && tryProcessBeanMethod(configInstance, method, resolver.resolveBeanName(beanAnn), beanContainer, resolver)) {
+                                continue;
+                            }
+                        }
+                    } else if (registerComponent(exec.getDeclaringClass())) continue;
+                    next.add(exec);
+                }
+                pending = next;
+            }
+            if (!pending.isEmpty()) {
+                throw new RuntimeException("Cannot resolve dependencies after "
+                        + "5 retries: " + pending);
+            }
+        }
+    }
+
+    void registerWebSocketEndpoint(Class<?> clazz) {
+        try {
+            String path = resolver.resolveWebSocketPath(clazz);
+            if (path.isEmpty()) return;
+            WebSocketResource resource = (WebSocketResource) clazz.getDeclaredConstructor().newInstance();
+            ws(path, resource);
+            scannedUpgradePaths.add(buildFullPath(path));
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to register WebSocket endpoint: " + clazz.getName(), e);
+        }
+    }
+
+    boolean registerComponent(Class<?> clazz) {
+        try {
+            BeanDefinition bd = resolveInstance(clazz);
+            if (bd == null) return false;
+            if (!bd.getSourceClass().isInstance(bd.getInstance())) {
+                throw new IllegalArgumentException(
+                    "ComponentEnhancer returned an object not assignable to " + clazz.getName());
+            }
+            String name = resolver.resolveComponentName(clazz);
+            beanContainer.register(name, bd, false);
+            return true;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to register component: " + clazz.getName(), e);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    void registerController(Class<?> clazz) {
+        String basePath = normalizeBasePath(resolver.resolveControllerPath(clazz));
+        List<MethodRouteInfo> routes = resolver.resolveEndpointRoutes(clazz);
+        // Merge SSE endpoints into the same list: @Sse reuses the @Endpoint parameter-binding
+        // pipeline and only differs in how the response is produced (SseEmitter stream vs body).
+        routes.addAll(resolver.resolveSseEndpoints(clazz));
+        if (routes.isEmpty()) return;
+        Set<Method> seenMethods = new HashSet<>();
+
+        try {
+            final BeanDefinition def = Objects.requireNonNull(resolveInstance(clazz),
+                    "Cannot instantiate controller " + clazz.getName()
+                            + ": a required @Inject dependency was not resolvable (missing or not yet registered)") ;
+            if (!def.getSourceClass().isInstance(def.getInstance())) {
+                throw new IllegalArgumentException(
+                    "ComponentEnhancer returned an object not assignable to " + clazz.getName());
+            }
+            // Register by FQN to avoid simple-name collisions across packages.
+            final Object controller = def.getInstance();
+            beanContainer.register(clazz.getName(), def, false);
+
+            // Controller-class-level response-body annotations (e.g. @RestController)
+            // apply to every @Endpoint method in the class.
+            final boolean classHasResponseBody = hasAnyAnnotation(clazz.getAnnotations(), responseBodyAnnotations);
+
+            // HTTP + SSE endpoints (merged)
+            for (final MethodRouteInfo routeInfo : routes) {
+                if (!seenMethods.add(routeInfo.getMethod())) {
+                    throw new IllegalArgumentException("Method " + routeInfo.getMethod()
+                            + " is annotated with both @Endpoint and @Sse; choose one");
+                }
+                final boolean isSse = routeInfo.getAnnotationType() == Sse.class;
+                // Per-endpoint SSE timeout; < 0 falls back to the global SSE_TIMEOUT_MS option in startSse.
+                final long sseTimeoutMs = isSse ? routeInfo.getMethod().getAnnotation(Sse.class).timeout() : -1;
+                final String fullPath = buildFullPath(basePath, routeInfo.getPath());
+
+                // Pre-compute parameter kinds at scan time
+                Method endpointMethod = routeInfo.getMethod();
+                Parameter[] params = endpointMethod.getParameters();
+                final int[] argKinds = new int[params.length];
+                final Type[] argBodyTypes = new Type[params.length];
+                final int[] argPathSegIndex = new int[params.length];
+                final String[] argParamNames = new String[params.length];
+                final Class<?>[] argParamTypes = new Class<?>[params.length];
+                final boolean[] argParamRequired = new boolean[params.length];
+                final String[] argParamDefaults = new String[params.length];
+                final boolean[] argParamIsFile = new boolean[params.length];
+                final boolean[] argParamIsMulti = new boolean[params.length];
+                final Class<?>[] argParamComponentTypes = new Class<?>[params.length];
+                // Pre-resolved type converters (scan time) so request time does no type lookup
+                final Function<String, Object>[] argConverters = new Function[params.length];
+                final Function<String, Object>[] argParamElemConverters = new Function[params.length];
+                // Index of the SseEmitter parameter when this endpoint is an @Sse endpoint; -1 otherwise.
+                int argSseIndex = -1;
+
+                // Parse path template variables: ${name} (wastnet) or Spring's {name}, with optional inline regex {name:pattern}
+                final Map<String, Integer> pathVarSegIndex;
+                final String routePattern;
+                if (fullPath.indexOf('{') > -1) {
+                    String[] segs = fullPath.split("/", -1);
+                    StringBuilder rb = new StringBuilder();
+                    pathVarSegIndex = new HashMap<>(segs.length);
+                    for (int si = 0; si < segs.length; ++si) {
+                        String seg = segs[si];
+                        if (si == 0) continue; // leading slash
+                        rb.append("/");
+                        String[] pv = parsePathVar(seg);
+                        if (pv != null) {
+                            pathVarSegIndex.put(pv[0], si);
+                            rb.append(pv[1] != null ? "(" + pv[1] + ")" : "([^/]+)");
+                        } else {
+                            rb.append(Pattern.quote(seg));
+                        }
+                    }
+                    routePattern = "^" + rb + "$";
+                } else {
+                    pathVarSegIndex = null;
+                    routePattern = null;
+                }
+
+                for (int i = 0; i < params.length; ++i) {
+                    Class<?> pType = params[i].getType();
+                    argParamTypes[i] = pType;
+                    if (pType == HttpRequest.class) {
+                        argKinds[i] = KIND_REQUEST;
+                    } else if (pType == HttpResponse.class) {
+                        argKinds[i] = KIND_RESPONSE;
+                    } else if (pType == SseEmitter.class) {
+                        if (!isSse) {
+                            throw new IllegalArgumentException(
+                                    "SseEmitter can only be declared on @Sse endpoints, not on @Endpoint "
+                                            + endpointMethod.getName() + " in " + clazz.getName());
+                        }
+                        argKinds[i] = KIND_SSE;
+                        argSseIndex = i;
+                    } else if (hasAnyAnnotation(params[i].getAnnotations(), requestBodyAnnotations)) {
+                        if (isSse) {
+                            throw new IllegalArgumentException("@RequestBody is not allowed on @Sse endpoint "
+                                    + endpointMethod.getName() + "; SSE produces a stream, it does not consume a body");
+                        }
+                        argKinds[i] = KIND_BODY;
+                        argBodyTypes[i] = params[i].getParameterizedType();
+                    } else {
+                        for (Annotation ann : params[i].getAnnotations()) {
+                            if (isInList(ann, pathParamAnnotations)) {
+                                String name = readStringAttr(ann, "value", "");
+                                if (pathVarSegIndex == null || !pathVarSegIndex.containsKey(name)) {
+                                    throw new IllegalArgumentException("Path variable \""
+                                            + name + "\" has no matching ${" + name + "} or {" + name + "} in path " + fullPath);
+                                }
+                                argKinds[i] = KIND_PATH;
+                                argPathSegIndex[i] = pathVarSegIndex.get(name);
+                                ParamValueConverters.ensureConvertible(pType);
+                                argConverters[i] = resolveConverter(pType);
+                                break;
+                            }
+                            boolean isRequestParam = isInList(ann, requestParamAnnotations);
+                            if (isRequestParam || isInList(ann, headerParamAnnotations)) {
+                                argKinds[i] = isRequestParam ? KIND_PARAM : KIND_HEADER;
+                                argParamNames[i] = readStringAttr(ann, "value", "");
+                                argParamRequired[i] = readBooleanAttr(ann, "required", true);
+                                argParamDefaults[i] = readStringAttr(ann, "defaultValue", "");
+                                Class<?> elemType = resolveParamElementType(params[i], pType);
+                                argParamIsFile[i] = isRequestParam && (pType == MultipartField.class || pType == MultipartField[].class);
+                                argParamIsMulti[i] = pType.isArray() || Collection.class.isAssignableFrom(pType);
+                                argParamComponentTypes[i] = elemType;
+                                if (!argParamIsFile[i]) { // file params (MultipartField) are not resolved via the converter registry, so skip the check
+                                    ParamValueConverters.ensureConvertible(argParamIsMulti[i] ? elemType : pType); // multi-value (array/collection) -> validate element type; scalar -> validate param type
+                                }
+                                argConverters[i] = resolveConverter(pType);
+                                argParamElemConverters[i] = argParamIsMulti[i] ? resolveConverter(elemType) : null;
+                                break;
+                            }
+                        }
+                    }
+                }
+                // an unmatched parameter keeps 0, so it can never be mistaken for KIND_REQUEST
+                final boolean isFastPath = argKinds.length == 2 && argKinds[0] == KIND_REQUEST && argKinds[1] == KIND_RESPONSE;
+                final boolean hasResponseBody = !isSse && endpointMethod.getReturnType() != void.class
+                        && (classHasResponseBody
+                        || hasAnyAnnotation(endpointMethod.getAnnotations(), responseBodyAnnotations));
+                if (hasResponseBody && messageConverter == null) {
+                    throw new RuntimeException("@ResponseBody on " + endpointMethod.getName()
+                            + " requires a messageConverter configured via .messageConverter()");
+                }
+                final ConverterConfig converterConfig = buildConverterConfig(routeInfo);
+                final List<RouterInterceptor> endpointInterceptors = resolveEndpointInterceptors(routeInfo);
+
+                // Build MethodHandle bound to the controller instance
+                MethodHandle mh = MethodHandles.lookup().unreflect(endpointMethod);
+                final MethodHandle bound = MethodHandles.insertArguments(mh, 0, controller);
+
+                AnnotationRoute handler;
+                if (isFastPath) {
+                    // void / non-void is a construction-time constant, so pick a specialised
+                    // lambda once instead of re-checking getReturnType() on every request.
+                    if (endpointMethod.getReturnType() == void.class) {
+                        handler = (p, request, response) -> {
+                            if (!applyInterceptors(endpointInterceptors, p, request, response)) {
+                                return;
+                            }
+                            bound.invokeExact((HttpRequest) request, (HttpResponse) response);
+                        };
+                    } else {
+                        handler = (p, request, response) -> {
+                            if (!applyInterceptors(endpointInterceptors, p, request, response)) {
+                                return;
+                            }
+                            Object result = bound.invoke((HttpRequest) request, (HttpResponse) response);
+                            if (hasResponseBody) {
+                                converterConfig.beforeResponseBody(request, response, result);
+                                messageConverter.write(result, converterConfig, response);
+                            }
+                        };
+                    }
+                } else {
+                    // General path: any signature other than (HttpRequest, HttpResponse).
+                    // Also serves @Sse endpoints: the SseEmitter slot (KIND_SSE) is left empty
+                    // during binding and filled after the stream opens via startSse().
+                    final int sseIndex = argSseIndex;
+                    handler = (p, request, response) -> {
+                        if (!applyInterceptors(endpointInterceptors, p, request, response)) {
+                            return;
+                        }
+                        Object[] args = new Object[argKinds.length];
+                        try {
+                            for (int i = 0; i < argKinds.length; ++i) {
+                                switch (argKinds[i]) {
+                                    case KIND_REQUEST:  args[i] = request; break;
+                                    case KIND_RESPONSE: args[i] = response; break;
+                                    case KIND_BODY:
+                                        args[i] = messageConverter != null
+                                                ? assertBodyAssignable(messageConverter.read(request, converterConfig, argBodyTypes[i]), argParamTypes[i])
+                                                : null;
+                                        break;
+                                    case KIND_PATH:     args[i] = argConverters[i].apply(segmentAt(p, argPathSegIndex[i])); break;
+                                    case KIND_PARAM:
+                                        args[i] = resolveRequestParam(request, argParamNames[i], argParamTypes[i],
+                                                argParamComponentTypes[i], argParamRequired[i], argParamDefaults[i],
+                                                argParamIsFile[i], argParamIsMulti[i], argConverters[i], argParamElemConverters[i]);
+                                        break;
+                                    case KIND_SSE:      break; // filled after the SSE stream opens
+                                    case KIND_HEADER:
+                                        args[i] = resolveRequestHeader(request, argParamNames[i], argParamTypes[i],
+                                                argParamComponentTypes[i], argParamRequired[i], argParamDefaults[i],
+                                                argParamIsMulti[i], argConverters[i], argParamElemConverters[i]);
+                                        break;
+                                    default: {
+                                        if(argParamTypes[i].isPrimitive()) {
+                                            args[i] = Array.get(Array.newInstance(argParamTypes[i], 1), 0);
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (Exception e) {
+                            // param/path binding or body parse failed -> client error 400
+                            log.warn("Bad request param binding failed: {}", e.getMessage());
+                            response.status(HttpStatus.BAD_REQUEST)
+                                    .contentType("text/plain;charset=utf-8")
+                                    .body("400 Bad Request".getBytes());
+                            return;
+                        }
+                        if (isSse) {
+                            // Open the SSE stream (headers flushed) only after binding succeeds,
+                            // then inject the emitter and run the endpoint on the worker thread.
+                            startSse(request, response, sseTimeoutMs, emitter -> {
+                                args[sseIndex] = emitter;
+                                bound.invokeWithArguments(args);
+                            });
+                        } else {
+                            Object result = bound.invokeWithArguments(args);
+                            if (hasResponseBody) {
+                                converterConfig.beforeResponseBody(request, response, result);
+                                messageConverter.write(result, converterConfig, response);
+                            }
+                        }
+                    };
+                }
+
+                HttpMethod[] httpMethods = routeInfo.getHttpMethods();
+                if (routePattern != null) {
+                    route(routePattern, handler, httpMethods);
+                } else {
+                    exactRoute(fullPath, handler, httpMethods);
+                }
+            }
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to register controller: " + clazz.getName(), e);
+        }
+    }
+
+    private BeanDefinition resolveInstance(Class<?> clazz) throws Exception {
+        Constructor<?> ctor = findConstructor(clazz.getConstructors(), beanContainer);
+        if (ctor == null) return null; // no public constructor -> not instantiable via public API
+        Parameter[] params = ctor.getParameters();
+        Object[] args = params.length == 0 ? new Object[0] : resolveParameters(params, clazz.getName(), beanContainer, resolver);
+        if (args == null) return null;
+        boolean proxy = requiresProxy(clazz);
+        Object instance = proxy ? componentEnhancer.enhance(clazz, ctor, args) : ctor.newInstance(args);
+        if (instance == null) return null;
+        return new BeanDefinition(clazz, instance, true, proxy);
+    }
+
+    private boolean requiresProxy(Class<?> clazz) {
+        if (componentEnhancer == null) return false;
+        if (componentEnhancer.requiresProxy(clazz)) return true;
+        Class<? extends Annotation>[] triggers = componentEnhancer.proxyAnnotations();
+        if (triggers != null) {
+            for (Class<? extends Annotation> trigger : triggers) {
+                if (clazz.isAnnotationPresent(trigger)) return true;
+                for (Method method : clazz.getMethods()) {
+                    if (method.isAnnotationPresent(trigger)) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Build the per-route converter config. Extension point: override to preset more options. */
+    protected ConverterConfig buildConverterConfig(MethodRouteInfo routeInfo) {
+        ConverterConfig config = new ConverterConfig();
+        if (routeInfo.getResponseType() != null) {
+            config.responseType(routeInfo.getResponseType());
+        }
+        return config;
+    }
+
+    // Parameter value converters are defined in ParamValueConverters (shared by @RequestParam/@PathParam and @Value).
+
+    /**
+     * Register (or override) a custom converter for a parameter value type.
+     * Built-in primitive / String converters are locked and cannot be overridden.
+     *
+     * @throws IllegalArgumentException if {@code type} is a locked built-in type
+     */
+    @SuppressWarnings("unchecked")
+    public <T> AnnotationRouterHandler registerParamConverter(Class<T> type, Function<String, T> converter) {
+        ParamValueConverters.register(type, (Function<String, Object>) converter);
+        return this;
+    }
+
+    /**
+     * Clear all registered routes and release component instances. Also stops the dev watcher and
+     * resets the prepared flag so the handler can be prepared again.
      */
     @Override
     public void clear() {
         super.clear();
-        beanContainer.clear();
+        beanContainer.clearAll();
+        clearRegistrars();
+        hotReloader.destroyWatcher();
+        prepared = false;
     }
 }

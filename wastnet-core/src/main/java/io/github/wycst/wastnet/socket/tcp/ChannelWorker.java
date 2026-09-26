@@ -110,6 +110,7 @@ final class ChannelWorker extends Thread {
      * Called during server shutdown to release all client resources.
      */
     void closeAllConnections() {
+        if (!selector.isOpen()) return;
         for (SelectionKey key : new ArrayList<>(selector.keys())) {
             if (key.isValid()) {
                 ChannelRunner runner = (ChannelRunner) key.attachment();
@@ -130,6 +131,7 @@ final class ChannelWorker extends Thread {
      * @return true if at least one runner has in-flight (runFlag == true)
      */
     boolean hasInflightRequests() {
+        if (!selector.isOpen()) return false;
         for (SelectionKey key : new ArrayList<>(selector.keys())) {
             if (key.isValid()) {
                 ChannelRunner runner = (ChannelRunner) key.attachment();
@@ -191,7 +193,19 @@ final class ChannelWorker extends Thread {
         if (engine.nioConfig.getIdleStateHandler() != null
                 && engine.nioConfig.getIdleStateHandler().getMode() == IdleStateHandler.Mode.SHARED) {
             idleScanFuture = getScheduledExecutorService()
-                    .scheduleWithFixedDelay(new IdleScanTask(), 0, 1000, TimeUnit.MILLISECONDS);
+                    .scheduleWithFixedDelay(() -> {
+                        try {
+                            long now = System.nanoTime();
+                            List<SelectionKey> keys = new ArrayList<>(selector.keys());
+                            for (SelectionKey key : keys) {
+                                if (!key.isValid()) continue;
+                                ChannelRunner runner = (ChannelRunner) key.attachment();
+                                runner.ctx.idleStateHandlerTrigger.scanIdle(now);
+                            }
+                        } catch (Throwable ignored) {
+                            // next tick retries
+                        }
+                    }, 0, 1000, TimeUnit.MILLISECONDS);
         }
 
         final long selectTimeoutMs = engine.nioConfig.option(SocketOptions.SELECT_TIMEOUT_MS);
@@ -243,24 +257,4 @@ final class ChannelWorker extends Thread {
         }
     }
 
-    /**
-     * Runnable that scans all connections for idle state (SHARED mode).
-     * Only scans triggers in SHARED mode; EXCLUSIVE triggers use their own scheduling.
-     */
-    class IdleScanTask implements Runnable {
-        @Override
-        public void run() {
-            try {
-                long now = System.nanoTime();
-                List<SelectionKey> keys = new ArrayList<>(selector.keys());
-                for (SelectionKey key : keys) {
-                    if (!key.isValid()) continue;
-                    ChannelRunner runner = (ChannelRunner) key.attachment();
-                    runner.ctx.idleStateHandlerTrigger.scanIdle(now);
-                }
-            } catch (Throwable ignored) {
-                // next tick retries
-            }
-        }
-    }
 }

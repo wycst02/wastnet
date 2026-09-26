@@ -3,8 +3,6 @@ package io.github.wycst.wastnet.socket.conf;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Constructor;
-
 /**
  * Unit tests for {@link SocketConf} static configuration holder.
  * <p>
@@ -14,10 +12,9 @@ import java.lang.reflect.Constructor;
 public class SocketConfTest {
 
     @Test
-    public void testPrivateConstructorIsAccessibleViaReflection() throws Exception {
-        Constructor<SocketConf> ctor = SocketConf.class.getDeclaredConstructor();
-        ctor.setAccessible(true);
-        SocketConf instance = ctor.newInstance();
+    public void testPrivateConstructorIsAccessible() {
+        // Constructor is package-private (same package), so it can be invoked directly.
+        SocketConf instance = new SocketConf();
         Assertions.assertNotNull(instance);
     }
 

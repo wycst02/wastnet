@@ -6,7 +6,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.io.Serializable;
 
 import static org.mockito.Mockito.*;
 
@@ -214,20 +213,16 @@ public class HttpDefaultResponseTest {
     }
 
     @Test
-    public void testToContentLengthDirectIntegerLongCoversInstanceofBranch() throws Exception {
-        java.lang.reflect.Method m = HttpDefaultResponse.class.getDeclaredMethod("toContentLength", Serializable.class);
-        m.setAccessible(true);
-        long fromInt = (long) m.invoke(resp, Integer.valueOf(200));
+    public void testToContentLengthDirectIntegerLongCoversInstanceofBranch() {
+        long fromInt = resp.toContentLength(Integer.valueOf(200));
         Assertions.assertEquals(200, fromInt);
-        long fromLong = (long) m.invoke(resp, Long.valueOf(300));
+        long fromLong = resp.toContentLength(Long.valueOf(300));
         Assertions.assertEquals(300, fromLong);
     }
 
     @Test
     public void testUpdateContentFlagsWithHeadersSent() throws Exception {
-        java.lang.reflect.Field headersSentField = HttpInternalResponse.class.getDeclaredField("headersSent");
-        headersSentField.setAccessible(true);
-        headersSentField.set(resp, true);
+        resp.headersSent = true;
         resp.addHeader(HttpHeaderNames.CONTENT_LENGTH, 500);
         Assertions.assertEquals(-1, resp.getContentLength());
         Assertions.assertFalse(resp.hasExplicitContentLength());
@@ -302,27 +297,21 @@ public class HttpDefaultResponseTest {
 
     @Test
     public void testSetContentLengthWhenHeadersSent() throws Exception {
-        java.lang.reflect.Field headersSentField = HttpInternalResponse.class.getDeclaredField("headersSent");
-        headersSentField.setAccessible(true);
-        headersSentField.set(resp, true);
+        resp.headersSent = true;
         resp.setContentLength(200);
         Assertions.assertEquals(-1, resp.getContentLength());
     }
 
     @Test
     public void testSetChunkedWhenHeadersSent() throws Exception {
-        java.lang.reflect.Field headersSentField = HttpInternalResponse.class.getDeclaredField("headersSent");
-        headersSentField.setAccessible(true);
-        headersSentField.set(resp, true);
+        resp.headersSent = true;
         Assertions.assertDoesNotThrow(() -> resp.setChunked(true));
         Assertions.assertFalse(resp.isChunked());
     }
 
     @Test
     public void testSetChunkedEncodingWhenHeadersSent() throws Exception {
-        java.lang.reflect.Field headersSentField = HttpInternalResponse.class.getDeclaredField("headersSent");
-        headersSentField.setAccessible(true);
-        headersSentField.set(resp, true);
+        resp.headersSent = true;
         Assertions.assertDoesNotThrow(() -> resp.setChunkedEncoding());
         Assertions.assertFalse(resp.isChunked());
     }
@@ -331,18 +320,14 @@ public class HttpDefaultResponseTest {
     public void testRemoveChunkedEncodingWhenHeadersSent() throws Exception {
         resp.setChunked(true);
         Assertions.assertTrue(resp.isChunked());
-        java.lang.reflect.Field headersSentField = HttpInternalResponse.class.getDeclaredField("headersSent");
-        headersSentField.setAccessible(true);
-        headersSentField.set(resp, true);
+        resp.headersSent = true;
         resp.removeChunkedEncoding();
         Assertions.assertTrue(resp.isChunked());
     }
 
     @Test
     public void testIsCorruptedTrue() throws Exception {
-        java.lang.reflect.Field stateField = HttpDefaultResponse.class.getDeclaredField("responseState");
-        stateField.setAccessible(true);
-        stateField.set(resp, 2);
+        resp.responseState = 2;
         Assertions.assertTrue(resp.isCorrupted());
     }
 
@@ -356,25 +341,19 @@ public class HttpDefaultResponseTest {
 
     @Test
     public void testFlushWhenCompleted() throws Exception {
-        java.lang.reflect.Field stateField = HttpDefaultResponse.class.getDeclaredField("responseState");
-        stateField.setAccessible(true);
-        stateField.set(resp, 1);
+        resp.responseState = 1;
         Assertions.assertDoesNotThrow(() -> resp.flush());
     }
 
     @Test
     public void testFlushWhenCorrupted() throws Exception {
-        java.lang.reflect.Field stateField = HttpDefaultResponse.class.getDeclaredField("responseState");
-        stateField.setAccessible(true);
-        stateField.set(resp, 2);
+        resp.responseState = 2;
         Assertions.assertDoesNotThrow(() -> resp.flush());
     }
 
     @Test
     public void testWriteChunkedWhenCompleted() throws Exception {
-        java.lang.reflect.Field stateField = HttpDefaultResponse.class.getDeclaredField("responseState");
-        stateField.setAccessible(true);
-        stateField.set(resp, 1);
+        resp.responseState = 1;
         Assertions.assertDoesNotThrow(() -> resp.writeChunked("test".getBytes()));
     }
 
@@ -391,13 +370,11 @@ public class HttpDefaultResponseTest {
     @Test
     public void testHandover() throws Exception {
         resp.handover();
-        java.lang.reflect.Field stateField = HttpDefaultResponse.class.getDeclaredField("responseState");
-        stateField.setAccessible(true);
-        Assertions.assertEquals(1, stateField.get(resp));
+        Assertions.assertEquals(1, resp.responseState);
     }
 
     @Test
-    public void testWriteLargeData() throws Exception {
+    public void testWriteLargeData() {
         int threshold = getBodyMemoryThreshold();
         byte[] largeData = new byte[threshold + 1];
         Assertions.assertDoesNotThrow(() -> resp.write(largeData, 0, largeData.length));
@@ -405,17 +382,13 @@ public class HttpDefaultResponseTest {
 
     @Test
     public void testEarlyHintsWhenCompleted() throws Exception {
-        java.lang.reflect.Field stateField = HttpDefaultResponse.class.getDeclaredField("responseState");
-        stateField.setAccessible(true);
-        stateField.set(resp, 1);
+        resp.responseState = 1;
         Assertions.assertDoesNotThrow(() -> resp.earlyHints("</style.css>; rel=preload"));
     }
 
     @Test
     public void testEarlyHintsWhenHeadersSent() throws Exception {
-        java.lang.reflect.Field headersSentField = HttpInternalResponse.class.getDeclaredField("headersSent");
-        headersSentField.setAccessible(true);
-        headersSentField.set(resp, true);
+        resp.headersSent = true;
         Assertions.assertDoesNotThrow(() -> resp.earlyHints("</style.css>; rel=preload"));
     }
 
@@ -447,10 +420,8 @@ public class HttpDefaultResponseTest {
         return new TestDefaultResp(req, ctx);
     }
 
-    private int getBodyMemoryThreshold() throws Exception {
-        java.lang.reflect.Field thresholdField = HttpConf.class.getDeclaredField("BODY_MEMORY_THRESHOLD");
-        thresholdField.setAccessible(true);
-        return thresholdField.getInt(null);
+    private int getBodyMemoryThreshold() {
+        return HttpConf.BODY_MEMORY_THRESHOLD;
     }
 
     static class TestDefaultResp extends HttpDefaultResponse {

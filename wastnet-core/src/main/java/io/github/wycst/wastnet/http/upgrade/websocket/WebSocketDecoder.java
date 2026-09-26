@@ -59,11 +59,11 @@ public class WebSocketDecoder extends HttpMessageDecoder {
             boolean fin = firSign < 0; // ==> fin & 0x80 != 0
             final int opcode = firSign & 0x7F;  // 0x7F captures bits 0-6 (opcode + RSV1/2/3)
             if (opcode > 15) {                   // RFC 6455: opcode > 15 is reserved or RSV≠0
-                handleWebSocketError(ctx, 1002);
+                handleWebSocketError(ctx, 1002, "Protocol Error");
                 return;
             }
             if ((secSign & 0x80) == 0) { // Protocol error: client frames must include mask (RFC 6455 §5.1)
-                handleWebSocketError(ctx, 1002);
+                handleWebSocketError(ctx, 1002, "Protocol Error");
                 return;
             }
             int baseLen = secSign & 0x7F;
@@ -84,7 +84,7 @@ public class WebSocketDecoder extends HttpMessageDecoder {
                     rem = 14;
                 }
                 if (buf[i + 2] < 0) { // RFC 6455 §5.2: MSB of the 64-bit length MUST be 0
-                    handleWebSocketError(ctx, 1002);
+                    handleWebSocketError(ctx, 1002, "Protocol Error");
                     return;
                 }
                 payloadLenLong = ((buf[i + 2] & 0xFFL) << 56) |
@@ -100,13 +100,13 @@ public class WebSocketDecoder extends HttpMessageDecoder {
             }
             // Unified max-payload check across all three length encodings (RFC 6455 §5.2)
             if (payloadLenLong > maxPayloadSize) {
-                handleWebSocketError(ctx, 1009); // Message Too Big
+                handleWebSocketError(ctx, 1009, "Message Too Big"); // Message Too Big
                 return;
             }
             int payloadLen = (int) payloadLenLong;
             int payloadOffset = maskOffset + 4;
             if (opcode >= 0x8 && payloadLen > 125) { // RFC 6455 §5.5: control payload <= 125, else 1002
-                handleWebSocketError(ctx, 1002);
+                handleWebSocketError(ctx, 1002, "Protocol Error");
                 return;
             }
             byte[] payload = new byte[payloadLen];
@@ -135,7 +135,7 @@ public class WebSocketDecoder extends HttpMessageDecoder {
                 // Protocol error: first frame cannot be a continuation frame, and control frames
                 // MUST NOT be fragmented (RFC 6455 §5.5) — reject fragmented control frames here.
                 if (opcode == 0x0 || (opcode >= 0x8 && !fin)) {
-                    handleWebSocketError(ctx, 1002);
+                    handleWebSocketError(ctx, 1002, "Protocol Error");
                     return;
                 }
                 targetFrame = frame;
@@ -149,7 +149,7 @@ public class WebSocketDecoder extends HttpMessageDecoder {
                         i = payloadOffset + payloadLen;
                         continue;
                     }
-                    handleWebSocketError(ctx, 1002);
+                    handleWebSocketError(ctx, 1002, "Protocol Error");
                     return;
                 }
                 long mergeLength = ((long) targetFrame.getData().length) + payload.length;
@@ -161,13 +161,13 @@ public class WebSocketDecoder extends HttpMessageDecoder {
                         continuationCount = 0;
                         mergeDeadline = System.currentTimeMillis() + fragmentMergeTimeoutMs;
                     } else {
-                        handleWebSocketError(ctx, 1009); // Message Too Big
+                        handleWebSocketError(ctx, 1009, "Message Too Big"); // Message Too Big
                         return;
                     }
                 } else {
                     // Defense: limit continuation count and deadline to prevent fragmentation attacks
                     if (++continuationCount > maxContinuations || System.currentTimeMillis() > mergeDeadline) {
-                        handleWebSocketError(ctx, 1009);
+                        handleWebSocketError(ctx, 1009, "Message Too Big");
                         return;
                     }
                     targetFrame = targetFrame.merge(frame, fin);
@@ -185,13 +185,22 @@ public class WebSocketDecoder extends HttpMessageDecoder {
     }
 
     /**
+     * Selects the native (JDK 9+) vs fallback (JDK 8) unmask path.
+     * Defaults to {@link RuntimeEnv#JDK9PLUS}.
+     */
+    protected boolean useNativeUnmask() {
+        return RuntimeEnv.JDK9PLUS;
+    }
+
+    /**
      * Unmask WebSocket frame payload with 8-byte batch XOR.
      *
      * <p>Reads 4 mask bytes from {@code src[maskOffset..maskOffset+3]} and XORs them into
      * every 8-byte block of {@code dst}, with switch fallthrough for the final 1-7 bytes.
      *
-     * <p>Two paths selected at class-load: JDK 9+ uses {@link ByteBuffer#getLong}/{@link ByteBuffer#putLong}
-     * with native byte order (JIT-compiled to SSE2/AVX movq+pxor); JDK 8 uses an unrolled byte loop.
+     * <p>Path selection is delegated to {@link #useNativeUnmask()}: JDK 9+ uses
+     * {@link ByteBuffer#getLong}/{@link ByteBuffer#putLong} with native byte order
+     * (JIT-compiled to SSE2/AVX movq+pxor); the JDK 8 fallback uses an unrolled byte loop.
      *
      * @param src        source buffer containing the 4 mask bytes
      * @param dst        destination payload array to unmask in-place
@@ -200,7 +209,7 @@ public class WebSocketDecoder extends HttpMessageDecoder {
     private void unmask(byte[] src, byte[] dst, int maskOffset) {
         byte m0 = src[maskOffset], m1 = src[maskOffset + 1], m2 = src[maskOffset + 2], m3 = src[maskOffset + 3];
         int len = dst.length, aligned = len & ~7;
-        if (RuntimeEnv.JDK9PLUS) {
+        if (useNativeUnmask()) {
             int mask32 = ByteBuffer.wrap(src).order(ByteOrder.nativeOrder()).getInt(maskOffset);
             long mask64 = ((long) mask32 << 32) | (mask32 & 0xFFFFFFFFL);
             ByteBuffer bb = ByteBuffer.wrap(dst).order(ByteOrder.nativeOrder());
@@ -227,20 +236,8 @@ public class WebSocketDecoder extends HttpMessageDecoder {
         }
     }
 
-    private void handleWebSocketError(ChannelContext ctx, int errorCode) {
-        String errorMessage = getWebSocketErrorMessage(errorCode);
+    private void handleWebSocketError(ChannelContext ctx, int errorCode, String errorMessage) {
         WebSocketUtils.sendCloseFrame(ctx, errorCode, errorMessage);
         ctx.close();
-    }
-
-    private String getWebSocketErrorMessage(int errorCode) {
-        switch (errorCode) {
-            case 1002:
-                return "Protocol Error";
-            case 1009:
-                return "Message Too Big";
-            default:
-                return "WebSocket Error: Code " + errorCode;
-        }
     }
 }

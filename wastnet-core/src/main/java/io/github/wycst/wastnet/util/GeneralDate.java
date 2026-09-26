@@ -34,16 +34,18 @@ public class GeneralDate {
     private static final int[] DAYS_ACCUM = {0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334};
     private static final int[] DAYS_ACCUM_LEAP = {0, 31, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335};
 
-    private final long epochDays;
-    private final int year, month, day;
-    private final int hourOfDay, minute, second;
+    public final long epochDays;
+    public final int year, month, day;
+    public final int hourOfDay, minute, second, millis;
 
     /**
-     * Decompose the given timestamp into year/month/day/hour/minute/second fields. Uses the
-     * timezone's raw offset (no DST), which is correct for fixed-offset zones such as GMT.
+     * Decompose the given timestamp into year/month/day/hour/minute/second fields, using the
+     * timezone's offset via {@link TimeZone#getOffset(long)} (DST-aware). For fixed-offset zones
+     * such as GMT this equals the raw offset, so HTTP date headers are unaffected.
      */
     public GeneralDate(long timeMillis, TimeZone timeZone) {
-        long ms = timeMillis + RELATIVE_MILLS + timeZone.getRawOffset();
+        long ms = timeMillis + RELATIVE_MILLS + timeZone.getOffset(timeMillis);
+        this.millis = (int) (ms % 1000);
 
         long seconds = ms / 1000;
         long days = seconds / 86400;
@@ -77,30 +79,6 @@ public class GeneralDate {
         this.day = doy - accum[m] + 1;
     }
 
-    public int getYear() {
-        return year;
-    }
-
-    public int getMonth() {
-        return month;
-    }
-
-    public int getDay() {
-        return day;
-    }
-
-    public int getHourOfDay() {
-        return hourOfDay;
-    }
-
-    public int getMinute() {
-        return minute;
-    }
-
-    public int getSecond() {
-        return second;
-    }
-
     /**
      * Day of week (1=Sunday, 2=Monday ... 7=Saturday).
      */
@@ -115,39 +93,15 @@ public class GeneralDate {
 
     /**
      * Write a timestamp as "yyyy-MM-dd HH:mm:ss.SSS" into the given builder, using the supplied
-     * timezone (DST-aware via {@link TimeZone#getOffset(long)}). Lock-free and allocation-free,
-     * so it is safe for both platform and virtual threads — replacing the old
-     * ThreadLocal&lt;Calendar&gt; approach used by the log formatter.
+     * timezone (DST-aware via {@link TimeZone#getOffset(long)}). Lock-free and safe for both platform
+     * and virtual threads — the {@code GeneralDate} allocated per call is a local, non-shared object,
+     * replacing the old ThreadLocal&lt;Calendar&gt; approach used by the log formatter.
      */
     public static void writeYmdHms(StringBuilder sb, long timeMillis, TimeZone timeZone) {
-        long ms = timeMillis + RELATIVE_MILLS + timeZone.getOffset(timeMillis);
-        long seconds = ms / 1000;
-        long days = seconds / 86400;
-        int daySeconds = (int) (seconds - days * 86400);
-        int hour = daySeconds / 3600;
-        int minute = (daySeconds - hour * 3600) / 60;
-        int second = daySeconds % 60;
-        int millis = (int) (ms % 1000); // ms = timeMillis + RELATIVE_MILLS + offset stays positive for any valid timestamp, so millis is already in [0,1000)
-
-        long y = (days * 400) / 146097 + 1;
-        long offset = (y - 1) * 365 + (y - 1) / 4 - (y - 1) / 100 + (y - 1) / 400 + 2;
-        while (offset > days) {
-            offset -= isLeapYear((int) --y) ? 366 : 365;
-        }
-        while (offset + (isLeapYear((int) y) ? 366 : 365) <= days) {
-            offset += isLeapYear((int) y) ? 366 : 365;
-            y++;
-        }
-        int year = (int) y;
-
-        int doy = (int) (days - offset);
-        int[] accum = isLeapYear(year) ? DAYS_ACCUM_LEAP : DAYS_ACCUM;
-        int m = 0;
-        while (m < 11 && doy >= accum[m + 1]) {
-            m++;
-        }
-        int month = m + 1;
-        int day = doy - accum[m] + 1;
+        GeneralDate gd = new GeneralDate(timeMillis, timeZone);
+        int year = gd.year, month = gd.month, day = gd.day;
+        int hour = gd.hourOfDay, minute = gd.minute, second = gd.second;
+        int millis = gd.millis;
 
         sb.append(year).append('-');
         if (month > 9) {

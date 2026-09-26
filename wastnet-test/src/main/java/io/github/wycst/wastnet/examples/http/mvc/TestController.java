@@ -1,8 +1,6 @@
 package io.github.wycst.wastnet.examples.http.mvc;
 
-import io.github.wycst.wastnet.http.annotation.ContentType;
-import io.github.wycst.wastnet.http.annotation.Endpoint;
-import io.github.wycst.wastnet.http.annotation.RestController;
+import io.github.wycst.wastnet.http.annotation.*;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -13,15 +11,39 @@ import java.util.Map;
 @RestController
 public class TestController {
 
+    @Value("${msg}")
+    private String msg;
+
     @Endpoint(value = "/hello", responseType = ContentType.TEXT)
-    public String hello() {
-        return "hello world";
+    public String hello(String name) {
+        return msg;
     }
 
     @Endpoint("/json")
     public Object json() {
         Map<String, Object> map = new HashMap<String, Object>();
-        map.put("message", "hello world");
+        map.put("message", msg);
+        return map;
+    }
+
+    /**
+     * GET /rp-int        -> 缺省 page，应绑定为 0
+     * GET /rp-int?page=2 -> 返回 {"page":2}
+     */
+    @Endpoint("/rp-int")
+    public Object rpInt(@RequestParam(value = "page", required = false) int page) {
+        Map<String, Object> map = new HashMap<String, Object>();
+        map.put("page", page);
+        return map;
+    }
+
+    /**
+     * GET /rp-int-box        -> 缺省 page，应绑定为 null
+     */
+    @Endpoint("/rp-int-box")
+    public Object rpIntBox(@RequestParam(value = "page", required = false) Integer page) {
+        Map<String, Object> map = new HashMap<String, Object>();
+        map.put("page", page);
         return map;
     }
 }
