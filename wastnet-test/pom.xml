@@ -88,6 +88,7 @@
 <!--                    <reuseForks>false</reuseForks>-->
                     <systemPropertyVariables>
                         <wastnet.http2.debug>true</wastnet.http2.debug>
+                        <wastnet.h2.monitor>true</wastnet.h2.monitor>
                     </systemPropertyVariables>
                     <includes>
                         <include>**/*Test.java</include>

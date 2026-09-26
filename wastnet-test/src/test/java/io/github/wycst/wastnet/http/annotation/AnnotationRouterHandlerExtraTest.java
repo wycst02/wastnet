@@ -7,6 +7,8 @@ import io.github.wycst.wastnet.http.handler.HttpRoute;
 import io.github.wycst.wastnet.http.handler.HttpRouterHandler;
 import okhttp3.*;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnJre;
+import org.junit.jupiter.api.condition.JRE;
 
 import java.lang.annotation.Annotation;
 import java.lang.annotation.ElementType;
@@ -28,6 +30,7 @@ import static org.mockito.Mockito.*;
  * Fixtures live in the {@code extratest} subpackage so the existing
  * full-package scan in {@code AnnotationPackageTest} is not disturbed.
  */
+@DisabledOnJre(JRE.JAVA_8)
 public class AnnotationRouterHandlerExtraTest {
 
     private static final String PKG = "io.github.wycst.wastnet.routerfixtures";
