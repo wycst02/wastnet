@@ -11,15 +11,37 @@
 
 ---
 
-## [1.0.1] - 2026-08-09
+## [1.0.2] - 2026-09-29
+
+### Added
+
+- 强类型 Option 配置机制（`HttpOptions` / `SocketOptions` / `Option`），配置按服务实例隔离，支持多服务间隔离。
+- 独立 `wastnet-mvc` 模块，注解驱动的 MVC / IoC 从核心拆分独立。
+- 健康检查响应内容类型与响应体的全局配置。
+- SSE `SseEmitter` 新增 `request()` 访问器。
+
+### Changed
+
+- HTTP 请求体解码重构（`HttpBodyDecoder` 系列、`HttpDecodedRequest` / `HttpDecodedResponse` / `HttpDefaultResponse` 等）。
+- HTTP 头部与消息处理重构（`HttpHeaderUtils`、`HttpMessage`、`HttpRequestDecoder` 等）。
+- 路由配置优化（`HttpRouterHandler`、`HttpServerChannelHandler`）。
+- 注解 MVC 结果处理增强：按 ContentType 注册转换器、内置 TEXT 转换器、视图解析器与默认结果处理。
+- HTTP/2 流控、超时与 Huffman 解码重构；H2 消息读取与帧处理重构。
+- TCP 层重构（`ChannelContext`、`ChannelRunner`、`NioConfig` / `NioEngine`、`SocketConf` / `SocketOptions` 等）。
+- JDK8 兼容简化：移除 JDK9 运行时分支（`RuntimeEnvJDK9Plus` 删除）。
+- 反向代理层适配调整（`HttpProxyConfig` / `HttpProxyVariables` / 各 Adapter）。
+- 文件上传 Multipart 处理调整。
 
 ### Fixed
 
-- 1.0.1 改为 JDK8 目标重新发布。
+- 修复 URI 解码时值中包含等号被截断的问题。
+- 增强静态资源路由符号链接防护。
+- 完善 HTTP/2 流清理与连接关闭处理。
+- 修正 HTTP/2 `PING_ACK` 标志位值以符合 RFC 7540。
 
 ---
 
-## [1.0.0] - 2026-08-09
+## [1.0.1] - 2026-08-09
 
 首个正式版本。
 

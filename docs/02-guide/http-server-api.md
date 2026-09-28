@@ -249,6 +249,6 @@ public class FullConfigServer {
 ## 版本信息
 
 ```java
-String ver = HTTPServer.VERSION;  // "1.0.1"
+String ver = HTTPServer.VERSION;  // "1.0.2"
 String server = HTTPServer.SERVER; // "wastnet"
 ```

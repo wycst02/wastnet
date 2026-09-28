@@ -61,18 +61,20 @@
 
 ### Maven 依赖
 
+> 基础场景引入 `wastnet-core` 即可；使用注解式 MVC 时只需引入 `wastnet-mvc`（它已依赖 `wastnet-core`），二者二选一，无需同时引入。
+
 ```xml
 <dependency>
     <groupId>io.github.wycst</groupId>
     <artifactId>wastnet-core</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
 </dependency>
 
-<!-- 使用注解式 MVC（@Controller / @RequestMapping / @ResponseBody 等）需额外引入 -->
+<!-- 注解式 MVC：引入 wastnet-mvc 即可（已包含 wastnet-core） -->
 <dependency>
     <groupId>io.github.wycst</groupId>
     <artifactId>wastnet-mvc</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
 </dependency>
 ```
 
@@ -829,7 +831,7 @@ HTTPServer.of(8080)
 默认输出示例：
 
 ```
-  wastnet/1.0.1 started in 1363 ms
+  wastnet/1.0.2 started in 1363 ms
   ➜  Local:   http://localhost:8080
   ➜  Network: http://10.252.31.235:8080
 ```

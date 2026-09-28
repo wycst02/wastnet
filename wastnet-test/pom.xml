@@ -6,9 +6,10 @@
     <parent>
         <groupId>io.github.wycst</groupId>
         <artifactId>wastnet</artifactId>
-        <version>1.0.2-SNAPSHOT</version>
+        <version>1.0.2</version>
         <relativePath>../pom.xml</relativePath>
     </parent>
+    <name>wastnet-test</name>
     <artifactId>wastnet-test</artifactId>
     <properties>
         <maven.deploy.skip>true</maven.deploy.skip>

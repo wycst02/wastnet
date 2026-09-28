@@ -61,18 +61,20 @@
 
 ### Maven Dependency
 
+> For basic usage `wastnet-core` is enough; for annotation-based MVC just add `wastnet-mvc` (which already depends on `wastnet-core`). Pick one — do not add both.
+
 ```xml
 <dependency>
     <groupId>io.github.wycst</groupId>
     <artifactId>wastnet-core</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
 </dependency>
 
-<!-- Add this if you use the annotation MVC (@Controller / @RequestMapping / @ResponseBody, etc.) -->
+<!-- Annotation-based MVC: add wastnet-mvc (includes wastnet-core) -->
 <dependency>
     <groupId>io.github.wycst</groupId>
     <artifactId>wastnet-mvc</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
 </dependency>
 ```
 
@@ -816,7 +818,7 @@ HTTPServer.of(8080)
 Default output:
 
 ```
-  wastnet/1.0.1 started in 1363 ms
+  wastnet/1.0.2 started in 1363 ms
   ➜  Local:   http://localhost:8080
   ➜  Network: http://10.252.31.235:8080
 ```
