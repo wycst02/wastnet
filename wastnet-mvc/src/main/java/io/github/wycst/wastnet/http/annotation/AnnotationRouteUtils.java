@@ -5,6 +5,7 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.*;
 import java.util.*;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 
 /**
  * Stateless helpers for {@link AnnotationRouterHandler}: class / registrar scanning,
@@ -236,6 +237,27 @@ final class AnnotationRouteUtils {
         int colon = inner.indexOf(':');
         if (colon > -1) return new String[]{inner.substring(0, colon), inner.substring(colon + 1)};
         return new String[]{inner, null};
+    }
+
+    /**
+     * Fill {@code pathVarSegIndex} with each path variable's name→segment-index and return the
+     * compiled route regex (with anchors). Call only for template paths (map is non-null).
+     */
+    static String buildRoutePattern(String fullPath, Map<String, Integer> pathVarSegIndex) {
+        String[] segs = fullPath.split("/", -1);
+        StringBuilder rb = new StringBuilder();
+        for (int si = 1; si < segs.length; ++si) {
+            String seg = segs[si];
+            rb.append("/");
+            String[] pv = parsePathVar(seg);
+            if (pv != null) {
+                pathVarSegIndex.put(pv[0], si);
+                rb.append(pv[1] != null ? "(" + pv[1] + ")" : "([^/]+)");
+            } else {
+                rb.append(Pattern.quote(seg));
+            }
+        }
+        return "^" + rb + "$";
     }
 
     // ── Bean instantiation / parameter resolution (beanContainer passed in) ──

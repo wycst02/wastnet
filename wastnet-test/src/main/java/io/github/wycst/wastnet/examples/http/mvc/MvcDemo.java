@@ -5,11 +5,12 @@ import io.github.wycst.wastnet.http.HTTPServer;
 import io.github.wycst.wastnet.http.HttpRequest;
 import io.github.wycst.wastnet.http.HttpResponse;
 import io.github.wycst.wastnet.http.annotation.AnnotationRouterHandler;
-import io.github.wycst.wastnet.http.annotation.ContentType;
 import io.github.wycst.wastnet.http.annotation.ConverterConfig;
 import io.github.wycst.wastnet.http.annotation.HttpMessageConverter;
+import io.github.wycst.wastnet.examples.http.mvc.view.FreeMarkerViewResolver;
 import io.github.wycst.wastnet.socket.tcp.NioConfig;
 
+import java.io.InputStream;
 import java.lang.reflect.Type;
 
 /**
@@ -22,6 +23,8 @@ import java.lang.reflect.Type;
  *   <li><a href="http://localhost:8080/api/user/save?name=foo">/api/user/save?name=foo</a></li>
  *   <li><a href="http://localhost:8080/hello">/hello</a>（返回纯文本 "hello world"）</li>
  *   <li><a href="http://localhost:8080/json">/json</a>（返回 {"message":"hello world"}）</li>
+ *   <li><a href="http://localhost:8080/demo/view/user">/demo/view/user</a>（FreeMarker 视图渲染）</li>
+ *   <li><a href="http://localhost:8080/demo/view/hello">/demo/view/hello</a>（FreeMarker 视图渲染, 空模型）</li>
  *   <li>WebSocket: ws://localhost:8080/ws/chat</li>
  * </ul>
  *
@@ -37,36 +40,29 @@ public class MvcDemo {
                 .messageConverter(new HttpMessageConverter() {
                     @Override
                     public void write(Object value, ConverterConfig config, HttpResponse response) throws Exception {
-                        if (config.isTextual()) {
-                            // 文本类（XML / TEXT / HTML）：统一按原字符串输出，content-type 取自 config
-                            response.contentType(config.getContentType())
-                                    .body(String.valueOf(value));
-                            return;
+                        response.contentType(config.getResponseContentType());
+                        if (config.isPretty()) {
+                            response.body(JSON.toPrettifyJsonString(value));
+                        } else {
+                            response.body(JSON.toJsonBytes(value));
                         }
-                        if (config.isJson()) {
-                            // JSON（responseType 未声明或为 JSON）：content-type 取自 config
-                            response.contentType(config.getContentType());
-                            if (config.isPretty()) {
-                                response.body(JSON.toPrettifyJsonString(value));
-                            } else {
-                                response.body(JSON.toJsonBytes(value));
-                            }
-                            return;
-                        }
-                        // 剩余类型为 CUSTOM：converter 自行决定 content-type，这里按 JSON 输出
-                        response.contentType(ContentType.JSON.getContentType())
-                                .body(JSON.toJsonBytes(value));
                     }
 
                     @Override
                     public Object read(HttpRequest request, ConverterConfig config, Type type) throws Exception {
-                        if (request.isStream()) return null;
-                        byte[] data = request.getBodyData();
-                        if (data == null || data.length == 0) return null;
                         GenericParameterizedType<?> genericParameterizedType = GenericParameterizedType.of(type);
-                        return JSON.parse(data, genericParameterizedType);
+                        if (request.isStream()) {
+                            InputStream is = request.bodyStream();
+                            return JSON.read(is, genericParameterizedType);
+                        } else {
+                            byte[] data = request.getBodyData();
+                            if (data == null || data.length == 0) return null;
+                            return JSON.parse(data, genericParameterizedType);
+                        }
                     }
                 })
+                // 视图解析器：非 @ResponseBody 返回值经 FreeMarker 渲染为 HTML
+                .addViewResolver(new FreeMarkerViewResolver())
                 // 2. 配置属性（用于 @Value 注入）
                 .property("app.prefix", "Member-")
                 // 3. 扫描包
@@ -105,6 +101,8 @@ public class MvcDemo {
         System.out.println("  " + base + "/api/user/save?name=foo");
         System.out.println("  " + base + "/hello");
         System.out.println("  " + base + "/json");
+        System.out.println("  " + base + "/demo/view/user   (FreeMarker 视图渲染)");
+        System.out.println("  " + base + "/demo/view/hello  (FreeMarker 视图渲染, 空模型)");
         System.out.println("  " + base + "/h2monitor/connections  (need -Dwastnet.h2.monitor=true)");
         System.out.println("  " + base + "/hdr-single   (header X-Client)");
         System.out.println("  " + base + "/hdr-multi    (header X-Tags, multi-value)");

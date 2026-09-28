@@ -42,6 +42,7 @@
     <modules>
         <module>wastnet-core</module>
         <module>wastnet-test</module>
+        <module>wastnet-mvc</module>
     </modules>
 
     <dependencyManagement>
@@ -53,12 +54,37 @@
             </dependency>
             <dependency>
                 <groupId>io.github.wycst</groupId>
+                <artifactId>wastnet-mvc</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.wycst</groupId>
                 <artifactId>wastnet-servlet-common</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.wycst</groupId>
                 <artifactId>wastnet-servlet-jakarta</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.wycst</groupId>
+                <artifactId>wastnet-servlet-javax</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.wycst</groupId>
+                <artifactId>wastnet-spring-boot-starter-jakarta</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.wycst</groupId>
+                <artifactId>wastnet-spring-boot-starter-javax</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.wycst</groupId>
+                <artifactId>wastnet-spring-boot-example</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

@@ -67,4 +67,5 @@ public class HttpChunkedRequest extends HttpStreamRequest {
     public final byte[] getBodyData() {
         throw new IllegalStateException("getBodyData() unsupported for chunked transfer encoding, use bodyStream() instead");
     }
+
 }

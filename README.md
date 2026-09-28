@@ -67,6 +67,13 @@
     <artifactId>wastnet-core</artifactId>
     <version>1.0.1</version>
 </dependency>
+
+<!-- 使用注解式 MVC（@Controller / @RequestMapping / @ResponseBody 等）需额外引入 -->
+<dependency>
+    <groupId>io.github.wycst</groupId>
+    <artifactId>wastnet-mvc</artifactId>
+    <version>1.0.1</version>
+</dependency>
 ```
 
 ### 基础 HTTP 服务器
@@ -391,10 +398,9 @@ public class UserService {
 
 `AnnotationRouterHandler` 支持通过链式方法配置：
 
-- `messageConverter(HttpMessageConverter)` — 设置消息转换 SPI（启用 `@RequestBody`/`@ResponseBody` 的前提，典型用 Jackson/Gson 或 wastnet 自带的 `JSON` 实现）
+- `messageConverter(HttpMessageConverter)` / `messageConverter(ContentType, HttpMessageConverter)` — 设置消息转换 SPI（启用 `@RequestBody`/`@ResponseBody` 的前提；`TEXT` 已内置开箱即用、可用同方法覆盖，其余类型默认需注册到 JSON，可按产出类型分别注册，典型用 Jackson/Gson 或 wastnet 自带的 `JSON` 实现）
 - `property(key, val)` / `properties(map)` — 设置 `@Value` 可注入的配置属性
-- `loadProperties("application.properties")` — 从 classpath `.properties` 文件加载配置
-- `loadConfig(ConfigLoader)` — 通过自定义 `ConfigLoader` 加载配置（如 YAML）
+- `configFiles("app.properties")` — 指定扫描期自动加载的配置文件（属于扫描配置，热加载时重读；默认 `application.properties`，供 `@Value` 注入使用）；`-D` 系统属性优先级最高（扫描包由 `scanPackages(...)` 指定，属于 boot 层职责）
 - `requestBodyBy(...)` / `responseBodyBy(...)` / `pathParamBy(...)` / `requestParamBy(...)` — 自定义识别哪些注解作为请求体/响应体/路径变量/请求参数
 - `valueBy(...)` / `injectBy(...)` / `postConstructBy(...)` / `preDestroyBy(...)` — 自定义 `@Value`/`@Inject`/生命周期注解
 - `annotationResolver(AnnotationResolver)` — 桥接第三方注解体系（如 Spring Boot 的 `@RestController`/`@RequestMapping`/`@Service`/`@Autowired`/`@Value`）
@@ -417,37 +423,32 @@ public class DemoController {
 
 `ContentType` 枚举：`JSON`（默认）、`TEXT`、`HTML`、`XML`、`CUSTOM`（自定义，converter 自行决定）。
 
-converter 内通过 `ConverterConfig` 判断类型：
+> **`TEXT` 开箱即用**：框架已内置 `TEXT` 转换器，上述 `responseType = ContentType.TEXT` 的端点无需调用 `.messageConverter(...)` 即可返回纯文本；如需自定义用 `.messageConverter(ContentType.TEXT, customConverter)` 覆盖。
+
+单参 `messageConverter(converter)` 仅把转换器注册到 `JSON`，因此 `write` 内无需再判断类型，直接按 JSON 序列化：
 
 ```java
 .messageConverter(new HttpMessageConverter() {
     @Override
     public void write(Object value, ConverterConfig config, HttpResponse response) throws Exception {
-        if (config.isTextual()) {                    // XML / TEXT / HTML → 原字符串输出
-            response.contentType(config.getContentType()).body(String.valueOf(value));
-            return;
-        }
-        if (config.isJson()) {                       // JSON → 对象序列化
-            response.contentType(config.getContentType());
-            response.body(JSON.toJsonBytes(value));
-            return;
-        }
-        // CUSTOM → converter 自行决定 content-type
-        response.contentType(ContentType.JSON.getContentType()).body(JSON.toJsonBytes(value));
+        response.contentType(config.getResponseContentType());
+        response.body(JSON.toJsonBytes(value));
     }
 })
 ```
+
+> 若同一个转换器实例通过 `messageConverter(ContentType, converter)` 注册到多种类型（如同时注册 `JSON` 与 `TEXT`），才需要在 `write` 内用 `ConverterConfig` 的 `isJson()`/`isTextual()`/`isCustom()` 分支区分；仅注册单一类型时不必判断。
 
 `ConverterConfig` 常用判断方法：
 
 | 方法 | 说明 |
 |:-----|:-----|
 | `getResponseType()` | 返回 `ContentType` 枚举 |
-| `getContentType()` | 返回带 UTF-8 的完整 Content-Type 头值（`CUSTOM` 返回 `null`） |
+| `getResponseContentType()` | 返回带 UTF-8 的完整响应 Content-Type 头值（`CUSTOM` 返回 `null`） |
 | `isTextual()` | 是否文本类（`XML`/`TEXT`/`HTML`） |
-| `isJson()` / `isXml()` / `isText()` / `isHtml()` | 是否对应具体类型 |
+| `isJson()` | 是否为 JSON(默认)类型 |
 | `isCustom()` | 是否自定义类型 |
-| `beforeResponseBody(request, response, result)` | 响应写出前的实例钩子，可覆写做内容协商等（默认空实现） |
+
 
 ### WebSocket / SSE 注解
 
@@ -463,7 +464,7 @@ public class ChatWebSocket extends WebSocketResource {
 }
 ```
 
-完整的可运行示例见 `wastnet-test` 模块 `examples/http/mvc/`（`MvcDemo` 启动类）。
+完整的可运行示例见 `wastnet-test` 模块 `examples/http/mvc/`（`MvcDemo` 启动类）：包含 `@RequestBody`/`@ResponseBody` 自动转换、`@Value` 注入、拦截器、SSE、WebSocket。
 
 ---
 
@@ -1083,7 +1084,6 @@ wastnet/                               ← 父工程 (pom)
 │       │   └── protocol/           # ObjectCodec 等协议
 │       ├── http/                   # HTTP 核心
 │       │   ├── HTTPServer.java     # HTTP 服务器
-│       │   ├── annotation/         # 注解路由 + 轻量 DI (MVC)
 │       │   ├── handler/            # 路由、资源、异常处理器、拦截器/观察者
 │       │   ├── h2/                 # HTTP/2 (HPACK/Huffman/帧/流)
 │       │   ├── proxy/              # 反向代理
@@ -1095,8 +1095,13 @@ wastnet/                               ← 父工程 (pom)
 │       ├── util/                   # 工具类
 │       └── exception/              # 异常定义
 │
-├── wastnet-test/                       ← 测试和示例 (jar)
+├── wastnet-mvc/                        ← 注解式 MVC 模块 (jar)
 │   ├── pom.xml                          # 依赖 wastnet-core
+│   └── src/main/java/io/github/wycst/wastnet/
+│       └── http/annotation/             # 注解路由 + 轻量 DI
+│
+├── wastnet-test/                       ← 测试和示例 (jar)
+│   ├── pom.xml                          # 依赖 wastnet-core 与 wastnet-mvc
 │   ├── src/main/java/                   # 测试代码 + 可运行示例
 │   ├── src/main/resources/              # 证书、密钥库、演示页面
 │   └── test-files/                      # 测试数据文件

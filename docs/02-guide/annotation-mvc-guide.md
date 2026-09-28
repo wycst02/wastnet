@@ -2,6 +2,8 @@
 
 `io.github.wycst.wastnet.http.annotation` 是一套**注解驱动的 MVC + IoC 容器**框架，它构建在手工路由 `HttpRouterHandler` 之上（见 [http-router-guide.md](http-router-guide.md)），在启动期扫描指定包下的类，自动把 `@Controller` / `@Component` / `@Configuration` 等注册成路由与托管 Bean，无需手写 `route(...)`。
 
+> **模块坐标**：该 MVC 层已独立为 Maven 模块 **`wastnet-mvc`**（`io.github.wycst:wastnet-mvc`），使用注解式 MVC 需在 `pom.xml` 中引入 `wastnet-mvc` 依赖（`wastnet-core` 仅含底层网络框架）。
+
 本文档覆盖该模块的全部注解、运行时类与扩展点。拦截器的**深度细节**（三种机制对比、短路语义、异常兜底）已在 [http-interceptor-guide.md](http-interceptor-guide.md) 第 12 节讲解，本文仅补充**注解注册**部分并交叉引用。
 
 ---
@@ -180,7 +182,7 @@ public class UserCtrl {
 | `XML` | `application/xml;charset=utf-8` |
 | `CUSTOM` | `null`，由 `HttpMessageConverter` 自己决定 Content-Type |
 
-> **未配置 `messageConverter` 却标了 `@ResponseBody`**：控制器注册时直接抛 `RuntimeException`，提示需通过 `.messageConverter(...)` 配置。详见第 4 节。
+> **`TEXT` 类型开箱即用**：`AnnotationRouterHandler` 构造时已内置零依赖的 `TEXT` 转换器（`text/plain;charset=utf-8`，`String.valueOf(value)` 输出），声明 `responseType = ContentType.TEXT` 的 `@ResponseBody` 端点无需再配置；如需自定义可用 `.messageConverter(ContentType.TEXT, customConverter)` 覆盖。
 
 ---
 
@@ -325,17 +327,26 @@ public interface HttpMessageConverter {
 通过 `.messageConverter(converter)` 启用（通常基于 Jackson / Gson / Fastjson 实现）：
 
 ```java
+// 默认注册到 JSON（最常用）
 router.messageConverter(new JacksonMessageConverter());
+
+// 也可按产出类型注册不同 converter（XML / TEXT / HTML / CUSTOM 等）
+router.messageConverter(ContentType.XML, new XmlMessageConverter());
 ```
+
+> **`TEXT` 已内置**：构造 `AnnotationRouterHandler` 时即自动注册零依赖的 `TEXT` 转换器，声明 `responseType = ContentType.TEXT` 的 `@ResponseBody` 端点无需任何配置即可返回纯文本；用 `.messageConverter(ContentType.TEXT, ...)` 可覆盖默认实现。
 
 `ConverterConfig` 是**每个端点一份**的转换配置，扫描期构建，字段含义：
 
 | 方法 | 说明 |
 |:-----|:-----|
-| `responseType(ContentType)` | 由 `@Endpoint.responseType()` 填充 |
-| `pretty(boolean)` / `skipNull(boolean)` / `dateFormat(String)` | 序列化选项（由具体 converter 读取） |
-| `property(key, value)` / `properties(map)` | 转换器自定义属性 |
-| `beforeResponseBody(req, resp, result)` | 序列化前钩子，子类可覆盖（如基于 `Accept` 做内容协商） |
+| `responseType(ContentType)` / `getResponseType()` | 端点产出类型，由 `@Endpoint.responseType()` 填充 |
+| `pretty(boolean)` / `isPretty()` | 是否美化输出（由具体 converter 读取） |
+| `skipNull(boolean)` / `isSkipNull()` | 是否跳过 `null` 字段 |
+| `dateFormat(String)` / `getDateFormat()` | 日期时间格式化模式 |
+| `getResponseContentType()` | 完整响应 `Content-Type` 头值（含 UTF-8；`CUSTOM` 返回 `null`） |
+| `isJson()` / `isTextual()` / `isCustom()` | 判断产出类型：JSON（默认）/ 文本类（XML·TEXT·HTML）/ 自定义 |
+
 
 > 需要预设更多选项，可重写 `AnnotationRouterHandler.buildConverterConfig(MethodRouteInfo)`。
 
@@ -728,7 +739,7 @@ router.enables(EnableFoo.class, EnableBar.class);   // 每次调用替换上一�
 | 方法 | 说明 | 时机 |
 |:-----|:-----|:-----|
 | `scanPackages(String...)` | 设置扫描包；无参清空；不调用则回退主类所在包 | `start()` 前 |
-| `messageConverter(HttpMessageConverter)` | 启用 `@RequestBody` / `@ResponseBody` 自动转换 | 任意 |
+| `messageConverter(HttpMessageConverter)` / `messageConverter(ContentType, HttpMessageConverter)` | 注册自动转换 converter（`TEXT` 已内置、可覆盖；其余类型可按产出类型分别注册，默认 JSON） | 任意 |
 | `property(k, v)` / `properties(map)` | 程序化静态配置（热重载保留） | 任意 |
 | `configFiles(String...)` | 扫描期加载的配置文件，默认 `application.properties` | `start()` 前 |
 | `ignoreInternalConfig(boolean)` | 忽略 jar 内配置，只加载外部文件 | `start()` 前 |
@@ -781,3 +792,9 @@ router.enables(EnableFoo.class, EnableBar.class);   // 每次调用替换上一�
 6. **`@Sse` 注册失败**：方法不是恰好一个 `SseEmitter` 参数，或返回非 `void`，或与 `@Endpoint` 同方法，或带了 `@RequestBody`。
 7. **热重载不生效**：以 jar 方式运行（非开发目录加载）时热重载默认不启用；或包被 `hotReloadWatchExclude` 排除；或变更的不是 `.class` / 配置触发路径。
 8. **同名多 Bean 注入报错**：按类型查找到多个 Bean 时抛 `IllegalStateException`，用 `@Inject("name")` 按名字限定。
+
+---
+
+## 13. 完整示例
+
+完整的可运行示例见 `wastnet-test` 模块 `examples/http/mvc/`（`MvcDemo` 启动类）：包含 `@RequestBody`/`@ResponseBody` 自动转换、`@Value` 注入、拦截器、SSE、WebSocket。

@@ -32,4 +32,22 @@ public enum ContentType {
     public String getContentType() {
         return contentType;
     }
+
+    /**
+     * Map a request Content-Type header to the corresponding {@link ContentType}.
+     *
+     * @param contentType the raw Content-Type header value (may be {@code null})
+     * @return the matched enum, or {@code null} if it cannot be mapped
+     */
+    public static ContentType fromRequest(String contentType) {
+        if (contentType == null) {
+            return null;
+        }
+        String ct = contentType.toLowerCase();
+        if (ct.contains("json")) return JSON;
+        if (ct.contains("xml")) return XML;
+        if (ct.contains("html")) return HTML;
+        if (ct.contains("plain")) return TEXT;
+        return null;
+    }
 }

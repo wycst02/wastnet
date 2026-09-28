@@ -14,11 +14,12 @@ import java.lang.invoke.MethodHandles;
 import java.lang.reflect.*;
 import java.net.URISyntaxException;
 import java.net.URL;
+import java.io.File;
+import java.io.InputStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.function.Function;
-import java.util.regex.Pattern;
 
 import static io.github.wycst.wastnet.http.annotation.AnnotationRouteUtils.*;
 
@@ -49,9 +50,11 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
 
     private final Set<Class<? extends Annotation>> enabledAnnotations = new LinkedHashSet<>();
     private final List<BeanRegistrationHandler> registrationHandlers = new ArrayList<>();
+    // View resolvers for non-@ResponseBody return values; first match wins, else built-in fallback.
+    private final List<ViewResolver> viewResolvers = new ArrayList<>();
 
     AnnotationResolver resolver;
-    HttpMessageConverter messageConverter;
+    final Map<ContentType, HttpMessageConverter> converters = new EnumMap<>(ContentType.class);
     Class<?>[] requestBodyAnnotations = new Class<?>[]{RequestBody.class};
     Class<?>[] responseBodyAnnotations = new Class<?>[]{ResponseBody.class, RestController.class};
     Class<?>[] pathParamAnnotations = new Class<?>[]{PathParam.class};
@@ -92,6 +95,9 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
         resolver = new DefaultAnnotationResolver();
         beanContainer = new BeanContainer();
         beanContainer.setResolver(resolver);
+        // Pre-register the dependency-free TEXT converter so plain-text @ResponseBody
+        // endpoints work out of the box. Override via messageConverter(ContentType.TEXT, ...).
+        converters.put(ContentType.TEXT, new TextMessageConverter());
         applyReloadTrigger();
     }
 
@@ -241,20 +247,83 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
     }
 
     /**
-     * Set the message converter for processing {@code @RequestBody} and
-     * {@code @ResponseBody} annotations.
-     * <p>
-     * When configured, {@code @RequestBody} parameters are automatically deserialized
-     * from the HTTP request body, and controller methods annotated with
-     * {@code @ResponseBody} are wired so their return values are automatically
-     * serialized to the HTTP response body.
-     * <p>
-     * Default is {@code null} (annotations are ignored). Configure this to enable
-     * automatic serialization/deserialization via e.g. JSON.
+     * Register the converter for {@link ContentType#JSON}; enables automatic
+     * {@code @RequestBody} deserialization and {@code @ResponseBody} serialization.
+     * Use {@link #messageConverter(ContentType, HttpMessageConverter)} for other types.
      */
     public AnnotationRouterHandler messageConverter(HttpMessageConverter converter) {
-        this.messageConverter = converter;
+        return messageConverter(ContentType.JSON, converter);
+    }
+
+    /** Register a converter for a specific {@link ContentType}. */
+    public AnnotationRouterHandler messageConverter(ContentType type, HttpMessageConverter converter) {
+        this.converters.put(type, converter);
         return this;
+    }
+
+    private HttpMessageConverter converterFor(ContentType type) {
+        return type != null ? converters.get(type) : null;
+    }
+
+    /**
+     * Register {@link ViewResolver}s for non-{@code @ResponseBody} return values. At scan time the
+     * handler pre-selects the first {@code supports} hit; fall back to {@link #handleDefaultResult}.
+     */
+    public AnnotationRouterHandler addViewResolver(ViewResolver... resolvers) {
+        Collections.addAll(viewResolvers, resolvers);
+        return this;
+    }
+
+    /**
+     * Pre-select the first {@link ViewResolver} whose {@code supports} accepts the endpoint's declared
+     * return type; {@code null} means fall back to {@link #handleDefaultResult}.
+     */
+    private ViewResolver resolveViewResolver(Class<?> returnType) {
+        for (ViewResolver vr : viewResolvers) {
+            if (vr.supports(returnType)) return vr;
+        }
+        return null;
+    }
+
+    /**
+     * Fallback for unclaimed non-{@code @ResponseBody} values: {@code File}/{@code InputStream}/{@code byte[]}
+     * stream as octet-stream (chunked when length unknown); anything else via {@code String.valueOf}.
+     */
+    void handleDefaultResult(Object result, HttpResponse response) throws Exception {
+        if (result instanceof File) {
+            response.sendFile((File) result);
+        } else if (result instanceof InputStream) {
+            try (InputStream in = (InputStream) result) {
+                response.contentType(HttpHeaderValues.APPLICATION_OCTET_STREAM).chunked();
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) != -1) {
+                    response.writeChunked(buf, 0, n);
+                }
+            }
+        } else if (result instanceof byte[]) {
+            response.contentType(HttpHeaderValues.APPLICATION_OCTET_STREAM).body((byte[]) result);
+        } else {
+            response.contentType(HttpHeaderValues.TEXT_PLAIN_UTF8).body(String.valueOf(result));
+        }
+    }
+
+    /**
+     * Apply the endpoint response strategy: {@code @ResponseBody} via the converter, else the
+     * pre-selected {@link ViewResolver}, else {@link #handleDefaultResult}. Shared by both paths.
+     */
+    private void writeResult(Object result, boolean hasResponseBody, HttpMessageConverter responseConverter,
+                             ConverterConfig converterConfig, ViewResolver viewResolver,
+                             HttpRequest request, HttpResponse response) throws Exception {
+        if (hasResponseBody) {
+            responseConverter.write(result, converterConfig, response);
+        } else if (result != null) {
+            if (viewResolver != null) {
+                viewResolver.render(result, request, response);
+            } else {
+                handleDefaultResult(result, response);
+            }
+        }
     }
 
     /**
@@ -831,29 +900,8 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
                 int argSseIndex = -1;
 
                 // Parse path template variables: ${name} (wastnet) or Spring's {name}, with optional inline regex {name:pattern}
-                final Map<String, Integer> pathVarSegIndex;
-                final String routePattern;
-                if (fullPath.indexOf('{') > -1) {
-                    String[] segs = fullPath.split("/", -1);
-                    StringBuilder rb = new StringBuilder();
-                    pathVarSegIndex = new HashMap<>(segs.length);
-                    for (int si = 0; si < segs.length; ++si) {
-                        String seg = segs[si];
-                        if (si == 0) continue; // leading slash
-                        rb.append("/");
-                        String[] pv = parsePathVar(seg);
-                        if (pv != null) {
-                            pathVarSegIndex.put(pv[0], si);
-                            rb.append(pv[1] != null ? "(" + pv[1] + ")" : "([^/]+)");
-                        } else {
-                            rb.append(Pattern.quote(seg));
-                        }
-                    }
-                    routePattern = "^" + rb + "$";
-                } else {
-                    pathVarSegIndex = null;
-                    routePattern = null;
-                }
+                final Map<String, Integer> pathVarSegIndex = fullPath.indexOf('{') > -1 ? new HashMap<>() : null;
+                final String routePattern = pathVarSegIndex != null ? buildRoutePattern(fullPath, pathVarSegIndex) : null;
 
                 for (int i = 0; i < params.length; ++i) {
                     Class<?> pType = params[i].getType();
@@ -916,11 +964,21 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
                 final boolean hasResponseBody = !isSse && endpointMethod.getReturnType() != void.class
                         && (classHasResponseBody
                         || hasAnyAnnotation(endpointMethod.getAnnotations(), responseBodyAnnotations));
-                if (hasResponseBody && messageConverter == null) {
-                    throw new RuntimeException("@ResponseBody on " + endpointMethod.getName()
-                            + " requires a messageConverter configured via .messageConverter()");
+                final ConverterConfig converterConfig = new ConverterConfig(routeInfo);
+                // Resolve the response converter once at scan time (the response type is fixed per endpoint),
+                // so the per-request lambda skips the EnumMap lookup on every call.
+                final HttpMessageConverter responseConverter = hasResponseBody ? converterFor(converterConfig.getResponseType()) : null;
+                if (hasResponseBody && responseConverter == null) {
+                    ContentType rt = converterConfig.getResponseType();
+                    throw new RuntimeException("@ResponseBody endpoint " + clazz.getSimpleName() + "#" + endpointMethod.getName()
+                            + " must serialize its return value as " + rt
+                            + ", but no HttpMessageConverter is registered for that ContentType."
+                            + " Configure one via .messageConverter(" + rt + ", converter).");
                 }
-                final ConverterConfig converterConfig = buildConverterConfig(routeInfo);
+                // Pre-select the view resolver at scan time from the endpoint's declared return type,
+                // so the per-request lambda skips the resolver list lookup on every call.
+                final ViewResolver routeViewResolver = hasResponseBody ? null : resolveViewResolver(endpointMethod.getReturnType());
+
                 final List<RouterInterceptor> endpointInterceptors = resolveEndpointInterceptors(routeInfo);
 
                 // Build MethodHandle bound to the controller instance
@@ -943,11 +1001,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
                             if (!applyInterceptors(endpointInterceptors, p, request, response)) {
                                 return;
                             }
-                            Object result = bound.invoke((HttpRequest) request, (HttpResponse) response);
-                            if (hasResponseBody) {
-                                converterConfig.beforeResponseBody(request, response, result);
-                                messageConverter.write(result, converterConfig, response);
-                            }
+                            writeResult(bound.invoke((HttpRequest) request, (HttpResponse) response), hasResponseBody, responseConverter, converterConfig, routeViewResolver, request, response);
                         };
                     }
                 } else {
@@ -965,11 +1019,13 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
                                 switch (argKinds[i]) {
                                     case KIND_REQUEST:  args[i] = request; break;
                                     case KIND_RESPONSE: args[i] = response; break;
-                                    case KIND_BODY:
-                                        args[i] = messageConverter != null
-                                                ? assertBodyAssignable(messageConverter.read(request, converterConfig, argBodyTypes[i]), argParamTypes[i])
+                                    case KIND_BODY: {
+                                        HttpMessageConverter bc = converterFor(ContentType.fromRequest(request.getContentType()));
+                                        args[i] = bc != null
+                                                ? assertBodyAssignable(bc.read(request, converterConfig, argBodyTypes[i]), argParamTypes[i])
                                                 : null;
                                         break;
+                                    }
                                     case KIND_PATH:     args[i] = argConverters[i].apply(segmentAt(p, argPathSegIndex[i])); break;
                                     case KIND_PARAM:
                                         args[i] = resolveRequestParam(request, argParamNames[i], argParamTypes[i],
@@ -1005,11 +1061,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
                                 bound.invokeWithArguments(args);
                             });
                         } else {
-                            Object result = bound.invokeWithArguments(args);
-                            if (hasResponseBody) {
-                                converterConfig.beforeResponseBody(request, response, result);
-                                messageConverter.write(result, converterConfig, response);
-                            }
+                            writeResult(bound.invokeWithArguments(args), hasResponseBody, responseConverter, converterConfig, routeViewResolver, request, response);
                         }
                     };
                 }
@@ -1053,20 +1105,11 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
         return false;
     }
 
-    /** Build the per-route converter config. Extension point: override to preset more options. */
-    protected ConverterConfig buildConverterConfig(MethodRouteInfo routeInfo) {
-        ConverterConfig config = new ConverterConfig();
-        if (routeInfo.getResponseType() != null) {
-            config.responseType(routeInfo.getResponseType());
-        }
-        return config;
-    }
-
-    // Parameter value converters are defined in ParamValueConverters (shared by @RequestParam/@PathParam and @Value).
-
     /**
      * Register (or override) a custom converter for a parameter value type.
-     * Built-in primitive / String converters are locked and cannot be overridden.
+     * Converters are stored in {@link ParamValueConverters}, shared by {@code @RequestParam},
+     * {@code @PathParam} and {@code @Value}. Built-in primitive / String converters are locked
+     * and cannot be overridden.
      *
      * @throws IllegalArgumentException if {@code type} is a locked built-in type
      */

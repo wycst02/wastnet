@@ -299,6 +299,100 @@ public class AnnotationRouterHandlerExtraTest {
         }
     }
 
+    private static String contentTypeOf(OkHttpClient client, String base, String path) throws Exception {
+        Response r = client.newCall(new Request.Builder().url(base + path).get().build()).execute();
+        try {
+            return r.header("Content-Type");
+        } finally {
+            r.close();
+        }
+    }
+
+    // ==================== view resolver / converter result handling (public API) ====================
+    // Drives addViewResolver + resolveViewResolver (scan-time pre-select) + writeResult (all three
+    // branches: @ResponseBody converter, viewResolver.render, handleDefaultResult) + handleDefaultResult
+    // File/InputStream/byte[]/String branches + @RequestBody line 1019 (assertBodyAssignable non-null).
+
+    @Test
+    public void testViewResolverAndResultHandling() throws Exception {
+        AnnotationRouterHandler handler = new AnnotationRouterHandler()
+                .messageConverter(jsonWritingConverter())
+                .addViewResolver(new io.github.wycst.wastnet.vrtest.ViewResultFixtures.RenderViewResolver())
+                .annotationResolver(acceptResolver(
+                        set(io.github.wycst.wastnet.vrtest.ViewResultFixtures.ViewResultController.class),
+                        true, false, false))
+                .scanPackages("io.github.wycst.wastnet.vrtest");
+        OkHttpClient client = new OkHttpClient.Builder()
+                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS).build();
+        HTTPServer server = HTTPServer.of(51140).requestHandler(handler).startupBannerEnabled(false).start();
+        try {
+            // resolveViewResolver pre-selected RenderViewResolver at scan time -> render()
+            assertEquals("view:ok", bodyOf(client, "http://127.0.0.1:51140", "/vr/render"));
+            // handleDefaultResult: File branch -> 200 streamed
+            assertEquals(200, codeOf(client, "http://127.0.0.1:51140", "/vr/file"));
+            // handleDefaultResult: byte[] branch -> body echoed
+            assertEquals("bytes-body", bodyOf(client, "http://127.0.0.1:51140", "/vr/bytes"));
+            // handleDefaultResult: InputStream branch -> 200 chunked
+            assertEquals(200, codeOf(client, "http://127.0.0.1:51140", "/vr/stream"));
+            // handleDefaultResult: String fallback (String.valueOf)
+            assertEquals("text-body", bodyOf(client, "http://127.0.0.1:51140", "/vr/text"));
+            // writeResult: @ResponseBody -> converter.write
+            assertEquals("{\"k\":\"v\"}", bodyOf(client, "http://127.0.0.1:51140", "/vr/json"));
+            // @RequestBody -> line 1019 assertBodyAssignable non-null branch
+            Response br = client.newCall(new Request.Builder()
+                    .url("http://127.0.0.1:51140/vr/body")
+                    .post(okhttp3.RequestBody.create(MediaType.parse("application/json"), "payload"))
+                    .build()).execute();
+            try {
+                assertEquals(200, br.code());
+                assertEquals("echo:hello", br.body().string());
+            } finally {
+                br.close();
+            }
+        } finally {
+            server.shutdown();
+        }
+    }
+
+    // Real FreeMarker ViewResolver driven through the public HTTP entry (no reflection), covering
+    // addViewResolver + resolveViewResolver (scan-time pre-select for ModelAndView) + writeResult's
+    // viewResolver.render branch; the same resolver/class is wired into MvcDemo.
+    @Test
+    public void testFreeMarkerViewResolverRendering() throws Exception {
+        AnnotationRouterHandler handler = new AnnotationRouterHandler()
+                .messageConverter(jsonWritingConverter())
+                .addViewResolver(new io.github.wycst.wastnet.examples.http.mvc.view.FreeMarkerViewResolver())
+                .scanPackages("io.github.wycst.wastnet.fmvtest");
+        OkHttpClient client = new OkHttpClient.Builder()
+                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS).build();
+        HTTPServer server = HTTPServer.of(51141).requestHandler(handler).startupBannerEnabled(false).start();
+        try {
+            String html = bodyOf(client, "http://127.0.0.1:51141", "/fmv/user");
+            assertTrue(html.contains("Hello wastnet"));
+            assertTrue(html.contains("<li>admin</li>"));
+            assertTrue(html.contains("<li>dev</li>"));
+            assertEquals("text/html;charset=utf-8", contentTypeOf(client, "http://127.0.0.1:51141", "/fmv/user"));
+        } finally {
+            server.shutdown();
+        }
+    }
+
+    // write() serializes the returned value; read() returns a non-null value so the @RequestBody
+    // bind at AnnotationRouterHandler line 1019 takes the assertBodyAssignable(value != null) branch.
+    private static HttpMessageConverter jsonWritingConverter() {
+        return new HttpMessageConverter() {
+            @Override
+            public Object read(HttpRequest req, ConverterConfig cfg, java.lang.reflect.Type type) {
+                return "hello";
+            }
+
+            @Override
+            public void write(Object v, ConverterConfig cfg, HttpResponse resp) throws Exception {
+                resp.contentType("application/json;charset=utf-8").body("{\"k\":\"v\"}".getBytes());
+            }
+        };
+    }
+
     @Test
     public void testResolveParamElementType() throws Exception {
         Method arrM = TypeHolder.class.getMethod("arrayMethod", String[].class);

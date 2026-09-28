@@ -466,16 +466,15 @@ public class DevHotReloaderTest {
     }
 
     @Test
-    public void testBuildConverterConfigResponseType() throws Exception {
-        AnnotationRouterHandler h = new AnnotationRouterHandler();
+    public void testConverterConfigResponseType() throws Exception {
         MethodRouteInfo withType = new MethodRouteInfo("/x", new HttpMethod[]{HttpMethod.GET},
-                DevHotReloaderTest.class.getDeclaredMethod("testBuildConverterConfigResponseType"), null, ContentType.JSON);
-        ConverterConfig cfg = h.buildConverterConfig(withType);
+                DevHotReloaderTest.class.getDeclaredMethod("testConverterConfigResponseType"), null, ContentType.JSON);
+        ConverterConfig cfg = new ConverterConfig(withType);
         assertEquals(ContentType.JSON, cfg.getResponseType());
 
         MethodRouteInfo noType = new MethodRouteInfo("/y", new HttpMethod[]{HttpMethod.GET},
-                DevHotReloaderTest.class.getDeclaredMethod("testBuildConverterConfigResponseType"));
-        assertNotNull(h.buildConverterConfig(noType));
+                DevHotReloaderTest.class.getDeclaredMethod("testConverterConfigResponseType"));
+        assertNotNull(new ConverterConfig(noType));
     }
 
     @Test
@@ -847,7 +846,7 @@ public class DevHotReloaderTest {
                 .preDestroyBy(PreDestroy.class)
                 .properties(Collections.singletonMap("p1", "v1"));
 
-        assertSame(conv, h.messageConverter);
+        assertSame(conv, h.converters.get(ContentType.JSON));
         assertSame(res, h.resolver);
         assertArrayEquals(new Class[]{RequestBody.class}, h.requestBodyAnnotations);
         assertArrayEquals(new Class[]{ResponseBody.class}, h.responseBodyAnnotations);

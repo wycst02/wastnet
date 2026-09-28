@@ -1293,79 +1293,45 @@ public class AnnotationPackageTest {
 
     // ==================== ConverterConfig ====================
 
-    @Test public void testConverterConfig() {
+    @Test public void testConverterConfig() throws Exception {
+        // Default values (no-arg construction)
         ConverterConfig cfg = new ConverterConfig();
-        // Default values
         assertFalse(cfg.isPretty());
         assertFalse(cfg.isSkipNull());
         assertNull(cfg.getDateFormat());
-        assertNotNull(cfg.getProperties());
-        assertTrue(cfg.getProperties().isEmpty());
-        // Chained setters (exercises return this)
-        ConverterConfig c2 = cfg.pretty(true).skipNull(true).dateFormat("yyyy-MM-dd");
-        assertSame(cfg, c2);
-        assertTrue(cfg.isPretty());
-        assertTrue(cfg.isSkipNull());
-        assertEquals("yyyy-MM-dd", cfg.getDateFormat());
-        // Individual properties
-        ConverterConfig c3 = cfg.property("k1", "v1");
-        assertSame(cfg, c3);
-        ConverterConfig c4 = cfg.property("k2", "v2");
-        assertSame(cfg, c4);
-        assertEquals("v1", cfg.getProperty("k1"));
-        assertEquals("v2", cfg.getProperty("k2"));
-        assertNull(cfg.getProperty("missing"));
-        assertEquals("default", cfg.getProperty("missing", "default"));
-        // Bulk properties
-        Map<String, String> props = new HashMap<String, String>();
-        props.put("k3", "v3");
-        ConverterConfig c5 = cfg.properties(props);
-        assertSame(cfg, c5);
-        assertEquals("v3", cfg.getProperty("k3"));
-        assertEquals(3, cfg.getProperties().size());
-        // two-arg overload with a present key -> covers the "v != null" branch
-        assertEquals("v1", cfg.getProperty("k1", "default"));
+        assertEquals(ContentType.JSON, cfg.getResponseType());
+        assertEquals("application/json;charset=utf-8", cfg.getResponseContentType());
+        assertTrue(cfg.isJson());
+        assertFalse(cfg.isTextual());
+        assertFalse(cfg.isCustom());
 
-        // ===== responseType (ContentType) =====
-        // default -> JSON
-        assertEquals(ContentType.JSON, cfg.getResponseType());
-        assertEquals("application/json;charset=utf-8", cfg.getContentType());
-        assertTrue(cfg.isJson());
-        assertFalse(cfg.isTextual());
-        assertFalse(cfg.isXml());
-        assertFalse(cfg.isText());
-        assertFalse(cfg.isHtml());
-        assertFalse(cfg.isCustom());
-        // TEXT -> textual
-        ConverterConfig c6 = cfg.responseType(ContentType.TEXT);
-        assertSame(cfg, c6);
-        assertTrue(cfg.isText());
-        assertTrue(cfg.isTextual());
-        assertFalse(cfg.isJson());
-        assertFalse(cfg.isXml());
-        assertFalse(cfg.isHtml());
-        assertFalse(cfg.isCustom());
-        assertEquals("text/plain;charset=utf-8", cfg.getContentType());
+        // Constructor derives responseType from the route (TEXT -> textual)
+        MethodRouteInfo textRoute = new MethodRouteInfo("/t", new HttpMethod[]{HttpMethod.GET},
+                AnnotationPackageTest.class.getDeclaredMethod("testConverterConfig"), null, ContentType.TEXT);
+        ConverterConfig cText = new ConverterConfig(textRoute);
+        assertTrue(cText.isTextual());
+        assertFalse(cText.isJson());
+        assertFalse(cText.isCustom());
+        assertEquals("text/plain;charset=utf-8", cText.getResponseContentType());
+
         // XML -> textual
-        cfg.responseType(ContentType.XML);
-        assertTrue(cfg.isXml());
-        assertTrue(cfg.isTextual());
-        assertFalse(cfg.isText());
-        // HTML -> textual
-        cfg.responseType(ContentType.HTML);
-        assertTrue(cfg.isHtml());
-        assertTrue(cfg.isTextual());
-        assertFalse(cfg.isXml());
+        MethodRouteInfo xmlRoute = new MethodRouteInfo("/x", new HttpMethod[]{HttpMethod.GET},
+                AnnotationPackageTest.class.getDeclaredMethod("testConverterConfig"), null, ContentType.XML);
+        assertTrue(new ConverterConfig(xmlRoute).isTextual());
+
         // CUSTOM -> no default content-type
-        cfg.responseType(ContentType.CUSTOM);
-        assertTrue(cfg.isCustom());
-        assertFalse(cfg.isTextual());
-        assertFalse(cfg.isJson());
-        assertNull(cfg.getContentType());
-        // null -> fall back to JSON (covers the responseType(null) branch)
-        cfg.responseType(null);
-        assertEquals(ContentType.JSON, cfg.getResponseType());
-        assertTrue(cfg.isJson());
+        MethodRouteInfo customRoute = new MethodRouteInfo("/c", new HttpMethod[]{HttpMethod.GET},
+                AnnotationPackageTest.class.getDeclaredMethod("testConverterConfig"), null, ContentType.CUSTOM);
+        ConverterConfig cCustom = new ConverterConfig(customRoute);
+        assertTrue(cCustom.isCustom());
+        assertNull(cCustom.getResponseContentType());
+
+        // null responseType falls back to JSON (covers the unset branch)
+        MethodRouteInfo noType = new MethodRouteInfo("/n", new HttpMethod[]{HttpMethod.GET},
+                AnnotationPackageTest.class.getDeclaredMethod("testConverterConfig"));
+        ConverterConfig cJson = new ConverterConfig(noType);
+        assertEquals(ContentType.JSON, cJson.getResponseType());
+        assertTrue(cJson.isJson());
     }
 
     // ==================== All annotation types ====================
@@ -1383,5 +1349,86 @@ public class AnnotationPackageTest {
         assertTrue(PostConstruct.class.isAnnotation());
         assertTrue(RequestBody.class.isAnnotation());
         assertTrue(ResponseBody.class.isAnnotation());
+    }
+
+    // ==================== Streamed request body (TextMessageConverter streaming read) ====================
+
+    /**
+     * A chunked (Transfer-Encoding: chunked) text/plain POST makes the server build
+     * an HttpChunkedRequest (isStream() == true), so {@link TextMessageConverter#read}
+     * goes through the streaming read path (readString) instead of getBodyData().
+     * Reuses the existing BodyController#readBody endpoint - no new fixtures / files.
+     */
+    @Test
+    public void testRequestBodyStreamReadsViaReadString() throws Exception {
+        HttpMessageConverter jsonConv = new HttpMessageConverter() {
+            @Override public Object read(HttpRequest req, ConverterConfig cfg, java.lang.reflect.Type type) { return null; }
+            @Override public void write(Object v, ConverterConfig cfg, HttpResponse response) {
+                response.contentType(ContentType.JSON.getContentType()).body(String.valueOf(v));
+            }
+        };
+        AnnotationRouterHandler handler = new AnnotationRouterHandler()
+                .messageConverter(jsonConv)
+                .property("null.val", "defaultNull")
+                .property("exists", "existsValue")
+                .scanPackages("io.github.wycst.wastnet.http.annotation");
+        OkHttpClient client = new OkHttpClient.Builder()
+                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .build();
+        HTTPServer server = HTTPServer.of(51233).requestHandler(handler).startupBannerEnabled(false).start();
+        try {
+            // contentLength() == -1 -> OkHttp uses Transfer-Encoding: chunked,
+            // so the server treats the body as a stream (isStream() == true).
+            okhttp3.RequestBody chunkedBody = new okhttp3.RequestBody() {
+                @Override public MediaType contentType() {
+                    return MediaType.parse("text/plain; charset=utf-8");
+                }
+                @Override public long contentLength() { return -1; }
+                @Override public void writeTo(okio.BufferedSink sink) throws java.io.IOException {
+                    sink.writeUtf8("streamed-text-body-via-toBytes");
+                }
+            };
+            Response resp = client.newCall(new Request.Builder()
+                    .url("http://127.0.0.1:51233/body/read")
+                    .post(chunkedBody)
+                    .build()).execute();
+            assertEquals(200, resp.code());
+            assertTrue(resp.body().string().contains("streamed-text-body-via-toBytes"));
+            resp.close();
+        } finally {
+            server.shutdown();
+        }
+    }
+
+    // ==================== Text response write (TextMessageConverter.write) ====================
+
+    /**
+     * Covers the built-in TEXT converter's write path: an endpoint declared with
+     * responseType = ContentType.TEXT produces a text/plain body via
+     * TextMessageConverter. Reuses the example TestController (no new fixtures).
+     */
+    @Test
+    public void testTextResponseWrite() throws Exception {
+        HttpMessageConverter jsonConv = new HttpMessageConverter() {
+            @Override public Object read(HttpRequest req, ConverterConfig cfg, java.lang.reflect.Type type) { return null; }
+            @Override public void write(Object v, ConverterConfig cfg, HttpResponse resp) {}
+        };
+        AnnotationRouterHandler handler = new AnnotationRouterHandler()
+                .messageConverter(jsonConv)
+                .property("msg", "hello-text")
+                .scanPackages("io.github.wycst.wastnet.examples.http.mvc");
+        OkHttpClient client = new OkHttpClient.Builder()
+                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+                .build();
+        HTTPServer server = HTTPServer.of(51234).requestHandler(handler).startupBannerEnabled(false).start();
+        try {
+            Response resp = client.newCall(new Request.Builder()
+                    .url("http://127.0.0.1:51234/hello").get().build()).execute();
+            assertEquals(200, resp.code());
+            assertEquals("hello-text", resp.body().string());
+            resp.close();
+        } finally {
+            server.shutdown();
+        }
     }
 }

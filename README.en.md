@@ -67,6 +67,13 @@
     <artifactId>wastnet-core</artifactId>
     <version>1.0.1</version>
 </dependency>
+
+<!-- Add this if you use the annotation MVC (@Controller / @RequestMapping / @ResponseBody, etc.) -->
+<dependency>
+    <groupId>io.github.wycst</groupId>
+    <artifactId>wastnet-mvc</artifactId>
+    <version>1.0.1</version>
+</dependency>
 ```
 
 ### Basic HTTP Server
@@ -445,10 +452,9 @@ public class UserService {
 
 `AnnotationRouterHandler` supports these chained configuration methods:
 
-- `messageConverter(HttpMessageConverter)` — set the message conversion SPI (prerequisite for `@RequestBody`/`@ResponseBody`; typically implemented with Jackson/Gson or wastnet's built-in `JSON`)
+- `messageConverter(HttpMessageConverter)` / `messageConverter(ContentType, HttpMessageConverter)` — set the message conversion SPI (prerequisite for `@RequestBody`/`@ResponseBody`; registered to JSON by default, or per response `ContentType`; typically implemented with Jackson/Gson or wastnet's built-in `JSON`)
 - `property(key, val)` / `properties(map)` — set config properties available for `@Value` injection
-- `loadProperties("application.properties")` — load config from classpath `.properties` files
-- `loadConfig(ConfigLoader)` — load config via a custom `ConfigLoader` (e.g. YAML)
+- `configFiles("app.properties")` — designate the config file auto-loaded during each scan (scan config, re-read on hot reload; defaults to `application.properties`, used for `@Value` injection); `-D` system properties take the highest priority (scan packages are set via `scanPackages(...)` — that's the boot layer's job)
 - `requestBodyBy(...)` / `responseBodyBy(...)` / `pathParamBy(...)` / `requestParamBy(...)` — customize which annotations are treated as request body / response body / path variable / request parameter
 - `valueBy(...)` / `injectBy(...)` / `postConstructBy(...)` / `preDestroyBy(...)` — customize the `@Value`/`@Inject`/lifecycle annotations
 - `annotationResolver(AnnotationResolver)` — bridge third-party annotation systems (e.g. Spring Boot's `@RestController`/`@RequestMapping`/`@Service`/`@Autowired`/`@Value`)
@@ -471,37 +477,32 @@ public class DemoController {
 
 `ContentType` enum: `JSON` (default), `TEXT`, `HTML`, `XML`, `CUSTOM` (custom, converter decides).
 
-In the converter, judge the type via `ConverterConfig`:
+> **`TEXT` works out of the box**: the framework ships a built-in `TEXT` converter, so endpoints declaring `responseType = ContentType.TEXT` return plain text without calling `.messageConverter(...)`; override with `.messageConverter(ContentType.TEXT, customConverter)`.
+
+A single-arg `messageConverter(converter)` registers the converter to `JSON` only, so `write` needs no type check — just serialize as JSON:
 
 ```java
 .messageConverter(new HttpMessageConverter() {
     @Override
     public void write(Object value, ConverterConfig config, HttpResponse response) throws Exception {
-        if (config.isTextual()) {                    // XML / TEXT / HTML → output as string
-            response.contentType(config.getContentType()).body(String.valueOf(value));
-            return;
-        }
-        if (config.isJson()) {                       // JSON → object serialization
-            response.contentType(config.getContentType());
-            response.body(JSON.toJsonBytes(value));
-            return;
-        }
-        // CUSTOM → the converter decides the content-type
-        response.contentType(ContentType.JSON.getContentType()).body(JSON.toJsonBytes(value));
+        response.contentType(config.getResponseContentType());
+        response.body(JSON.toJsonBytes(value));
     }
 })
 ```
+
+> If the same converter instance is registered for multiple types via `messageConverter(ContentType, converter)` (e.g. both `JSON` and `TEXT`), branch in `write` using `ConverterConfig`'s `isJson()`/`isTextual()`/`isCustom()`; for a single-type registration no check is needed.
 
 Common `ConverterConfig` judgment methods:
 
 | Method | Description |
 |:-------|:------------|
 | `getResponseType()` | Returns the `ContentType` enum |
-| `getContentType()` | Returns the full Content-Type header value with UTF-8 (`null` for `CUSTOM`) |
+| `getResponseContentType()` | Returns the full response Content-Type header value with UTF-8 (`null` for `CUSTOM`) |
 | `isTextual()` | Whether a textual type (`XML`/`TEXT`/`HTML`) |
-| `isJson()` / `isXml()` / `isText()` / `isHtml()` | Whether the specific type |
+| `isJson()` | Whether the JSON (default) type |
 | `isCustom()` | Whether the custom type |
-| `beforeResponseBody(request, response, result)` | Instance hook before response body write; override for content negotiation etc. (default no-op) |
+
 
 ### WebSocket / SSE Annotations
 
@@ -1023,7 +1024,6 @@ wastnet/                               ← Parent project (pom)
 │       │   └── protocol/           # ObjectCodec and other protocols
 │       ├── http/                   # HTTP core
 │       │   ├── HTTPServer.java     # HTTP server
-│       │   ├── annotation/         # Annotation routing + light DI (MVC)
 │       │   ├── handler/            # Router, resources, exception handlers, interceptor/observer
 │       │   ├── h2/                 # HTTP/2 (HPACK/Huffman/frames/streams)
 │       │   ├── proxy/              # Reverse proxy
@@ -1035,8 +1035,13 @@ wastnet/                               ← Parent project (pom)
 │       ├── util/                   # Utilities
 │       └── exception/              # Exception definitions
 │
-├── wastnet-test/                       ← Tests and examples (jar)
+├── wastnet-mvc/                        ← Annotation MVC module (jar)
 │   ├── pom.xml                          # depends on wastnet-core
+│   └── src/main/java/io/github/wycst/wastnet/
+│       └── http/annotation/             # Annotation routing + light DI (package unchanged)
+│
+├── wastnet-test/                       ← Tests and examples (jar)
+│   ├── pom.xml                          # depends on wastnet-core and wastnet-mvc
 │   ├── src/main/java/                   # Test code + runnable examples
 │   │   └── ... (HTTP decoders, HTTP/2, WebSocket, TCP tests)
 │   ├── src/main/resources/              # Certificates, keystores, demo pages
