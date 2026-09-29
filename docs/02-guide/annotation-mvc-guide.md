@@ -548,7 +548,6 @@ public class SseCtrl {
                      HttpRequest request) {
         // emitter + 路径变量 room + 原始请求，三者都有
         emitter.emit("joined: " + room);
-        emitter.close();          // 必须显式关闭，框架不会自动清理
     }
 }
 ```
