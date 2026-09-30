@@ -287,7 +287,7 @@ public final class HttpServerChannelHandler implements ChannelHandler<HttpMessag
         // Return basic 500 error response
         try {
             response.status(HttpStatus.INTERNAL_SERVER_ERROR)
-                    .contentType("text/plain;charset=utf-8")
+                    .contentType(HttpHeaderValues.TEXT_PLAIN_UTF8)
                     .body("500 Internal Server Error".getBytes());
         } catch (Throwable ignored) {
             // If even the most basic response cannot be built, give up
@@ -303,7 +303,7 @@ public final class HttpServerChannelHandler implements ChannelHandler<HttpMessag
     private void handleBadRequest(HttpInternalRequest badRequest) {
         HttpResponse response = badRequest.getResponse();
         try {
-            response.status(badRequest.getHttpStatus()).contentType("text/plain;charset=utf-8")
+            response.status(badRequest.getHttpStatus()).contentType(HttpHeaderValues.TEXT_PLAIN_UTF8)
                     .body(badRequest.getErrorMessage().getBytes()).commit();
         } catch (Throwable throwable) {
             if (printStackTraceError) {

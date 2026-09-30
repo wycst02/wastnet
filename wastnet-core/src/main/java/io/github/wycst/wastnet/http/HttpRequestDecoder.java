@@ -119,7 +119,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
         boolean completed = false;
         final int endIndex = offset + len;
         while (true) {
-            int next = endIndex;
+            int next;
             try {
                 next = decode(buf, offset, len);
                 if (handleBadOrTimeout()) return;
@@ -161,7 +161,6 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
         if (status != null) {
             headers.put(HttpHeaderNormalized.getConnection(), HttpHeaderValues.CLOSE); // any decoding error may leave residual bytes in buffer, force close to avoid client hang
             onBadDecoded(ctx, status);
-            ctx.flush();
             reset();
             return true;
         }
@@ -539,6 +538,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
             return;
         }
         ctx.invokeHandle(new HttpBadRequest(HttpMethod.fromString(startLineValues[0]), startLineMiddle, uriDecoder.getUri(), uriDecoder.getParameters(), HttpVersion.of(startLineValues[2]), headers, body, contentLength, contentType, ctx).stream(bodyMode != BODY_MODE_NORMAL).chunked(bodyMode == BODY_MODE_CHUNKED).status(status));
+        ctx.flush();
         if (status == HttpStatus.REQUEST_TIMEOUT)
             ctx.close(); // Defensive close: no Connection: close header sent to potentially malicious client
     }

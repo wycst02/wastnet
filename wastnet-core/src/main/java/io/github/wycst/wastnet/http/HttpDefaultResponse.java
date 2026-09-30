@@ -477,6 +477,16 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
     }
 
     @Override
+    public void complete() throws IOException {
+        super.complete();
+        // non-keep-alive: super.complete() only buffers, so flush the body before closing to avoid loss
+        if (!isKeepAlive()) {
+            ctx.flush();
+            ctx.close();
+        }
+    }
+
+    @Override
     protected void resetInternal() {
         super.resetInternal();
         os = null;
