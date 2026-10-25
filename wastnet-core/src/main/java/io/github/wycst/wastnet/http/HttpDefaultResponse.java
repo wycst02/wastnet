@@ -11,6 +11,7 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * HTTP response design implementation
@@ -527,6 +528,7 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
     @Override
     public void earlyHints(String linkHeader) throws IOException {
         if (isSilentlyUnavailable() || headersSent) return;
+        Objects.requireNonNull(linkHeader, "Early hints link header must not be null");
         HttpHeaderUtils.requireNoCRLF(linkHeader, "Early hints link header must not contain CR or LF");
         // {httpVersion} 103 Early Hints\r\nLink: {linkHeader}\r\n\r\n
         HttpBuf buf = HttpBuf.of(96);

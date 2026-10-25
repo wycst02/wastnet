@@ -233,6 +233,7 @@ public class Http2Response extends HttpInternalResponse {
     @Override
     public void earlyHints(String linkHeader) throws IOException {
         if (headersSent) return;
+        Objects.requireNonNull(linkHeader, "Early hints link header must not be null");
         HttpHeaderUtils.requireNoCRLF(linkHeader, "Early hints link header must not contain CR or LF");
         HttpBuf buf = HttpBuf.of(64);
         // Pre-encoded HPACK prefix: :status: 103 + link header name
