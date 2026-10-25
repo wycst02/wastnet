@@ -39,7 +39,7 @@ public class HTTPServer extends TCPServer {
     private static String resolveVersion() {
         Package pkg = HTTPServer.class.getPackage();
         String ver = pkg != null ? pkg.getImplementationVersion() : null;
-        return ver != null ? ver : "1.0.3";
+        return ver != null ? ver : "1.0.4-SNAPSHOT";
     }
 
     final HttpServerChannelHandler serverChannelHandler;
