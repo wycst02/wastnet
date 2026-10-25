@@ -97,7 +97,7 @@ public class NioEngine<E extends NioEngine<E>> {
         return self();
     }
 
-    public E channelReader(ChannelReader channelReader) {
+    public E channelReader(ChannelReader<?> channelReader) {
         nioConfig.setChannelReader(channelReader);
         return self();
     }

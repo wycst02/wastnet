@@ -1,9 +1,9 @@
 package io.github.wycst.wastnet.http;
 
-import io.github.wycst.wastnet.http.HttpUriDecoder;
-import io.github.wycst.wastnet.util.Utils;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+
+import java.nio.charset.StandardCharsets;
 
 /**
  * Unit tests for {@link HttpUriDecoder}
@@ -63,7 +63,7 @@ public class HttpUriDecoderTest {
     @Test
     public void testDecodePercentEncodedUTF8() {
         HttpUriDecoder decoder = new HttpUriDecoder(false);
-        byte[] data = "/%E4%B8%AD%E6%96%87".getBytes(Utils.UTF_8);
+        byte[] data = "/%E4%B8%AD%E6%96%87".getBytes(StandardCharsets.UTF_8);
         decoder.codec(data);
         decoder.endCodec();
         Assertions.assertEquals("/中文", decoder.getUri());

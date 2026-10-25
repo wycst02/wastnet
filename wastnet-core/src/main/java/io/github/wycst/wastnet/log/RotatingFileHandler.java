@@ -15,12 +15,10 @@
  */
 package io.github.wycst.wastnet.log;
 
-import io.github.wycst.wastnet.util.Utils;
-
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -61,8 +59,6 @@ import java.util.concurrent.atomic.AtomicLong;
  * @author wangyc
  */
 class RotatingFileHandler {
-
-    private static final Charset UTF_8 = Utils.UTF_8;
 
     private final String baseFilePath;
     private final long maxSize;
@@ -180,7 +176,7 @@ class RotatingFileHandler {
         }
         // Write into the in-memory buffer (synchronized for thread safety; before rotation the
         // buffer is committed to the current/old stream first).
-        byte[] bytes = line.getBytes(UTF_8);
+        byte[] bytes = line.getBytes(StandardCharsets.UTF_8);
         synchronized (this) {
             if (outputStream == null) {
                 try {

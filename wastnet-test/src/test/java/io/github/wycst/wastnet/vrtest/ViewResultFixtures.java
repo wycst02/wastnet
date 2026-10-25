@@ -1,6 +1,7 @@
 package io.github.wycst.wastnet.vrtest;
 
-import io.github.wycst.wastnet.http.*;
+import io.github.wycst.wastnet.http.HttpRequest;
+import io.github.wycst.wastnet.http.HttpResponse;
 import io.github.wycst.wastnet.http.annotation.*;
 
 import java.io.ByteArrayInputStream;

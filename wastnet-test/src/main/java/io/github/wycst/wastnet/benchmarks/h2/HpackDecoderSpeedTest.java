@@ -2,7 +2,6 @@ package io.github.wycst.wastnet.benchmarks.h2;
 
 import io.github.wycst.wast.common.utils.ByteUtils;
 import io.github.wycst.wastnet.http.h2.Http2HpackCodec;
-import io.github.wycst.wastnet.util.Utils;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -33,7 +32,7 @@ public class HpackDecoderSpeedTest {
         // 10100000 11100100 00011101 00010011 10011101 00001001 10111000 11110 011111(9) 011111(9) 0111111(9)
         // localhost:8999
         // :method: GET, :authority: localhost:8999, :scheme: https, :path: /kms/test, cache-control: max-age=0, sec-ch-ua: "Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121", sec-ch-ua-mobile: ?0, sec-ch-ua-platform: "Windows", upgrade-insecure-requests: 1, user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36, accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7, sec-fetch-site: none, sec-fetch-mode: navigate, sec-fetch-user: ?1, sec-fetch-dest: document, accept-encoding: gzip, deflate, br, accept-language: zh-CN,zh;q=0.9
-        Http2HpackCodec http2HpackDecoder = new Http2HpackCodec(Utils.UTF_8);
+        Http2HpackCodec http2HpackDecoder = new Http2HpackCodec(StandardCharsets.UTF_8);
 
         http2HpackDecoder = new Http2HpackCodec();
 

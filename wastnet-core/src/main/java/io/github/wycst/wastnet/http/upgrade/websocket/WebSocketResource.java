@@ -25,6 +25,7 @@ import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -184,7 +185,32 @@ public class WebSocketResource extends UpgradeResource {
     }
 
     /**
-     * Called when a text message is received.
+     * Called when a text message is received, with raw UTF-8 payload bytes (zero-copy).
+     * <p>
+     * This is the primary text entry point. The default implementation decodes the
+     * bytes and delegates to {@link #onMessage(WebSocketConnection, String)} for
+     * backward compatibility. Override this method to avoid the UTF-8 decode when
+     * you only need the raw bytes (e.g. echo, JSON parse, passthrough).
+     *
+     * @param connection the connection that sent the message
+     * @param data       the received text payload in UTF-8 bytes
+     */
+    public void onMessage(WebSocketConnection connection, byte[] data) throws IOException {
+        onMessage(connection, new String(data, StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Called when a text message is received, as a decoded {@link String}.
+     * <p>
+     * <b>Trigger condition:</b> this method is invoked <i>only</i> when you have
+     * <i>not</i> overridden {@link #onMessage(WebSocketConnection, byte[])}. The
+     * {@code byte[]} overload's default implementation decodes the UTF-8 payload
+     * and delegates to this String overload; once you override the {@code byte[]}
+     * overload, this method is no longer called unless your override explicitly
+     * delegates to it.
+     * <p>
+     * Default empty. Kept for backward compatibility; new code should prefer
+     * {@link #onMessage(WebSocketConnection, byte[])} for zero-copy access.
      *
      * @param connection the connection that sent the message
      * @param message    the received text
@@ -423,7 +449,7 @@ public class WebSocketResource extends UpgradeResource {
 
     /**
      * Sets the maximum WebSocket payload size for this endpoint.
-     * This overrides the global default ({@link HttpConf#MAX_WS_FRAME_SIZE}).
+     * This overrides the global default ({@link io.github.wycst.wastnet.http.HttpConf#MAX_WS_FRAME_SIZE}).
      *
      * @param maxPayloadSize max payload size in bytes (capped at Integer.MAX_VALUE)
      * @return this instance for chaining

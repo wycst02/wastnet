@@ -2,9 +2,10 @@ package io.github.wycst.wastnet.http.upgrade.websocket;
 
 import io.github.wycst.wastnet.http.*;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
-import io.github.wycst.wastnet.util.Utils;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
 /**
  * WebSocket response implementation
@@ -17,6 +18,8 @@ public class WebSocketResponse extends HttpDefaultResponse {
 
     private final String supportedSubprotocols;
 
+    private static final HttpBuf SHARED_EMPTY = HttpBuf.empty();
+
     public WebSocketResponse(HttpRequest request, ChannelContext ctx) {
         super(request, ctx);
         setStatus(HttpStatus.SWITCHING_PROTOCOLS);
@@ -24,6 +27,11 @@ public class WebSocketResponse extends HttpDefaultResponse {
         putHeader(HttpHeaderNames.CONNECTION, HttpHeaderNames.UPGRADE);
         putHeader(HttpHeaderNames.SEC_WEBSOCKET_VERSION, "13");
         this.supportedSubprotocols = request.getHeader(HttpHeaderNormalized.getSecWebSocketProtocol(), true);
+    }
+
+    @Override
+    protected int initialBodySize() {
+        return 0;
     }
 
     public String getSupportedSubprotocols() {
@@ -34,6 +42,24 @@ public class WebSocketResponse extends HttpDefaultResponse {
         return directlyGetHeader(HttpHeaderNormalized.getSecWebSocketProtocol());
     }
 
+    /**
+     * Release HTTP scaffolding after the 101 handshake is flushed.
+     * The WS session writes frames directly via {@code ctx}, so the header
+     * buffer and the phantom response can be GC'd.
+     */
+    void releaseAfterHandshake() {
+        this.headerBuf = SHARED_EMPTY;
+        // The 101 response is already flushed; the handshake-only headers are no longer needed
+        // (keep Sec-WebSocket-Protocol so subprotocol() still works).
+        directlyRemoveHeader(HttpHeaderNames.UPGRADE);
+        directlyRemoveHeader(HttpHeaderNames.CONNECTION);
+        directlyRemoveHeader(HttpHeaderNames.SEC_WEBSOCKET_VERSION);
+        // detach the phantom default response held by request.response so it can be GC'd
+        if (this.request instanceof HttpInternalRequest) {
+            ((HttpInternalRequest) this.request).setResponse(this);
+        }
+    }
+
     public static WebSocketResponse create(HttpRequest request, ChannelContext ctx) {
         return new WebSocketResponse(request, ctx);
     }
@@ -42,6 +68,8 @@ public class WebSocketResponse extends HttpDefaultResponse {
     public void flush() throws IOException {
         ensureHeadersSent();
         ctx.flush();
+        // 101 response already sent; release the HTTP scaffolding (headerBuf, etc.). Idempotent.
+        releaseAfterHandshake();
     }
 
     final void writeFlush(byte[] buf) throws IOException {
@@ -55,10 +83,20 @@ public class WebSocketResponse extends HttpDefaultResponse {
      * @throws IOException throws IO exception when sending fails
      */
     public void sendText(String message) throws IOException {
-        if (message == null) {
-            throw new IllegalArgumentException("Message cannot be null");
-        }
-        byte[] data = message.getBytes(Utils.UTF_8);
+        Objects.requireNonNull(message, "Message cannot be null");
+        sendText(message.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Send WebSocket text message from raw UTF-8 bytes (zero-copy).
+     * The bytes are framed directly as a TEXT message without an intermediate
+     * String decode/encode. Large payloads are auto-split into continuation frames.
+     *
+     * @param data text payload in UTF-8 bytes
+     * @throws IOException throws IO exception when sending fails
+     */
+    public void sendText(byte[] data) throws IOException {
+        Objects.requireNonNull(data, "Data cannot be null");
         final int chunkSize = getChunkSize();
         if (data.length <= chunkSize) {
             sendFrame(WebSocketFrame.FrameType.TEXT, data, true);
@@ -74,9 +112,7 @@ public class WebSocketResponse extends HttpDefaultResponse {
      * @throws IOException throws IO exception when sending fails
      */
     public void sendBinary(byte[] data) throws IOException {
-        if (data == null) {
-            throw new IllegalArgumentException("Data cannot be null");
-        }
+        Objects.requireNonNull(data, "Data cannot be null");
         final int chunkSize = getChunkSize();
         if (data.length <= chunkSize) {
             sendFrame(WebSocketFrame.FrameType.BINARY, data, true);
@@ -135,7 +171,7 @@ public class WebSocketResponse extends HttpDefaultResponse {
      * @throws IOException throws IO exception when sending fails
      */
     private void sendFrame(WebSocketFrame.FrameType type, byte[] data, boolean fin) throws IOException {
-        byte[] frameData = WebSocketUtils.encodeServerFrame(type, data, fin);
-        writeFlush(frameData);
+        // Locked, zero-copy frame send (header & payload separate); flush unless SYNC batch mode.
+        WebSocketUtils.sendServerFrame(ctx, type, data, fin);
     }
 }

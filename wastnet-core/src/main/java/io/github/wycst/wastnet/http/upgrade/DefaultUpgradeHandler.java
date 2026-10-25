@@ -15,17 +15,23 @@
  */
 package io.github.wycst.wastnet.http.upgrade;
 
-import io.github.wycst.wastnet.http.*;
+import io.github.wycst.wastnet.http.HttpHeaderNormalized;
+import io.github.wycst.wastnet.http.HttpHeaderValues;
+import io.github.wycst.wastnet.http.HttpRequest;
+import io.github.wycst.wastnet.http.HttpStatus;
 import io.github.wycst.wastnet.http.h2.Http2ServerReader;
 import io.github.wycst.wastnet.http.reader.HttpChannelProtocolReader;
-import io.github.wycst.wastnet.http.upgrade.websocket.*;
+import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketConnection;
+import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketResource;
+import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketResponse;
+import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketUtils;
 import io.github.wycst.wastnet.log.Log;
 import io.github.wycst.wastnet.log.LogFactory;
 import io.github.wycst.wastnet.socket.handler.ClearableHandler;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
-import io.github.wycst.wastnet.util.Utils;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Set;
 
@@ -42,8 +48,7 @@ public class DefaultUpgradeHandler implements UpgradeHandler, ClearableHandler {
     static final Log log = LogFactory.getLog(DefaultUpgradeHandler.class);
 
     final Map<String, UpgradeResource> resourceHashMap = new java.util.HashMap<>();
-    static final byte[] WEBSOCKET_PONG_FRAME = new byte[]{(byte) 0x8A, 0x00};
-    static final byte[] H2C_101_RESPONSE = "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n".getBytes(Utils.ISO_8859_1);
+    static final byte[] H2C_101_RESPONSE = "HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: h2c\r\n\r\n".getBytes(StandardCharsets.UTF_8);
     static final WebSocketResource DEFAULT_WEBSOCKET_RESOURCE = new WebSocketResource(false);
 
     /**
@@ -63,106 +68,6 @@ public class DefaultUpgradeHandler implements UpgradeHandler, ClearableHandler {
             }
         }
         return null;
-    }
-
-    @Override
-    public final void handle(ChannelContext ctx, HttpUpgradeMessage upgradeMessage) throws Throwable {
-        // Only WebSocket frames reach here (h2c upgrade switches decoder in upgrade());
-        // HttpUpgradeMessage.isWebSocket() is always true at this point.
-        handleWebSocket(ctx, upgradeMessage);
-    }
-
-    private void handleWebSocket(ChannelContext ctx, HttpUpgradeMessage upgradeMessage) {
-        WebSocketFrame frame = (WebSocketFrame) upgradeMessage;
-        WebSocketFrame.FrameType type = frame.getType();
-
-        UpgradeWebSocketHolder upgradeHolder = (UpgradeWebSocketHolder) ctx.binding();
-        if (upgradeHolder == null) return; // connection closed/timed out
-        WebSocketResource resource = upgradeHolder.resource;
-        WebSocketConnection connection = upgradeHolder.connection;
-        try {
-            connection.updateActiveTime();
-            switch (type) {
-                case CONTINUATION:
-                    resource.onContinuation(connection, frame);
-                    break;
-                case TEXT:
-                    String textMessage = new String(frame.getData(), Utils.UTF_8);
-                    resource.onMessage(connection, textMessage);
-                    break;
-                case BINARY:
-                    resource.onBinary(connection, frame.getData());
-                    break;
-                case CLOSE:
-                    handleCloseFrame(ctx, frame, resource, connection);
-                    break;
-                case PING:
-                    sendPongFrame(ctx, frame.getData());
-                    break;
-                case PONG:
-                    break;
-            }
-            resource.onFrame(connection, frame);
-        } catch (Exception e) {
-            try {
-                resource.onError(connection, e);
-            } catch (Exception errorEx) {
-                log.error("Error in WebSocket error handler: {}", errorEx.getMessage());
-            }
-            try {
-                connection.close(1011, "Internal server error");
-            } catch (Exception closeEx) {
-                log.error("Failed to close WebSocket connection: {}", closeEx.getMessage());
-            }
-        }
-    }
-
-    /**
-     * Handle WebSocket close frame.
-     * <p>
-     * Parses close code and reason, notifies resource, sends close frame, and closes connection.
-     */
-    private void handleCloseFrame(ChannelContext ctx, WebSocketFrame frame, WebSocketResource resource, WebSocketConnection connection) {
-        try {
-            byte[] data = frame.getData();
-            int closeCode = 1000; // default normal closure
-            String reason = "Normal closure";
-
-            // parse close code and reason
-            if (data.length >= 2) {
-                closeCode = ((data[0] & 0xFF) << 8) | (data[1] & 0xFF);
-                if (data.length > 2) {
-                    reason = new String(data, 2, data.length - 2, Utils.UTF_8);
-                }
-            }
-
-            // notify resource of close
-            resource.handleOnClose(connection, closeCode, reason);
-
-            // send close frame
-            WebSocketUtils.sendCloseFrame(ctx, closeCode, reason);
-
-            // close connection
-            ctx.close();
-        } catch (Exception e) {
-            log.error("Error handling close frame: {}", e.getMessage());
-            ctx.close();
-        }
-    }
-
-    /**
-     * Send pong frame in response to ping.
-     */
-    private void sendPongFrame(ChannelContext ctx, byte[] pingData) {
-        try {
-            if (pingData.length == 0) {
-                ctx.writeFlush(WEBSOCKET_PONG_FRAME);
-            } else {
-                ctx.writeFlush(WebSocketUtils.encodeServerFrame(WebSocketFrame.FrameType.PONG, pingData, true));
-            }
-        } catch (Exception e) {
-            log.error("Failed to send pong frame: {}", e.getMessage());
-        }
     }
 
     /**
@@ -266,7 +171,7 @@ public class DefaultUpgradeHandler implements UpgradeHandler, ClearableHandler {
     /**
      * Perform a WebSocket upgrade using the given resource.
      * <p>
-     * Used by {@link HttpRequest#upgrade()} and its
+     * Used by {@link io.github.wycst.wastnet.http.HttpRequest#upgrade()} and its
      * overloaded variant so callers can supply a custom {@link WebSocketResource}
      * (e.g. embedded usage with personalized configuration).
      *
@@ -312,7 +217,7 @@ public class DefaultUpgradeHandler implements UpgradeHandler, ClearableHandler {
                     log.warn("WebSocket upgrade rejected: beforeHandshake set binding on ctx");
                     return null;
                 }
-                UpgradeWebSocketHolder upgradeHolder = new UpgradeWebSocketHolder(webSocketResource, connection);
+                UpgradeWebSocketHolder upgradeHolder = new UpgradeWebSocketHolder(webSocketResource, connection, ctx);
                 ctx.binding(upgradeHolder);
                 // Register pre-close listener: send WebSocket CLOSE frame before TCP close
                 ctx.addClearListener(() -> {
@@ -341,10 +246,7 @@ public class DefaultUpgradeHandler implements UpgradeHandler, ClearableHandler {
      * @throws Exception if switch fails
      */
     private static void upgradeH2c(ChannelContext ctx) throws Exception {
-        // The client's HTTP2-Settings header (RFC 7540 §3.2) is intentionally NOT parsed here.
-        // Rationale: the payoff is negligible — in practice no client relies on it (most send a
-        // standalone SETTINGS frame right after the 101 switch, which h2Reader.init applies normally),
-        // so skipping it is a safe, low-cost design choice rather than a compliance gap.
+        // Client HTTP2-Settings header (RFC 7540 §3.2) is intentionally not parsed — clients send a standalone SETTINGS frame after the 101 switch (applied by h2Reader.init), so skipping it is safe, not a compliance gap.
         Http2ServerReader h2Reader = new Http2ServerReader(ctx);
         ((HttpChannelProtocolReader) ctx.reader()).switchTo(h2Reader);
         ctx.writeFlush(H2C_101_RESPONSE);

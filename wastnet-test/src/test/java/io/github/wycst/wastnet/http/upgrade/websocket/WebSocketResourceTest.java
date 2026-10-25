@@ -215,7 +215,7 @@ public class WebSocketResourceTest {
         when(c.id()).thenReturn("idX");
         tracked.handleOnOpen(c);
         ChannelContext ctx = mock(ChannelContext.class);
-        when(ctx.binding()).thenReturn(new UpgradeWebSocketHolder(tracked, c));
+        when(ctx.binding()).thenReturn(new UpgradeWebSocketHolder(tracked, c, ctx));
         tracked.handleOnClose(ctx);
         // broadcast=true: connection removed from map AND onErrorClose fires
         Assertions.assertTrue(notified[0]);
@@ -242,7 +242,7 @@ public class WebSocketResourceTest {
         WebSocketConnection c = mock(WebSocketConnection.class);
         when(c.id()).thenReturn("idY");
         ChannelContext ctx = mock(ChannelContext.class);
-        when(ctx.binding()).thenReturn(new UpgradeWebSocketHolder(tracked, c));
+        when(ctx.binding()).thenReturn(new UpgradeWebSocketHolder(tracked, c, ctx));
         tracked.handleOnClose(ctx);
         Assertions.assertTrue(notified[0]);
         Assertions.assertTrue(tracked.connectionMap.isEmpty());

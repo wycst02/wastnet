@@ -85,6 +85,12 @@ public class SocketOptions {
     /** Graceful shutdown wait in ms for in-flight requests. Default: 10000. See {@link SocketConf#GRACEFUL_SHUTDOWN_TIMEOUT_MS}. */
     public static final Option<Long> GRACEFUL_SHUTDOWN_TIMEOUT_MS =
             of(SocketConf.GRACEFUL_SHUTDOWN_TIMEOUT_MS, Long.class, v -> Math.max(v, 0L));
+    /** Enable TCP keep-alive on accepted connections. Default: true. See {@link SocketConf#TCP_KEEPALIVE}. */
+    public static final Option<Boolean> TCP_KEEPALIVE =
+            of(SocketConf.TCP_KEEPALIVE, Boolean.class);
+    /** Listen backlog for pending connections. Default: 1024; 0 = platform default (OS may clamp either way). See {@link SocketConf#TCP_BACKLOG}. */
+    public static final Option<Integer> TCP_BACKLOG =
+            of(SocketConf.TCP_BACKLOG, Integer.class, v -> Math.max(v, 0));
 
     /**
      * Normalize the max-concurrent override, mirroring {@link SocketConf#MAX_CONCURRENT}:

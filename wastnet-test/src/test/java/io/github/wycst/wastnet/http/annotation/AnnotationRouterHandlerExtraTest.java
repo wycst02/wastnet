@@ -1,27 +1,25 @@
 package io.github.wycst.wastnet.http.annotation;
 
 import io.github.wycst.wastnet.http.*;
+import io.github.wycst.wastnet.http.handler.HttpMethodRoute;
+import io.github.wycst.wastnet.http.handler.HttpRoute;
+import io.github.wycst.wastnet.http.handler.MockHttpTestBase;
 import io.github.wycst.wastnet.http.handler.RouterInterceptor;
 import io.github.wycst.wastnet.routerfixtures.RouterFixtures.*;
-import io.github.wycst.wastnet.http.handler.HttpRoute;
-import io.github.wycst.wastnet.http.handler.HttpRouterHandler;
 import okhttp3.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnJre;
 import org.junit.jupiter.api.condition.JRE;
 
-import java.lang.annotation.Annotation;
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
+import java.lang.annotation.*;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Extra tests for {@link AnnotationRouterHandler} gaps:
@@ -87,16 +85,16 @@ public class AnnotationRouterHandlerExtraTest {
                 return asConfig && def.isConfiguration(c);
             }
 
-            public String resolveValueExpression(Annotation a) {
+            public String resolveValueExpression(java.lang.annotation.Annotation a) {
                 return def.resolveValueExpression(a);
             }
 
-            public String resolveInjectName(Annotation a) {
+            public String resolveInjectName(java.lang.annotation.Annotation a) {
                 if (a instanceof MyInject) return ((MyInject) a).value();
                 return def.resolveInjectName(a);
             }
 
-            public String resolveBeanName(Annotation a) {
+            public String resolveBeanName(java.lang.annotation.Annotation a) {
                 if (a instanceof MyBean) return ((MyBean) a).value();
                 return def.resolveBeanName(a);
             }
@@ -239,6 +237,60 @@ public class AnnotationRouterHandlerExtraTest {
                 .scan());
     }
 
+    // ==================== duplicate exact routes: complementary merge / conflicts ====================
+
+    @Test
+    public void testDuplicateExactRouteComplementaryMethodsMerge() throws Throwable {
+        AnnotationRouterHandler handler = new AnnotationRouterHandler()
+                .annotationResolver(acceptResolver(set(DupGetController.class, DupPostController.class), true, false, false))
+                .scanPackages(PKG);
+        handler.scan();
+        HttpRoute route = getExactRoute(handler, "/dup/res");
+        assertTrue(route instanceof HttpMethodRoute);
+        // GET reaches the GET endpoint (void no-op, writes nothing)
+        route.handle("/dup/res", MockHttpTestBase.mockRequest(HttpMethod.GET), MockHttpTestBase.mockResponse(null, null, null));
+        // PUT is rejected with 405 and an Allow header listing both merged methods
+        HttpStatus[] status = {null};
+        String[] allow = {null};
+        byte[][] body = {null};
+        route.handle("/dup/res", MockHttpTestBase.mockRequest(HttpMethod.PUT),
+                MockHttpTestBase.mockResponse(status, allow, body, true));
+        assertEquals(HttpStatus.METHOD_NOT_ALLOWED, status[0]);
+        assertTrue(allow[0].contains("GET") && allow[0].contains("POST"), allow[0]);
+    }
+
+    @Test
+    public void testDuplicateExactRouteSameMethodThrows() {
+        assertThrows(RuntimeException.class, () -> new AnnotationRouterHandler()
+                .annotationResolver(acceptResolver(set(DupSameGetControllerA.class, DupSameGetControllerB.class), true, false, false))
+                .scanPackages(PKG)
+                .scan());
+    }
+
+    @Test
+    public void testDuplicateExactRouteAnyMethodThrows() {
+        // one side without allowMethods (matches all methods) can never coexist with another route on the path
+        assertThrows(RuntimeException.class, () -> new AnnotationRouterHandler()
+                .annotationResolver(acceptResolver(set(DupAnyController.class, DupAnyGetController.class), true, false, false))
+                .scanPackages(PKG)
+                .scan());
+        assertThrows(RuntimeException.class, () -> new AnnotationRouterHandler()
+                .annotationResolver(acceptResolver(set(DupAnyAnyControllerA.class, DupAnyAnyControllerB.class), true, false, false))
+                .scanPackages(PKG)
+                .scan());
+    }
+
+    @Test
+    public void testDuplicateExactRouteSilentlyReplacesWhenOverrideEnabled() {
+        AnnotationRouterHandler handler = new AnnotationRouterHandler()
+                .allowOverride(true)
+                .annotationResolver(acceptResolver(set(DupSameGetControllerA.class, DupSameGetControllerB.class), true, false, false))
+                .scanPackages(PKG);
+        handler.scan();
+        // legacy behavior: the colliding registration replaces the previous one instead of failing
+        assertNotNull(getExactRoute(handler, "/dup/same"));
+    }
+
     @Test
     public void testNamedInjectSuccess() {
         assertDoesNotThrow(() -> new AnnotationRouterHandler()
@@ -255,7 +307,7 @@ public class AnnotationRouterHandlerExtraTest {
     // #6 (BigDecimal / enum conversion), plus defaultValue and optional boxed -> null.
 
     @Test
-    public void testRequestParamConversionViaPublicApi() throws Exception {
+    public void testRequestParamConversionAndRequiredViaPublicApi() throws Exception {
         AnnotationRouterHandler handler = new AnnotationRouterHandler()
                 .annotationResolver(acceptResolver(set(ConvertController.class), true, false, false))
                 .scanPackages(PKG);
@@ -275,6 +327,12 @@ public class AnnotationRouterHandlerExtraTest {
             assertEquals("enum=ACTIVE", bodyOf(client, "http://127.0.0.1:51109", "/conv/enum?v=ACTIVE"));
             // defaultValue applied
             assertEquals("def=9", bodyOf(client, "http://127.0.0.1:51109", "/conv/def"));
+            // required scalar missing -> 400 (caught by the binding try/catch)
+            assertEquals(400, codeOf(client, "http://127.0.0.1:51109", "/conv/req"));
+            assertEquals("req=x", bodyOf(client, "http://127.0.0.1:51109", "/conv/req?v=x"));
+            // required multi missing -> 400
+            assertEquals(400, codeOf(client, "http://127.0.0.1:51109", "/conv/reqmulti"));
+            assertEquals(200, codeOf(client, "http://127.0.0.1:51109", "/conv/reqmulti?t=a&t=b"));
         } finally {
             server.shutdown();
         }
@@ -341,7 +399,7 @@ public class AnnotationRouterHandlerExtraTest {
             // @RequestBody -> line 1019 assertBodyAssignable non-null branch
             Response br = client.newCall(new Request.Builder()
                     .url("http://127.0.0.1:51140/vr/body")
-                    .post(okhttp3.RequestBody.create(MediaType.parse("application/json"), "payload"))
+                    .post(okhttp3.RequestBody.create(okhttp3.MediaType.parse("application/json"), "payload"))
                     .build()).execute();
             try {
                 assertEquals(200, br.code());
@@ -410,7 +468,7 @@ public class AnnotationRouterHandlerExtraTest {
         Method pm2 = AttrHolder.class.getMethod("params", String.class, String.class);
         RequestParam rpAnn = pm2.getParameters()[0].getAnnotation(RequestParam.class);
         assertEquals("name", AnnotationRouteUtils.readStringAttr(rpAnn, "value", "def"));
-        Annotation nv = pm2.getParameters()[1].getAnnotation(NoValue.class);
+        java.lang.annotation.Annotation nv = pm2.getParameters()[1].getAnnotation(NoValue.class);
         assertEquals("def", AnnotationRouteUtils.readStringAttr(nv, "value", "def"));
     }
 
@@ -419,7 +477,7 @@ public class AnnotationRouterHandlerExtraTest {
         Method pm2 = AttrHolder.class.getMethod("params", String.class, String.class);
         RequestParam rpAnn = pm2.getParameters()[0].getAnnotation(RequestParam.class);
         assertEquals(true, AnnotationRouteUtils.readBooleanAttr(rpAnn, "required", true));
-        Annotation nv = pm2.getParameters()[1].getAnnotation(NoValue.class);
+        java.lang.annotation.Annotation nv = pm2.getParameters()[1].getAnnotation(NoValue.class);
         assertEquals(false, AnnotationRouteUtils.readBooleanAttr(nv, "required", false));
     }
 
@@ -458,27 +516,6 @@ public class AnnotationRouterHandlerExtraTest {
     }
 
 
-
-    @Test
-    public void testRequestParamRequiredViaPublicApi() throws Exception {
-        AnnotationRouterHandler handler = new AnnotationRouterHandler()
-                .annotationResolver(acceptResolver(set(ConvertController.class), true, false, false))
-                .scanPackages(PKG);
-        OkHttpClient client = new OkHttpClient.Builder()
-                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .build();
-        HTTPServer server = HTTPServer.of(51110).requestHandler(handler).startupBannerEnabled(false).start();
-        try {
-            // required scalar missing -> 400 (caught by the binding try/catch)
-            assertEquals(400, codeOf(client, "http://127.0.0.1:51110", "/conv/req"));
-            assertEquals("req=x", bodyOf(client, "http://127.0.0.1:51110", "/conv/req?v=x"));
-            // required multi missing -> 400
-            assertEquals(400, codeOf(client, "http://127.0.0.1:51110", "/conv/reqmulti"));
-            assertEquals(200, codeOf(client, "http://127.0.0.1:51110", "/conv/reqmulti?t=a&t=b"));
-        } finally {
-            server.shutdown();
-        }
-    }
 
     @Test
     public void testResolveFileParam() {
@@ -630,7 +667,7 @@ public class AnnotationRouterHandlerExtraTest {
 
         MethodRouteInfo info = new MethodRouteInfo("/x", new HttpMethod[]{HttpMethod.GET},
                 AnnotationRouterHandlerExtraTest.class.getDeclaredMethod("testResolveEndpointInterceptorsOrdersByAnnotation"));
-        info.setInterceptorNames(new String[]{"endF", "endE"});
+        info.interceptorNames(new String[]{"endF", "endE"});
         List<RouterInterceptor> resolved = h.resolveEndpointInterceptors(info);
 
         // deduplicated & ordered by @Interceptor.order(): E(1) before F(3)
@@ -639,7 +676,7 @@ public class AnnotationRouterHandlerExtraTest {
         assertSame(resolved.get(1), bc.getBean(EndpointF.class));
 
         // PRE_ROUTE bean referenced by name is skipped at endpoint scope
-        info.setInterceptorNames(new String[]{"preA"});
+        info.interceptorNames(new String[]{"preA"});
         List<RouterInterceptor> none = h.resolveEndpointInterceptors(info);
         assertTrue(none.isEmpty());
     }
@@ -655,7 +692,7 @@ public class AnnotationRouterHandlerExtraTest {
 
         // names == null -> empty
         h.interceptorsDisabled(false);
-        info.setInterceptorNames(null);
+        info.interceptorNames(null);
         assertTrue(h.resolveEndpointInterceptors(info).isEmpty());
     }
 

@@ -112,9 +112,7 @@ public abstract class HttpInternalRequest implements HttpRequest {
 
     @Override
     public void setAttribute(String key, Object value) {
-        if (key == null) {
-            throw new IllegalArgumentException("Attribute name must not be null");
-        }
+        Objects.requireNonNull(key, "Attribute name must not be null");
         if (value == null) {
             getAttrs().remove(key);
         } else {
@@ -195,6 +193,10 @@ public abstract class HttpInternalRequest implements HttpRequest {
     @Override
     public final HttpResponse getResponse() {
         return response;
+    }
+
+    public void setResponse(HttpResponse response) {
+        this.response = response;
     }
 
     // ==================== HttpBodyDecoder lazy loading ====================

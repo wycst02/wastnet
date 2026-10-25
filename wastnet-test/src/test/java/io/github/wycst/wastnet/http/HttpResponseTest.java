@@ -8,7 +8,8 @@ import java.io.ByteArrayInputStream;
 import java.net.InetSocketAddress;
 import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
-import java.util.*;
+import java.util.Collections;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -134,7 +135,7 @@ public class HttpResponseTest {
         HttpDefaultResponse resp = (HttpDefaultResponse) req.getResponse();
         resp.setChunked(true);
         // streamingGzipCompress wraps ChunkedOutputStream with GZIPOutputStream
-        try (ByteArrayInputStream in = new ByteArrayInputStream("hello".getBytes())) {
+        try (java.io.ByteArrayInputStream in = new java.io.ByteArrayInputStream("hello".getBytes())) {
             resp.streamingGzipCompress(in);
         } finally {
             accepted.close();

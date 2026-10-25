@@ -92,7 +92,7 @@ class Http2StreamFlowControlTest {
         }).start();
 
         // Give thread time to enter the while loop
-        Thread.sleep(200);
+        Thread.sleep(50);
 
         // Restore window and wake up the waiting thread
         streamCtx.sendWindow = 65535;
@@ -128,7 +128,7 @@ class Http2StreamFlowControlTest {
             finally { done.countDown(); }
         }).start();
 
-        Thread.sleep(200);
+        Thread.sleep(50);
         streamCtx.sendWindow = 65535;
         mockReader.connectSendWindow = 65535;
         synchronized (lock) { lock.notifyAll(); }

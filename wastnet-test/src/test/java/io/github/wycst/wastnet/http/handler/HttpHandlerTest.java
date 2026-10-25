@@ -1,14 +1,17 @@
 package io.github.wycst.wastnet.http.handler;
 
-import io.github.wycst.wastnet.http.*;
+import io.github.wycst.wastnet.http.HttpMethod;
+import io.github.wycst.wastnet.http.HttpRequest;
+import io.github.wycst.wastnet.http.HttpResponse;
+import io.github.wycst.wastnet.http.HttpStatus;
 import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketResource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Answers.RETURNS_SELF;
 import static org.mockito.Mockito.*;
-import static org.mockito.Mockito.withSettings;
 
 /**
  * tests for HttpRouterHandler and HttpResourceRoute.

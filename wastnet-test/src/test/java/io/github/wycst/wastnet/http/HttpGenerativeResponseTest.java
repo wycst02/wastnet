@@ -544,9 +544,6 @@ public class HttpGenerativeResponseTest {
         }
 
         @Override
-        protected boolean attemptAutoGzipAndSend() { return false; }
-
-        @Override
         protected void sendFile0(java.io.File file, long fileSize, String mimeType, boolean shouldCompress) {}
 
         @Override

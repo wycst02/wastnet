@@ -1,13 +1,15 @@
 package io.github.wycst.wastnet.examples.http.mvc;
+
 import io.github.wycst.wast.common.reflect.GenericParameterizedType;
 import io.github.wycst.wast.json.JSON;
+import io.github.wycst.wastnet.examples.http.mvc.view.FreeMarkerViewResolver;
 import io.github.wycst.wastnet.http.HTTPServer;
+import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.http.HttpRequest;
 import io.github.wycst.wastnet.http.HttpResponse;
 import io.github.wycst.wastnet.http.annotation.AnnotationRouterHandler;
 import io.github.wycst.wastnet.http.annotation.ConverterConfig;
 import io.github.wycst.wastnet.http.annotation.HttpMessageConverter;
-import io.github.wycst.wastnet.examples.http.mvc.view.FreeMarkerViewResolver;
 import io.github.wycst.wastnet.socket.tcp.NioConfig;
 
 import java.io.InputStream;
@@ -76,8 +78,9 @@ public class MvcDemo {
         int port = 8080;
         
         NioConfig nioConfig = new NioConfig();
-        nioConfig.testMode();
-        
+        nioConfig.testMode(); // includes HTTP/1.1 pipelining
+        // Framework built-in response compression for the json-comp / static profiles.
+
         HTTPServer server = HTTPServer.of(port, nioConfig)
         .requestHandler(annotationRouterHandler)
         .startupBannerEnabled(true); //（关闭默认 banner，改为打印可用入口）

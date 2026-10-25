@@ -43,7 +43,7 @@ public class SSLEngineContext {
         applicationInBuf = ByteBuffer.allocate(session.getApplicationBufferSize());
         packetOutBuf = ByteBuffer.allocate(session.getPacketBufferSize() + HEADER_DELTA);
         // Reserved outbound-plaintext buffer; current design wraps caller buffers directly, so this stays unused.
-        applicationOutBuf = ByteBuffer.allocate(0);
+        applicationOutBuf = ChannelContext.EMPTY_BUFFER; // ByteBuffer.allocate(0);
         session.invalidate();
     }
 

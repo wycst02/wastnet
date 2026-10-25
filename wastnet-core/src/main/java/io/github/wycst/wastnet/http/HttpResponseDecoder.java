@@ -81,11 +81,11 @@ public class HttpResponseDecoder extends HttpRequestDecoder {
         int code = parseStatusCode();
         String reason = startLineValues[2];
         HttpDecodedResponse response;
-        if (bodyMode == BODY_MODE_CHUNKED) {
+        if (bodyMode == BODY_MODE_STREAM_CHUNKED) {
             HttpBodyInputStream chunkedStream = new HttpChunkedStream(body, ctx);
             response = new HttpDecodedResponse(version, code, reason,
                     headers, body, contentLength, contentType, true, chunkedStream);
-        } else if (bodyMode == BODY_MODE_STREAM) {
+        } else if (bodyMode == BODY_MODE_STREAM_CL) {
             HttpBodyInputStream bodyInputStream = new HttpBodyInputStream(contentLength, body, ctx);
             response = new HttpDecodedResponse(version, code, reason,
                     headers, body, contentLength, contentType, true, bodyInputStream);

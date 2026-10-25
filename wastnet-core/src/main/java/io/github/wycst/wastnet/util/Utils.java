@@ -34,17 +34,6 @@ public final class Utils {
             48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 97, 98, 99, 100, 101, 102
     };
 
-    public static final Charset UTF_8 = forCharsetName("UTF-8");
-    public static final Charset ISO_8859_1 = forCharsetName("ISO_8859_1");
-
-    public static Charset forCharsetName(String charsetName) {
-        try {
-            return Charset.forName(charsetName);
-        } catch (Throwable throwable) {
-            throw new IllegalArgumentException("Unsupported charset: " + charsetName);
-        }
-    }
-
     public static Charset forCharsetName(String charsetName, Charset defaultCharset) {
         try {
             return Charset.forName(charsetName);
@@ -387,5 +376,19 @@ public final class Utils {
             }
         }
         return sb.toString();
+    }
+
+    /**
+     * Normalize a raw processor/worker count to a conservative power-of-2 worker number.
+     * <p>
+     * If {@code n} is already a power of 2, return it; otherwise return half of
+     * the highest one-bit (hob >> 1), clamped to a minimum of 2.
+     *
+     * @param n raw processor or desired worker count
+     * @return normalized power-of-2 worker number (>= 2)
+     */
+    public static int powerOfWorkerNum(int n) {
+        int hob = Integer.highestOneBit(n);
+        return Math.max(2, hob == n ? n : hob >> 1);
     }
 }

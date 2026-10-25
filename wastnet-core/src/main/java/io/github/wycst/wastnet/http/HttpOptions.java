@@ -94,5 +94,8 @@ public class HttpOptions extends SocketOptions {
     /** Switch to streaming at first window exhaustion. Default: true. See {@link HttpConf#HTTP2_STREAM_EARLY}. */
     public static final Option<Boolean> HTTP2_STREAM_EARLY =
             of(HttpConf.HTTP2_STREAM_EARLY, Boolean.class);
+    /** Expose (write) Date response header for HTTP/2. Default: true. See {@link HttpConf#HTTP2_EXPOSE_DATE_HEADER}. @since 1.0.3 */
+    public static final Option<Boolean> HTTP2_EXPOSE_DATE_HEADER =
+            of(HttpConf.HTTP2_EXPOSE_DATE_HEADER, Boolean.class);
 
 }

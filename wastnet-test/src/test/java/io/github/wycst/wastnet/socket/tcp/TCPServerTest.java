@@ -4,7 +4,6 @@ import io.github.wycst.wastnet.exception.SocketException;
 import io.github.wycst.wastnet.socket.conf.SocketOptions;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import io.github.wycst.wastnet.socket.handler.IdleStateHandler;
-import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -14,8 +13,8 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Tests for {@link TCPServer}.
@@ -114,7 +113,7 @@ public class TCPServerTest {
     @Test
     public void testStartBindError() throws Exception {
         // Bind to a port first, then try to create a server on the same port
-        ServerSocket occupied = new ServerSocket(findFreePort());
+        java.net.ServerSocket occupied = new java.net.ServerSocket(findFreePort());
         int occupiedPort = occupied.getLocalPort();
         TCPServer server = new TCPServer(occupiedPort);
         server.config().setChannelHandler(new ChannelHandler<byte[]>() {
@@ -172,12 +171,12 @@ public class TCPServerTest {
             accepted = SocketChannel.open();
             accepted.connect(new InetSocketAddress("127.0.0.1", port));
             accepted.write(ByteBuffer.wrap("a".getBytes()));
-            Thread.sleep(200);
+            Thread.sleep(50);
 
             // Second connect: filter rejects (odd=1)
             rejected = SocketChannel.open();
             rejected.connect(new InetSocketAddress("127.0.0.1", port));
-            Thread.sleep(200);
+            Thread.sleep(50);
 
             Assertions.assertTrue(accepted.isConnected());
             Assertions.assertTrue(callCount.get() >= 2);
@@ -336,9 +335,9 @@ public class TCPServerTest {
             ChannelWorker worker = server.workers()[0];
             // Non-SSL → creates plain ChannelRunner
             int helperPort = findFreePort();
-            ServerSocket ss = new ServerSocket(helperPort);
-            SocketChannel ch = SocketChannel.open();
-            ch.connect(new InetSocketAddress("127.0.0.1", ss.getLocalPort()));
+            java.net.ServerSocket ss = new java.net.ServerSocket(helperPort);
+            java.nio.channels.SocketChannel ch = java.nio.channels.SocketChannel.open();
+            ch.connect(new java.net.InetSocketAddress("127.0.0.1", ss.getLocalPort()));
             ChannelRunner runner = server.createConnectionRunner(worker, ch);
             Assertions.assertNotNull(runner);
             Assertions.assertFalse(runner instanceof ChannelSSLRunner);
@@ -367,9 +366,9 @@ public class TCPServerTest {
             ChannelWorker worker = server.workers()[0];
             // SSL → creates ChannelSSLRunner
             int helperPort = findFreePort();
-            ServerSocket ss = new ServerSocket(helperPort);
-            SocketChannel ch = SocketChannel.open();
-            ch.connect(new InetSocketAddress("127.0.0.1", ss.getLocalPort()));
+            java.net.ServerSocket ss = new java.net.ServerSocket(helperPort);
+            java.nio.channels.SocketChannel ch = java.nio.channels.SocketChannel.open();
+            ch.connect(new java.net.InetSocketAddress("127.0.0.1", ss.getLocalPort()));
             ChannelRunner runner = server.createConnectionRunner(worker, ch);
             Assertions.assertNotNull(runner);
             Assertions.assertTrue(runner instanceof ChannelSSLRunner);

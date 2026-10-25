@@ -35,6 +35,7 @@ import java.net.URL;
 import java.nio.channels.SocketChannel;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * HTTP proxy route for handling proxy requests.
@@ -54,7 +55,9 @@ public class HttpProxyRoute implements HttpRoute, ClearableHandler {
     final boolean defaultPort;
     private final String hostPort;
     private final String targetPath;
-    private final HttpProxyWorker worker;
+    private final HttpProxyWorkerManager workerManager;
+    // Route-owned live connections: connectionId -> first (stored) connection
+    final Map<Long, HttpProxyConnection> connections = new ConcurrentHashMap<>();
     final String loopMarker;
 
     public HttpProxyRoute(HttpProxyConfig config) {
@@ -82,11 +85,7 @@ public class HttpProxyRoute implements HttpRoute, ClearableHandler {
             urlPath = urlPath.substring(0, urlPath.length() - 1);
         }
         this.targetPath = urlPath.length() > 1 ? urlPath : null;
-        try {
-            this.worker = workerManager.get(hostPort);
-        } catch (IOException e) {
-            throw new IllegalStateException("Failed to create proxy worker", e);
-        }
+        this.workerManager = workerManager;
         // Initialize loop marker only when loop detection is enabled
         this.loopMarker = config.isLoopDetection()
                 ? HttpHeaderUtils.normalizeHeaderKey("X-Forwarded-Proxy-" + routeId)
@@ -95,18 +94,14 @@ public class HttpProxyRoute implements HttpRoute, ClearableHandler {
 
     private ChannelContext createTargetContext(long connectionId, String host, int port, HttpRequest request) throws IOException {
         SocketChannel socketChannel = SocketChannel.open();
-        socketChannel.configureBlocking(false);
-        socketChannel.connect(new InetSocketAddress(host, port));
-
-        // Wait for connection completion in non-blocking mode
-        long deadline = System.currentTimeMillis() + config.connectionTimeout; // default 5s timeout
-        while (!socketChannel.finishConnect()) {
-            if (System.currentTimeMillis() > deadline) {
-                socketChannel.close();
-                throw new IOException("Connection timeout to " + host + ":" + port);
-            }
-            Thread.yield();
+        try {
+            // Blocking connect with timeout: kernel waits for handshake, zero CPU spin
+            socketChannel.socket().connect(new InetSocketAddress(host, port), config.connectionTimeout);
+        } catch (SocketTimeoutException e) {
+            socketChannel.close();
+            throw new SocketTimeoutException("Connection timeout to " + host + ":" + port);
         }
+        socketChannel.configureBlocking(false);
 
         if (ssl) {
             String[] alpn = (request.getHttpVersion() == HttpVersion.HTTP_2 && config.http2) ? new String[]{"h2", "http/1.1"} : null;
@@ -161,15 +156,26 @@ public class HttpProxyRoute implements HttpRoute, ClearableHandler {
         }
         HttpProxyConnection conn;
         try {
-            conn = new HttpProxyConnection(connectionId, routeId, clientCtx, targetCtx, worker);
-        } catch (IOException e) {
+            conn = new HttpProxyConnection(connectionId, routeId, clientCtx, targetCtx, workerManager.next(), this);
+        } catch (IOException | RuntimeException e) {
+            targetCtx.close(); // Prevent FD leak when channel registration fails
             response.setStatusAndText(HttpStatus.INTERNAL_SERVER_ERROR);
             log.error("[HttpProxy] Failed to create proxy connection: {}", e.getMessage());
             return null;
         }
         // store first connection in map; concurrent temp connections are disposed after use
         if (oldConnection == null) {
-            worker.connections.put(connectionId, conn);
+            HttpProxyConnection stored = connections.compute(connectionId, (id, existing) ->
+                    (existing == null || existing.closed) ? conn : existing);
+            if (stored != conn) {
+                if (stored.adapter.tryAcquire()) {
+                    // Lost the race with a concurrent creator: close ours, reuse the stored one
+                    conn.close();
+                    return stored;
+                }
+                // Stored one is busy (H2→H1 exclusive): use ours as a temp connection
+                conn.disposed = true;
+            }
         } else {
             conn.disposed = true;
         }
@@ -229,22 +235,28 @@ public class HttpProxyRoute implements HttpRoute, ClearableHandler {
             }
         }
         Long connectionId = request.getConnectionId();
-        HttpProxyConnection connection;
-        synchronized (worker.connections) {
-            connection = worker.connections.get(connectionId);
-            // CAS acquire adapter: if busy, create a new connection (H2→H1 serves one stream at a time)
-            if (connection == null || !connection.adapter.tryAcquire()) {
-                connection = createConnection(connectionId, clientCtx, request, response, connection);
-                if (connection == null) return;
-            }
+        HttpProxyConnection connection = connections.get(connectionId);
+        // A closed connection may still be mapped briefly before cleanup removes it
+        if (connection != null && connection.closed) connection = null;
+        // CAS acquire adapter: if busy, create a new connection (H2→H1 serves one stream at a time)
+        if (connection == null || !connection.adapter.tryAcquire()) {
+            connection = createConnection(connectionId, clientCtx, request, response, connection);
+            if (connection == null) return;
         }
         // Hand over response control to proxy; response will be written via raw channel context
         ((HttpInternalResponse) response).handover();
         connection.forwardToTarget(request, config);
     }
 
+    // Value-checked remove: a newer connection may already occupy the same id
+    void removeConnection(HttpProxyConnection conn) {
+        connections.remove(conn.connectionId, conn);
+    }
+
     @Override
     public void clear() {
-        worker.clearConnections(routeId);
+        for (HttpProxyConnection conn : connections.values()) {
+            conn.close();
+        }
     }
 }

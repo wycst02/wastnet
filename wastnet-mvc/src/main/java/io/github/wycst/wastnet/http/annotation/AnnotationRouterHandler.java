@@ -1,12 +1,14 @@
 package io.github.wycst.wastnet.http.annotation;
 
 import io.github.wycst.wastnet.http.*;
+import io.github.wycst.wastnet.http.handler.HttpMethodRoute;
 import io.github.wycst.wastnet.http.handler.HttpRoute;
 import io.github.wycst.wastnet.http.handler.HttpRouterHandler;
 import io.github.wycst.wastnet.http.handler.RouterInterceptor;
 import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketResource;
 import io.github.wycst.wastnet.log.Log;
 import io.github.wycst.wastnet.log.LogFactory;
+import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 
 import java.lang.annotation.Annotation;
 import java.lang.invoke.MethodHandle;
@@ -71,6 +73,10 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
     // If true, skip jar-internal config and load only external overrides (JAR dir, JAR /config, parent /config). Default false.
     private boolean ignoreInternalConfig;
 
+    // When true, a scanned exact route that collides with an existing one silently replaces it
+    // (legacy behavior); when false (default), duplicates must declare complementary HTTP methods.
+    private boolean allowOverride;
+
     // Component proxy hook: requiresProxy gates wrapping, enhance builds the proxy (@Component/@Controller only; @Bean excluded). Null = disabled.
     private ComponentEnhancer componentEnhancer;
 
@@ -91,13 +97,22 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
     private static final int KIND_HEADER = 6; // @RequestHeader parameter slot
     private static final int KIND_SSE = 7; // SseEmitter parameter slot; only on @Sse endpoints
 
+    // Scan-time selected invoker for the general (non-fast-path) invoke form.
+    @FunctionalInterface
+    private interface EndpointInvoker {
+        Object invoke(MethodHandle bound, Object[] args) throws Throwable;
+    }
+
     public AnnotationRouterHandler() {
         resolver = new DefaultAnnotationResolver();
         beanContainer = new BeanContainer();
         beanContainer.setResolver(resolver);
         // Pre-register the dependency-free TEXT converter so plain-text @ResponseBody
         // endpoints work out of the box. Override via messageConverter(ContentType.TEXT, ...).
-        converters.put(ContentType.TEXT, new TextMessageConverter());
+        TextMessageConverter textMessageConverter = new TextMessageConverter();
+        converters.put(ContentType.TEXT, textMessageConverter);
+        converters.put(ContentType.HTML, textMessageConverter);
+        converters.put(ContentType.XML, textMessageConverter);
         applyReloadTrigger();
     }
 
@@ -327,6 +342,48 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
     }
 
     /**
+     * Run a scanned route on the ctx async executor so the request thread is released
+     * immediately; the response is committed and the connection finalized when it finishes.
+     */
+    private void dispatchAsync(String p, HttpRequest request, HttpResponse response, AnnotationRoute route) throws Throwable {
+        ChannelContext ctx = ((HttpInternalRequest) request).ctx();
+        // Already on an async runner thread: run inline (no redundant offload).
+        if (/*request.isPipelined() ||*/ctx.isAsyncExecutorThread()) {
+            route.handle(p, request, response); // Inline by design; HTTP pipelining is a dead feature and is intentionally not considered.
+            return;
+        }
+        // set before submitting: the framework skips complete() for autoCommit=false
+        response.setAutoCommit(false);
+        Runnable task = () -> {
+            try {
+                route.handle(p, request, response);
+            } catch (Throwable throwable) {
+                handleAsyncError(response, throwable);
+            } finally {
+                try {
+                    ((HttpInternalResponse) response).complete();
+                    request.complete();
+                } catch (Throwable throwable) {
+                    log.error("Async endpoint finish failed", throwable);
+                } 
+            }
+        };
+        ctx.runAsync(task);
+    }
+
+    /** Answer a failed async endpoint with 500, unless its response was already committed. */
+    private void handleAsyncError(HttpResponse response, Throwable throwable) {
+        log.error("Async endpoint error", throwable);
+        if (response.isCommitted()) return;
+        try {
+            response.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .contentType(HttpHeaderValues.TEXT_PLAIN_UTF8)
+                    .body("500 Internal Server Error".getBytes());
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
      * Set a custom {@link AnnotationResolver} to bridge third-party annotation
      * systems (e.g. Spring Boot). Default is {@link DefaultAnnotationResolver}.
      */
@@ -498,6 +555,24 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
     }
 
     /**
+     * Conflict resolution when two endpoints share the exact same path.
+     *
+     * MVC design forbids the same HTTP method on the same endpoint; any overlap must fail.
+     *
+     * allowOverride defaults to false: complementary methods are auto-merged into one
+     * method-dispatching route, and a duplicate method on the same endpoint throws
+     * IllegalArgumentException immediately. Set true to skip merging and silently replace
+     * the previous route instead (legacy behavior).
+     *
+     * @param allowOverride true = replace previous route; false = merge, failing on method overlap
+     * @return this handler for chaining
+     */
+    public AnnotationRouterHandler allowOverride(boolean allowOverride) {
+        this.allowOverride = allowOverride;
+        return this;
+    }
+
+    /**
      * Enable or disable dev hot reload and its console feedback in one call.
      *
      * @param enabled whether the dev watcher is active
@@ -530,6 +605,8 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
             if (!set.isEmpty()) paths = set;
         }
         hotReloader.setReloadTriggerPaths(paths);
+        // Exclude framework module dirs from hot reload so their classes keep a single identity in the parent loader.
+        hotReloader.frameworkMarkerClasses(DevHotReloader.class, HttpRouterHandler.class);
     }
 
     /**
@@ -843,12 +920,32 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
         }
     }
 
+    // Resolve the scan-time invoker for the general (non-fast-path) invoke form.
+    private static EndpointInvoker resolveEndpointInvoker(int argc, Class<?> returnType, Class<?>[] argParamTypes) {
+        boolean stringReturn = returnType == String.class;
+        switch (argc) {
+            case 0:  return stringReturn ? (b, a) -> (String) b.invokeExact()
+                                         : (b, a) -> b.invoke();
+            case 1:  return (stringReturn && argParamTypes[0] == String.class)
+                    ? (b, a) -> (String) b.invokeExact((String) a[0])
+                    : (b, a) -> b.invoke(a[0]);
+            case 2:
+                if (stringReturn && argParamTypes[0] == String.class && argParamTypes[1] == String.class)
+                    return (b, a) -> (String) b.invokeExact((String) a[0], (String) a[1]);
+                if (stringReturn && argParamTypes[0] == int.class && argParamTypes[1] == int.class)
+                    return (b, a) -> (String) b.invokeExact((int) a[0], (int) a[1]);
+                return (b, a) -> b.invoke(a[0], a[1]);
+            case 3:  return (b, a) -> b.invoke(a[0], a[1], a[2]);
+            case 4:  return (b, a) -> b.invoke(a[0], a[1], a[2], a[3]);
+            default: return MethodHandle::invokeWithArguments;
+        }
+    }
+
     @SuppressWarnings("unchecked")
     void registerController(Class<?> clazz) {
         String basePath = normalizeBasePath(resolver.resolveControllerPath(clazz));
         List<MethodRouteInfo> routes = resolver.resolveEndpointRoutes(clazz);
-        // Merge SSE endpoints into the same list: @Sse reuses the @Endpoint parameter-binding
-        // pipeline and only differs in how the response is produced (SseEmitter stream vs body).
+        // @Sse reuses the @Endpoint binding pipeline; only response production differs (SseEmitter stream vs body).
         routes.addAll(resolver.resolveSseEndpoints(clazz));
         if (routes.isEmpty()) return;
         Set<Method> seenMethods = new HashSet<>();
@@ -865,8 +962,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
             final Object controller = def.getInstance();
             beanContainer.register(clazz.getName(), def, false);
 
-            // Controller-class-level response-body annotations (e.g. @RestController)
-            // apply to every @Endpoint method in the class.
+            // Class-level @RestController-style body annotations apply to every @Endpoint method.
             final boolean classHasResponseBody = hasAnyAnnotation(clazz.getAnnotations(), responseBodyAnnotations);
 
             // HTTP + SSE endpoints (merged)
@@ -876,6 +972,8 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
                             + " is annotated with both @Endpoint and @Sse; choose one");
                 }
                 final boolean isSse = routeInfo.getAnnotationType() == Sse.class;
+                // @Endpoint(async = true): the business action runs on the ctx async executor (SSE has its own async model).
+                final boolean async = !isSse && routeInfo.isAsync();
                 // Per-endpoint SSE timeout; < 0 falls back to the global SSE_TIMEOUT_MS option in startSse.
                 final long sseTimeoutMs = isSse ? routeInfo.getMethod().getAnnotation(Sse.class).timeout() : -1;
                 final String fullPath = buildFullPath(basePath, routeInfo.getPath());
@@ -884,6 +982,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
                 Method endpointMethod = routeInfo.getMethod();
                 Parameter[] params = endpointMethod.getParameters();
                 final int[] argKinds = new int[params.length];
+                final int argc = argKinds.length;
                 final Type[] argBodyTypes = new Type[params.length];
                 final int[] argPathSegIndex = new int[params.length];
                 final String[] argParamNames = new String[params.length];
@@ -965,8 +1064,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
                         && (classHasResponseBody
                         || hasAnyAnnotation(endpointMethod.getAnnotations(), responseBodyAnnotations));
                 final ConverterConfig converterConfig = new ConverterConfig(routeInfo);
-                // Resolve the response converter once at scan time (the response type is fixed per endpoint),
-                // so the per-request lambda skips the EnumMap lookup on every call.
+                // Resolve the response converter once at scan time (fixed per endpoint) to skip the per-request EnumMap lookup.
                 final HttpMessageConverter responseConverter = hasResponseBody ? converterFor(converterConfig.getResponseType()) : null;
                 if (hasResponseBody && responseConverter == null) {
                     ContentType rt = converterConfig.getResponseType();
@@ -975,8 +1073,7 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
                             + ", but no HttpMessageConverter is registered for that ContentType."
                             + " Configure one via .messageConverter(" + rt + ", converter).");
                 }
-                // Pre-select the view resolver at scan time from the endpoint's declared return type,
-                // so the per-request lambda skips the resolver list lookup on every call.
+                // Pre-select the view resolver at scan time (from return type) to skip the per-request resolver lookup.
                 final ViewResolver routeViewResolver = hasResponseBody ? null : resolveViewResolver(endpointMethod.getReturnType());
 
                 final List<RouterInterceptor> endpointInterceptors = resolveEndpointInterceptors(routeInfo);
@@ -985,37 +1082,25 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
                 MethodHandle mh = MethodHandles.lookup().unreflect(endpointMethod);
                 final MethodHandle bound = MethodHandles.insertArguments(mh, 0, controller);
 
-                AnnotationRoute handler;
+                final HttpRoute endpointHandler;
                 if (isFastPath) {
-                    // void / non-void is a construction-time constant, so pick a specialised
-                    // lambda once instead of re-checking getReturnType() on every request.
+                    // void/non-void is a scan-time constant, so pick the specialised lambda once.
                     if (endpointMethod.getReturnType() == void.class) {
-                        handler = (p, request, response) -> {
-                            if (!applyInterceptors(endpointInterceptors, p, request, response)) {
-                                return;
-                            }
+                        endpointHandler = (p, request, response) -> {
                             bound.invokeExact((HttpRequest) request, (HttpResponse) response);
                         };
                     } else {
-                        handler = (p, request, response) -> {
-                            if (!applyInterceptors(endpointInterceptors, p, request, response)) {
-                                return;
-                            }
-                            writeResult(bound.invoke((HttpRequest) request, (HttpResponse) response), hasResponseBody, responseConverter, converterConfig, routeViewResolver, request, response);
-                        };
+                        endpointHandler = (p, request, response) -> writeResult(bound.invoke((HttpRequest) request, (HttpResponse) response), hasResponseBody, responseConverter, converterConfig, routeViewResolver, request, response);
                     }
                 } else {
-                    // General path: any signature other than (HttpRequest, HttpResponse).
-                    // Also serves @Sse endpoints: the SseEmitter slot (KIND_SSE) is left empty
-                    // during binding and filled after the stream opens via startSse().
+                    // General path (non (req,resp)) + @Sse: KIND_SSE slot filled after startSse().
                     final int sseIndex = argSseIndex;
-                    handler = (p, request, response) -> {
-                        if (!applyInterceptors(endpointInterceptors, p, request, response)) {
-                            return;
-                        }
-                        Object[] args = new Object[argKinds.length];
+                    // Scan-time invoker: no per-request dispatch, just call it.
+                    final EndpointInvoker invoker = resolveEndpointInvoker(argc, endpointMethod.getReturnType(), argParamTypes);
+                    endpointHandler = (p, request, response) -> {
+                        Object[] args = new Object[argc];
                         try {
-                            for (int i = 0; i < argKinds.length; ++i) {
+                            for (int i = 0; i < argc; ++i) {
                                 switch (argKinds[i]) {
                                     case KIND_REQUEST:  args[i] = request; break;
                                     case KIND_RESPONSE: args[i] = response; break;
@@ -1047,34 +1132,78 @@ public class AnnotationRouterHandler extends HttpRouterHandler {
                             }
                         } catch (Exception e) {
                             // param/path binding or body parse failed -> client error 400
-                            log.warn("Bad request param binding failed: {}", e.getMessage());
+                            log.error("Bad request param binding failed: {}", e, e.getMessage());
                             response.status(HttpStatus.BAD_REQUEST)
                                     .contentType("text/plain;charset=utf-8")
                                     .body("400 Bad Request".getBytes());
                             return;
                         }
                         if (isSse) {
-                            // Open the SSE stream (headers flushed) only after binding succeeds,
-                            // then inject the emitter and run the endpoint on the worker thread.
+                            // Open the SSE stream (headers flushed) after binding succeeds, then run the endpoint on the worker thread.
                             startSse(request, response, sseTimeoutMs, emitter -> {
                                 args[sseIndex] = emitter;
-                                bound.invokeWithArguments(args);
+                                invoker.invoke(bound, args);
                             });
                         } else {
-                            writeResult(bound.invokeWithArguments(args), hasResponseBody, responseConverter, converterConfig, routeViewResolver, request, response);
+                            writeResult(invoker.invoke(bound, args), hasResponseBody, responseConverter, converterConfig, routeViewResolver, request, response);
                         }
                     };
                 }
 
+                final AnnotationRoute syncHandler = endpointInterceptors.isEmpty() ? endpointHandler::handle : (p, request, response) -> {
+                    if (applyInterceptors(endpointInterceptors, p, request, response)) {
+                        endpointHandler.handle(p, request, response);
+                    }
+                };
+                final AnnotationRoute handler = async
+                        ? (p, request, response) -> dispatchAsync(p, request, response, syncHandler)
+                        : syncHandler;
                 HttpMethod[] httpMethods = routeInfo.getHttpMethods();
                 if (routePattern != null) {
                     route(routePattern, handler, httpMethods);
                 } else {
-                    exactRoute(fullPath, handler, httpMethods);
+                    registerExactRoute(fullPath, handler, httpMethods);
                 }
             }
         } catch (Exception e) {
             throw new RuntimeException("Failed to register controller: " + clazz.getName(), e);
+        }
+    }
+
+    /**
+     * Register a scanned exact route, merging complementary method restrictions on the same
+     * path into one HttpMethodRoute. Duplicates are only allowed when the method sets are
+     * disjoint; any overlap - including an endpoint without allowMethods (matches all
+     * methods) on either side - fails startup.
+     */
+    private void registerExactRoute(String fullPath, AnnotationRoute handler, HttpMethod[] httpMethods) {
+        HttpRoute existing = exactRoutes.get(fullPath);
+        if (existing == null) {
+            exactRoute(fullPath, handler, httpMethods);
+            return;
+        }
+        // allowOverride: keep the legacy behavior of silently replacing the previous registration
+        if (allowOverride) {
+            exactRoute(fullPath, handler, httpMethods);
+            return;
+        }
+        if (httpMethods.length == 0) {
+            throw new IllegalArgumentException("Ambiguous route '" + fullPath
+                    + "': the endpoint matches all methods and cannot coexist with another route on the same path");
+        }
+        if (!(existing instanceof HttpMethodRoute)) {
+            throw new IllegalArgumentException("Ambiguous route '" + fullPath
+                    + "': an endpoint without method restrictions is already registered on this path");
+        }
+        // complementary methods only: an occupied slot (overlapping method) throws
+        HttpMethodRoute methodRoute = (HttpMethodRoute) existing;
+        methodRoute.allowOverride(false);
+        for (HttpMethod httpMethod : httpMethods) {
+            try {
+                methodRoute.methodHandler(httpMethod, handler);
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException("Ambiguous route '" + fullPath + "': " + e.getMessage(), e);
+            }
         }
     }
 

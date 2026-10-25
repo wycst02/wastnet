@@ -86,7 +86,7 @@ public class LengthFrameCodecTest {
     @Test
     public void testByteOrderNullThrows() {
         LengthFrameCodec<byte[]> codec = new LengthFrameCodec<byte[]>(4, 0, 2, 1024);
-        Assertions.assertThrows(IllegalArgumentException.class, () -> codec.byteOrder(null));
+        Assertions.assertThrows(NullPointerException.class, () -> codec.byteOrder(null));
     }
 
     @Test

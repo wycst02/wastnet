@@ -2,7 +2,6 @@ package io.github.wycst.wastnet.http.upgrade.websocket;
 
 import io.github.wycst.wastnet.http.HttpConf;
 import io.github.wycst.wastnet.http.upgrade.UpgradeWebSocketHolder;
-import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,11 +20,11 @@ import static org.mockito.Mockito.mock;
  *
  * <p>All frames are RFC 6455 masked client frames with zero mask key.
  *
- * <p>NOTE: {@code ChannelContext.invokeHandle()} is declared {@code final} and
- * cannot be proxied by Mockito. The tests work by setting a mock
- * {@link ChannelHandler} on the ChannelContext via {@code setChannelHandler()},
- * so the real {@code invokeHandle} delegates to the mock handler which we
- * can verify or capture.
+ * <p>NOTE: {@code UpgradeWebSocketHolder.handleFrame()} is {@code final} and
+ * dispatches every decoded frame through {@link WebSocketResource#onFrame},
+ * so the tests capture frames by overriding {@code WebSocketResource.onFrame}.
+ * (The old {@code ChannelContext.invokeHandle} capture path was removed when
+ * frame dispatch moved into the decoder.)
  */
 class WebSocketDecoderTest {
 
@@ -35,33 +34,29 @@ class WebSocketDecoderTest {
     private WebSocketDecoder decoder;
     private List<WebSocketFrame> capturedFrames;
     private boolean closeCalled;
+    private UpgradeWebSocketHolder holder;
 
     @SuppressWarnings({"rawtypes", "unchecked"})
     @BeforeEach
     void setUp() throws IOException {
         capturedFrames = new ArrayList<WebSocketFrame>();
         closeCalled = false;
-        resource = new WebSocketResource();
+        resource = new WebSocketResource() {
+            @Override
+            public void onFrame(WebSocketConnection c, WebSocketFrame f) {
+                capturedFrames.add(f);
+            }
+        };
         resource.maxPayloadSize(HttpConf.MAX_WS_FRAME_SIZE);
         connection = mock(WebSocketConnection.class);
-        UpgradeWebSocketHolder holder = new UpgradeWebSocketHolder(resource, connection);
-
-        ChannelHandler handler = mock(ChannelHandler.class);
-        doAnswer(inv -> {
-            capturedFrames.add(inv.getArgument(1));
-            return null;
-        }).when(handler).onHandle(any(), any());
-
         ctx = mock(ChannelContext.class, inv -> {
             String n = inv.getMethod().getName();
             if ("binding".equals(n)) return holder;
-            if ("setChannelHandler".equals(n)) return inv.callRealMethod();
             if ("close".equals(n)) { closeCalled = true; return null; }
             if ("readFully".equals(n)) return -1;
             return null;
         });
-        // set a real ChannelHandler so the final invokeHandle() doesn't NPE
-        ctx.setChannelHandler(handler);
+        holder = new UpgradeWebSocketHolder(resource, connection, ctx);
 
         decoder = new WebSocketDecoder();
     }
@@ -139,7 +134,7 @@ class WebSocketDecoderTest {
     @Test
     void testCloseFrame() throws Exception {
         decoder.decode(frame(true, 0x8, new byte[0]), 0, 6, ctx);
-        assertFalse(closeCalled);
+        assertTrue(closeCalled);
         assertEquals(1, capturedFrames.size());
         assertEquals(WebSocketFrame.FrameType.CLOSE, capturedFrames.get(0).getType());
     }
@@ -360,7 +355,7 @@ class WebSocketDecoderTest {
                 frame(true, 0x8, new byte[0]),
                 frame(true, 0x0, "rest".getBytes()));
         decoder.decode(all, 0, all.length, ctx);
-        assertFalse(closeCalled);
+        assertTrue(closeCalled);
         assertEquals(2, capturedFrames.size());
         assertEquals(WebSocketFrame.FrameType.CLOSE, capturedFrames.get(0).getType());
         assertEquals(WebSocketFrame.FrameType.TEXT, capturedFrames.get(1).getType());

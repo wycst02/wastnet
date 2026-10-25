@@ -1,9 +1,9 @@
 package io.github.wycst.wastnet.http.handler;
 
+import io.github.wycst.wastnet.examples.http.prometheus.SimpleCounterServerObserver;
 import io.github.wycst.wastnet.http.*;
 import io.github.wycst.wastnet.http.extension.HttpServerInterceptor;
 import io.github.wycst.wastnet.http.extension.HttpServerObserver;
-import io.github.wycst.wastnet.examples.http.prometheus.SimpleCounterServerObserver;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Test;
@@ -276,24 +276,12 @@ public class HttpServerChannelHandlerMetricsTest {
         verify(observer, never()).onRequestComplete(any(), any(), anyLong(), any());
     }
 
-    // ==================== HTTPServer.observer entry point ====================
+    // ==================== HTTPServer.observer / interceptor entry points ====================
 
     @Test
-    public void testHttpserverObserverChain() {
+    public void testHttpserverObserverAndInterceptorChain() {
         HTTPServer server = HTTPServer.of(freePort())
                 .observer(mock(HttpServerObserver.class))
-                .requestHandler(mock(HttpRequestHandler.class))
-                .startupBannerEnabled(false)
-                .start();
-        assertNotNull(server);
-        server.shutdown();
-    }
-
-    // ==================== HTTPServer.interceptor entry point ====================
-
-    @Test
-    public void testHttpserverInterceptorChain() {
-        HTTPServer server = HTTPServer.of(freePort())
                 .interceptor(mock(HttpServerInterceptor.class))
                 .requestHandler(mock(HttpRequestHandler.class))
                 .startupBannerEnabled(false)

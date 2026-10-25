@@ -162,8 +162,8 @@ final class ChannelWorker extends Thread {
                     }
                     if (!runner.isRunFlag()) {
                         runner.runFlag = true;
-                        // Dynamic decision: sync for fast connections, async for slow connections
-                        if (runner.predictSync() || engine.nioConfig.isSyncRunner()) {
+                        // Sync when runner.isSync(): explicit config overrides, else dynamic fast/slow path
+                        if (runner.isSync()) {
                             runner.run0();
                         } else {
                             engine.runnerExecutor.execute(runner);

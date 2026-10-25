@@ -17,12 +17,15 @@ package io.github.wycst.wastnet.http;
 
 import io.github.wycst.wastnet.http.h2.Http2Response;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
-import io.github.wycst.wastnet.util.Utils;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.zip.GZIPOutputStream;
 
 /**
@@ -58,6 +61,12 @@ public abstract class HttpInternalResponse implements HttpResponse {
      * HTTP request object
      */
     protected final HttpRequest request;
+
+    /**
+     * True for HEAD requests. When set, the response emits headers (including Content-Length)
+     * but suppresses the body, as specified by RFC 7231, Section 4.3.2.
+     */
+    protected final boolean isHeadRequest;
 
     /**
      * Body buffer
@@ -113,7 +122,12 @@ public abstract class HttpInternalResponse implements HttpResponse {
     protected HttpInternalResponse(HttpRequest request, ChannelContext ctx) {
         this.ctx = ctx;
         this.request = request;
-        this.bodyBuf = HttpBuf.of(128);
+        this.isHeadRequest = request.getMethod() == HttpMethod.HEAD;
+        this.bodyBuf = HttpBuf.of(initialBodySize());
+    }
+
+    protected int initialBodySize(){
+        return 128;
     }
 
     /**
@@ -162,7 +176,7 @@ public abstract class HttpInternalResponse implements HttpResponse {
 
     @Override
     public final void setStatus(HttpStatus status) {
-        this.status = status;
+        this.status = Objects.requireNonNull(status, "Invalid status code");
     }
 
     @Override
@@ -178,7 +192,7 @@ public abstract class HttpInternalResponse implements HttpResponse {
 
     @Override
     public final HttpResponse status(int code) {
-        setStatus(HttpStatus.of(code));
+        setStatus(Objects.requireNonNull(HttpStatus.of(code), "Invalid status code: " + code));
         return this;
     }
 
@@ -197,10 +211,11 @@ public abstract class HttpInternalResponse implements HttpResponse {
 
     @Override
     public final void setContentType(String ct) {
-        this.contentType = ct;
         if (ct != null) {
+            HttpHeaderUtils.requireNoCRLF(ct, "Content type must not contain CR or LF");
             applyCharsetFromContentType(ct);
         }
+        this.contentType = ct;
     }
 
     /**
@@ -255,6 +270,7 @@ public abstract class HttpInternalResponse implements HttpResponse {
 
     @Override
     public final void setCharacterEncoding(String ce) {
+        HttpHeaderUtils.requireNoCRLF(ce, "Character encoding must not contain CR or LF");
         this.characterEncoding = ce;
     }
 
@@ -289,7 +305,7 @@ public abstract class HttpInternalResponse implements HttpResponse {
         }
         try {
             String charset = characterEncoding != null ? characterEncoding : "UTF-8";
-            bodyBuf.replace(body.getBytes(charset));
+            bodyBuf.replace(HttpUnsafe.getBytesOrReuseLatin1(body, charset));
         } catch (UnsupportedEncodingException e) {
             bodyBuf.replace(body.getBytes());
         }
@@ -354,14 +370,12 @@ public abstract class HttpInternalResponse implements HttpResponse {
     }
 
     // ==================== Last-Modified ====================
-
     @Override
-    public void setLastModified(long millis) {
-        addHeader(HttpHeaderNames.LAST_MODIFIED, HttpHeaderUtils.getDateHeaderValue(millis));
+    public final void setLastModified(long millis) {
+        directlyPutHeader(HttpHeaderNormalized.getLastModified(), HttpHeaderUtils.getDateHeaderValue(millis));
     }
 
     // ==================== Auto-Commit ====================
-
     @Override
     public final void setAutoCommit(boolean ac) {
         this.autoCommit = ac;
@@ -415,6 +429,17 @@ public abstract class HttpInternalResponse implements HttpResponse {
      */
     protected abstract void doAddHeader(String key, String value);
 
+    /**
+     * Put a header directly into the underlying store (overwrite mode) without
+     * content-flag tracking or validation. Used by framework-internal code to set
+     * system headers (e.g. Content-Encoding, Vary, Last-Modified) with already
+     * normalized keys. Subclasses store into their own backing map.
+     *
+     * @param key   the header key (caller must supply a normalized key)
+     * @param value the header value
+     */
+    protected abstract void directlyPutHeader(String key, Serializable value);
+
     @Override
     public final void addHeader(String key, Serializable value) {
         validateHeaderBase(key = String.valueOf(key), value);
@@ -426,17 +451,12 @@ public abstract class HttpInternalResponse implements HttpResponse {
      * Protocol-independent header validation: CRLF injection defense plus value type whitelist.
      */
     private void validateHeaderBase(String key, Serializable value) {
-        if (key.indexOf('\r') > -1 || key.indexOf('\n') > -1) {
-            throw new IllegalArgumentException("Header key must not contain CR or LF");
-        }
+        HttpHeaderUtils.requireNoCRLF(key, "Header key must not contain CR or LF");
         if (value instanceof Number || value instanceof Boolean) {
             return;
         }
         if (value instanceof CharSequence) {
-            String valueStr = value.toString();
-            if (valueStr.indexOf('\r') > -1 || valueStr.indexOf('\n') > -1) {
-                throw new IllegalArgumentException("Header value must not contain CR or LF");
-            }
+            HttpHeaderUtils.requireNoCRLF(value.toString(), "Header value must not contain CR or LF");
             return;
         }
         throw new IllegalArgumentException("Header value only supports Number, Boolean or CharSequence");
@@ -519,21 +539,15 @@ public abstract class HttpInternalResponse implements HttpResponse {
     /**
      * Complete the response (framework internal use).
      * <p>
-     * Called by {@code HttpServerChannelHandler} after the business handler returns.
-     * When autoCommit is true, attempts auto GZIP first, falls back to {@link #commit()};
-     * when false, only flushes and resets the body buffer.
+     * Called by {@code HttpServerChannelHandler} after the business handler returns, or by an
+     * async handler when it finishes: applies auto GZIP in place if applicable, then commits
+     * (writes headers + body and flushes) through the single {@link #commit()} terminal.
      *
      * @throws IOException if an I/O error occurs
      */
     public void complete() throws IOException {
-        if (autoCommit) {
-            if (!attemptAutoGzipAndSend()) {
-                commit();
-            }
-        } else {
-            flush();
-            resetInternal();
-        }
+        prepareAutoGzip();
+        commit();
     }
 
     /**
@@ -615,7 +629,7 @@ public abstract class HttpInternalResponse implements HttpResponse {
     @Override
     public HttpResponse sse(String data) throws IOException {
         initSSE();
-        write(("data: " + data + "\n\n").getBytes(Utils.UTF_8));
+        write(("data: " + data + "\n\n").getBytes(StandardCharsets.UTF_8));
         flush();
         return this;
     }
@@ -628,10 +642,10 @@ public abstract class HttpInternalResponse implements HttpResponse {
     @Override
     public HttpResponse sse(String event, String data, String id, long retry) throws IOException {
         initSSE();
-        if (id != null) write(("id: " + id + "\n").getBytes(Utils.UTF_8));
-        if (retry > 0) write(("retry: " + retry + "\n").getBytes(Utils.UTF_8));
-        if (event != null) write(("event: " + event + "\n").getBytes(Utils.UTF_8));
-        write(("data: " + data + "\n\n").getBytes(Utils.UTF_8));
+        if (id != null) write(("id: " + id + "\n").getBytes(StandardCharsets.UTF_8));
+        if (retry > 0) write(("retry: " + retry + "\n").getBytes(StandardCharsets.UTF_8));
+        if (event != null) write(("event: " + event + "\n").getBytes(StandardCharsets.UTF_8));
+        write(("data: " + data + "\n\n").getBytes(StandardCharsets.UTF_8));
         flush();
         return this;
     }
@@ -713,15 +727,26 @@ public abstract class HttpInternalResponse implements HttpResponse {
     // ==================== Auto GZIP ====================
 
     /**
-     * Attempt automatic GZIP compression on buffered body data and send.
+     * Apply automatic GZIP compression to the buffered body when applicable, in place.
      * <p>
-     * Only applies when: global GZIP enabled, client supports gzip,
-     * headers not sent, body size >= GZIP_MIN_SIZE. Delegates to
+     * Only applies when: global GZIP enabled, client supports gzip, headers not sent,
+     * body size >= GZIP_MIN_SIZE, and no Content-Encoding yet. On success, replaces the
+     * body buffer with its gzip-compressed form and sets the Content-Encoding/Vary headers
+     * and the (compressed) Content-Length.
+     * <p>
+     * This method only prepares the response; the actual write (and flush) is always
+     * performed by the caller via {@link #commit()}, so the gzip and non-gzip paths
+     * share one terminal implementation.
      *
-     * @return true if auto-compress and send succeeded
-     * @throws IOException if compression or send fails
+     * @throws IOException if compression fails
      */
-    protected abstract boolean attemptAutoGzipAndSend() throws IOException;
+    protected final void prepareAutoGzip() throws IOException {
+        if (!shouldApplyAutoGzip()) return;
+        directlyPutHeader(HttpHeaderNormalized.getContentEncoding(), HttpHeaderValues.GZIP);
+        directlyPutHeader(HttpHeaderNormalized.getVary(), HttpHeaderNormalized.getAcceptEncoding());
+        bodyBuf.replace(gzipCompress(bodyBuf.getBuf(), bodyBuf.getBegin(), bodyBuf.size()));
+        contentLength = bodyBuf.size();
+    }
 
     /**
      * Check if auto-compress is applicable
@@ -729,7 +754,9 @@ public abstract class HttpInternalResponse implements HttpResponse {
      * @return true if auto-compress is applicable
      */
     protected final boolean shouldApplyAutoGzip() {
-        return gzipEnabled() && isGzipSupported() && !headersSent && bodyBuf.size() >= gzipMinSize();
+        return gzipEnabled() && isGzipSupported() && !headersSent
+                && bodyBuf.size() >= gzipMinSize()
+                && getHeader(HttpHeaderNames.CONTENT_ENCODING) == null;
     }
 
     // ==================== sendFile skeleton ====================
@@ -742,6 +769,39 @@ public abstract class HttpInternalResponse implements HttpResponse {
      */
     protected final String resolveMimeType(String filename) {
         return HttpHeaderUtils.getMimeTypeByFilename(filename, HttpHeaderValues.APPLICATION_OCTET_STREAM);
+    }
+
+    // Returns true if the small-file path was taken (caller should return); false for large files.
+    protected final boolean tryCompressAndSendSmall(File file, long fileSize) throws IOException {
+        directlyPutHeader(HttpHeaderNormalized.getContentEncoding(), HttpHeaderValues.GZIP);
+        directlyPutHeader(HttpHeaderNormalized.getVary(), HttpHeaderNormalized.getAcceptEncoding());
+        if (fileSize <= bodyMemoryThreshold()) {
+            body(gzipCompress(readFileContent(file, (int) fileSize))).commit();
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Evaluate the conditional request (If-Modified-Since / If-None-Match) and, when the resource
+     * is modified, attach the fresh caching headers.
+     *
+     * @return {@code true}  if the resource is NOT modified — caller must stop and respond 304
+     *                        (no body; no cache headers are added here);
+     *         {@code false} if the resource is modified — {@code Last-Modified}/ETag (via
+     *                        {@link #addCacheHeaders}) and the optional {@code Cache-Control} have
+     *                        already been set, so the caller should proceed to write the body.
+     * @throws IOException if reading the conditional request headers fails
+     */
+    public final boolean handleNotModified(long fileSize, long lastModified, String cacheControl) throws IOException {
+        boolean result = checkNotModified(fileSize, lastModified);
+        if(!result) {
+            addCacheHeaders(fileSize, lastModified);
+            if (cacheControl != null && !cacheControl.isEmpty()) {
+                addHeader(HttpHeaderNames.CACHE_CONTROL, cacheControl);
+            }
+        }
+        return result;
     }
 
     /**
@@ -851,32 +911,28 @@ public abstract class HttpInternalResponse implements HttpResponse {
      */
     public final void sendFile(File file, boolean cacheEnabled, String cacheControl, String mimeType) throws IOException {
         if (headersSent || committed) return;
-        if (file == null || !file.exists() || file.isDirectory() /* || !file.canRead() */) {
+        if (file == null || !file.isFile() /* || !file.canRead() */) {
             notFound();
             return;
         }
         status(HttpStatus.OK);
         setContentType(mimeType);
-        long fileSize = file.length();
-        if (cacheEnabled) {
-            long lastModified = file.lastModified();
-            if (checkNotModified(fileSize, lastModified)) return;
-            addCacheHeaders(fileSize, lastModified);
-            if (cacheControl != null && !cacheControl.isEmpty()) {
-                addHeader(HttpHeaderNames.CACHE_CONTROL, cacheControl);
-            }
-        }
-        if (fileSize == 0) {
-            setContentLength(0);
+        BasicFileAttributes attrs = Files.readAttributes(file.toPath(), BasicFileAttributes.class);
+        long fileSize = attrs.size();
+        if(isHeadRequest || fileSize == 0) {
+            setContentLength(fileSize);
             commit();
             return;
         }
-
+        if (cacheEnabled && handleNotModified(fileSize, attrs.lastModifiedTime().toMillis(), cacheControl)) {
+            return;
+        }
         // Check if we should apply GZIP compression for this file
         boolean shouldCompress = gzipEnabled() &&
                 isGzipSupported() &&
                 fileSize >= gzipMinSize() &&
-                shouldCompressMimeType(mimeType);
+                shouldCompressMimeType(mimeType) &&
+                getHeader(HttpHeaderNames.CONTENT_ENCODING) == null;
 
         // Send file
         sendFile0(file, fileSize, mimeType, shouldCompress);

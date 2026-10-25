@@ -39,6 +39,9 @@ public enum Http2FrameType {
         this.code = (byte) code;
     }
 
+    /** Cached {@code values()}, which otherwise clones a new array on every call. */
+    private static final Http2FrameType[] VALUES = values();
+
     /**
      * Look up a frame type by its 8-bit wire code.
      * <p>
@@ -49,10 +52,6 @@ public enum Http2FrameType {
      * @return the matching {@link Http2FrameType}, or {@code null} for unknown codes
      */
     public static Http2FrameType valueOf(int code) {
-        Http2FrameType[] values = Http2FrameType.values();
-        if (code < 0 || code >= values.length) {
-            return null;
-        }
-        return values[code];
+        return (code < 0 || code >= VALUES.length) ? null : VALUES[code];
     }
 }

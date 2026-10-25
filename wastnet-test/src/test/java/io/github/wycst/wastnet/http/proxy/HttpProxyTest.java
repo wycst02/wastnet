@@ -13,7 +13,8 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 public class HttpProxyTest {
 
@@ -47,31 +48,31 @@ public class HttpProxyTest {
     public void testHttpProxyWorkerCleanupConnection() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
-        worker.cleanupConnection(conn);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
+        conn.close();
     }
 
     @Test
     public void testHttpProxyWorkerCleanupConnectionIdempotent() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
-        worker.cleanupConnection(conn);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
+        conn.close();
         // Second call should be no-op (connection.closed already true)
-        worker.cleanupConnection(conn);
+        conn.close();
     }
 
     @Test
-    public void testHttpProxyWorkerClearConnections() throws Exception {
-        HttpProxyWorker worker = createWorker();
-        worker.clearConnections("test-route");
+    public void testHttpProxyRouteClearEmpty() throws Exception {
+        // Clearing a route with no connections is a no-op
+        new HttpProxyRoute(HttpProxyConfig.target("http://example.com")).clear();
     }
 
     @Test
     public void testH2H1ProxyAdapterConstructor() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
         assertNotNull(adapter);
     }
@@ -80,7 +81,7 @@ public class HttpProxyTest {
     public void testH2H1ProxyAdapterOnData() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
         try { adapter.onData(ByteBuffer.allocate(10), ctx, true, conn); } catch (Exception ignored) {}
     }
@@ -90,7 +91,7 @@ public class HttpProxyTest {
         HttpProxyWorker worker = createWorker();
         ChannelContext clientCtx = createCtx();
         ChannelContext targetCtx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         conn.close();
     }
 
@@ -98,7 +99,7 @@ public class HttpProxyTest {
     public void testH2H1ProxyAdapterReceiveResponse() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
         adapter.receiveResponse(ctx);
     }
@@ -107,7 +108,7 @@ public class HttpProxyTest {
     public void testH2H1ProxyAdapterTryAcquire() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
         assertFalse(adapter.tryAcquire());
     }
@@ -125,7 +126,7 @@ public class HttpProxyTest {
         when(targetCtx.getHandShakedApplicationProtocol()).thenReturn("h2");
         when(clientCtx.channel()).thenReturn(ch);
         when(targetCtx.channel()).thenReturn(ch);
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         assertTrue(conn.adapter instanceof H2H2ProxyAdapter);
     }
 
@@ -142,38 +143,38 @@ public class HttpProxyTest {
         when(targetCtx.getHandShakedApplicationProtocol()).thenReturn("h2");
         when(clientCtx.channel()).thenReturn(ch);
         when(targetCtx.channel()).thenReturn(ch);
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         assertFalse(conn.adapter instanceof H2H1ProxyAdapter);
     }
 
-    // ==================== cleanupConnection with timeoutFuture ====================
+    // ==================== close with timeoutFuture ====================
 
     @Test
     public void testCleanupConnectionCancelsTimeout() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         conn.timeoutFuture = manager.scheduleTimeout(() -> {}, 5000);
         assertNotNull(conn.timeoutFuture);
-        worker.cleanupConnection(conn);
+        conn.close();
         // timeoutFuture cancelled and set to null
         assertNull(conn.timeoutFuture);
     }
 
-    // ==================== cleanupConnection with clientKey ====================
+    // ==================== close with clientKey ====================
 
     @Test
     public void testCleanupConnectionClosesClientChannel() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         // Trigger registerClientRead through upgrade detection
         conn.isUpgrade = true;
         conn.clientH2 = false;
         ByteBuffer buf = ByteBuffer.wrap("HTTP/1.1 101 Switching Protocols\r\n".getBytes());
         conn.checkDataReceived(buf);
         assertNotNull(conn.clientKey);
-        worker.cleanupConnection(conn);
+        conn.close();
         assertTrue(conn.closed);
     }
 
@@ -181,12 +182,13 @@ public class HttpProxyTest {
 
     @Test
     public void testClearConnectionsMatching() throws Exception {
+        HttpProxyRoute route = new HttpProxyRoute(HttpProxyConfig.target("http://example.com"));
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
         // Connection is registered in HttpProxyRoute, not constructor; add manually
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "myRoute", ctx, ctx, worker);
-        worker.connections.put(1L, conn);
-        worker.clearConnections("myRoute");
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "myRoute", ctx, ctx, worker, route);
+        route.connections.put(1L, conn);
+        route.clear();
         assertTrue(conn.closed);
     }
 
@@ -196,7 +198,7 @@ public class HttpProxyTest {
     public void testRegisterClientReadTwice() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         conn.isUpgrade = true;
         conn.clientH2 = false;
         ByteBuffer buf = ByteBuffer.wrap("HTTP/1.1 101 Switching Protocols\r\n".getBytes());
@@ -219,7 +221,7 @@ public class HttpProxyTest {
         when(targetCtx.getHandShakedApplicationProtocol()).thenReturn("h2");
         when(clientCtx.channel()).thenReturn(ch);
         when(targetCtx.channel()).thenReturn(ch);
-        return new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker);
+        return new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
     }
 
     private static HttpRequest decodeRequest(String raw) throws Exception {

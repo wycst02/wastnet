@@ -13,10 +13,8 @@ import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketConnection;
 import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketResource;
 import io.github.wycst.wastnet.log.LogFactory;
 import io.github.wycst.wastnet.log.LogLevel;
-import io.github.wycst.wastnet.socket.tcp.ConnectionFilter;
 
 import java.io.IOException;
-import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
 
 /**

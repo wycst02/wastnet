@@ -122,13 +122,11 @@ public class SendFileTest {
      */
     private static void startTestServer() throws Exception {
         NioConfig nioConfig = new NioConfig();
-        nioConfig.testMode();
         nioConfig.setWorkerNum(4);
 
         HTTPServer httpServer = HTTPServer.of(8083, nioConfig)
                 .requestHandler(new FileTransferHandler())
-//                .printReadErrorLog(true)
-//                .printApplicationMessage(true)
+                .startupBannerEnabled(false)
                 .start();
 
         log.info("HTTP Server started on port " + httpServer.getPort());

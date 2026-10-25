@@ -33,7 +33,6 @@ public class ComprehensiveApiTest {
      */
     public static void testComprehensiveFeatures() throws Exception {
         NioConfig nioConfig = new NioConfig();
-        nioConfig.testMode();
         nioConfig.setWorkerNum(4);
 
         HTTPServer httpServer = HTTPServer.of(8085, nioConfig)

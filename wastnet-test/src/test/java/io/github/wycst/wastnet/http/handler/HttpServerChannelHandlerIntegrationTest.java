@@ -1,8 +1,10 @@
 package io.github.wycst.wastnet.http.handler;
 
 import io.github.wycst.wastnet.http.HTTPServer;
-import io.github.wycst.wastnet.http.HttpStatus;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -19,8 +21,10 @@ public class HttpServerChannelHandlerIntegrationTest {
 
     private static HTTPServer serverWithExceptionHandler;
     private static HTTPServer serverWithoutExceptionHandler;
+    private static HTTPServer serverWithDefaultHandler;
     private static int port1;
     private static int port2;
+    private static int port3;
 
     @BeforeAll
     public static void startServers() throws Exception {
@@ -44,12 +48,16 @@ public class HttpServerChannelHandlerIntegrationTest {
                 })
                 .startupBannerEnabled(false)
                 .start();
+
+        port3 = findFreePort();
+        serverWithDefaultHandler = HTTPServer.of(port3).startupBannerEnabled(false).start();
     }
 
     @AfterAll
     public static void stopServers() throws Exception {
         if (serverWithExceptionHandler != null) serverWithExceptionHandler.shutdown();
         if (serverWithoutExceptionHandler != null) serverWithoutExceptionHandler.shutdown();
+        if (serverWithDefaultHandler != null) serverWithDefaultHandler.shutdown();
     }
 
     // ==================== handleApplicationException + handleExceptionHandlerFailure + handleInternalException ====================
@@ -190,6 +198,27 @@ public class HttpServerChannelHandlerIntegrationTest {
             // The handler always throws, so we should get 500
             Assertions.assertTrue(response.contains("500"),
                     "Expected 500, got: " + response.substring(0, Math.min(60, response.length())));
+        } finally {
+            socket.close();
+        }
+    }
+
+    @Test
+    public void testDefaultRequestHandlerReturnsWelcome() throws Exception {
+        Socket socket = new Socket();
+        try {
+            socket.connect(new InetSocketAddress("127.0.0.1", port3), 5000);
+            socket.setSoTimeout(30000);
+            OutputStream out = socket.getOutputStream();
+            out.write("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n".getBytes("US-ASCII"));
+            out.flush();
+
+            byte[] buf = new byte[4096];
+            int n = socket.getInputStream().read(buf);
+            Assertions.assertTrue(n > 0);
+            String response = new String(buf, 0, n, "US-ASCII");
+            Assertions.assertTrue(response.contains("Welcome to wastnet v"),
+                    "Expected default welcome body, got: " + response.substring(0, Math.min(60, response.length())));
         } finally {
             socket.close();
         }

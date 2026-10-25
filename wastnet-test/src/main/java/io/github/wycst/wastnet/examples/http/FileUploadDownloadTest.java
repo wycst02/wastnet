@@ -1,10 +1,10 @@
 package io.github.wycst.wastnet.examples.http;
 
-import io.github.wycst.wast.log.Log;
-import io.github.wycst.wast.log.LogFactory;
 import io.github.wycst.wastnet.http.*;
-import io.github.wycst.wastnet.http.handler.HttpRequestHandler;
 import io.github.wycst.wastnet.http.h2.H2Monitor;
+import io.github.wycst.wastnet.http.handler.HttpRequestHandler;
+import io.github.wycst.wastnet.log.Log;
+import io.github.wycst.wastnet.log.LogFactory;
 import io.github.wycst.wastnet.log.LogLevel;
 import io.github.wycst.wastnet.socket.tcp.NioConfig;
 
@@ -48,7 +48,7 @@ public class FileUploadDownloadTest {
         System.setProperty("wastnet.http.body-max-size", "-1");
         // Enable H2 connection/stream/window monitoring so the /monitor route returns live data.
         System.setProperty("wastnet.h2.monitor", "true");
-        io.github.wycst.wastnet.log.LogFactory.setLevel(LogLevel.DEBUG);
+        LogFactory.setLevel(LogLevel.DEBUG);
 
         File uploadDir = new File(UPLOAD_DIR);
         if (!uploadDir.exists()) {
@@ -56,8 +56,6 @@ public class FileUploadDownloadTest {
         }
 
         NioConfig nioConfig = new NioConfig();
-        nioConfig.testMode();
-
         HTTPServer httpServer = HTTPServer.of(8080, nioConfig)
                 .sslContext(createSslContext())
                 .h2()

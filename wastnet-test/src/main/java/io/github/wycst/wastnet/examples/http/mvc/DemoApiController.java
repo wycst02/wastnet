@@ -3,11 +3,7 @@ package io.github.wycst.wastnet.examples.http.mvc;
 import io.github.wycst.wastnet.http.HttpMethod;
 import io.github.wycst.wastnet.http.HttpResponse;
 import io.github.wycst.wastnet.http.MultipartField;
-import io.github.wycst.wastnet.http.annotation.Controller;
-import io.github.wycst.wastnet.http.annotation.Endpoint;
-import io.github.wycst.wastnet.http.annotation.PathParam;
-import io.github.wycst.wastnet.http.annotation.RequestParam;
-import io.github.wycst.wastnet.http.annotation.ResponseBody;
+import io.github.wycst.wastnet.http.annotation.*;
 
 import java.io.File;
 import java.nio.file.Files;

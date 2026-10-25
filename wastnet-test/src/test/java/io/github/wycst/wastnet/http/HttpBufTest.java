@@ -1,9 +1,9 @@
 package io.github.wycst.wastnet.http;
 
-import io.github.wycst.wastnet.http.HttpBuf;
-import io.github.wycst.wastnet.util.Utils;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+
+import java.nio.charset.StandardCharsets;
 
 /**
  * Unit tests for {@link HttpBuf}
@@ -42,7 +42,7 @@ public class HttpBufTest {
         byte[] data = "hello world".getBytes();
         int written = buf.write(data, 6, 5);
         Assertions.assertEquals(5, written);
-        Assertions.assertEquals("world", buf.toString(Utils.ISO_8859_1));
+        Assertions.assertEquals("world", buf.toString(StandardCharsets.ISO_8859_1));
     }
 
     @Test
@@ -102,7 +102,7 @@ public class HttpBufTest {
         int remaining = buf.deleteHead(2);
         Assertions.assertEquals(3, remaining);
         Assertions.assertEquals(3, buf.size());
-        Assertions.assertEquals("llo", buf.toString(Utils.ISO_8859_1));
+        Assertions.assertEquals("llo", buf.toString(StandardCharsets.ISO_8859_1));
     }
 
     @Test
@@ -111,7 +111,7 @@ public class HttpBufTest {
         buf.write("hello".getBytes());
         buf.deleteTail(2);
         Assertions.assertEquals(3, buf.size());
-        Assertions.assertEquals("hel", buf.toString(Utils.ISO_8859_1));
+        Assertions.assertEquals("hel", buf.toString(StandardCharsets.ISO_8859_1));
     }
 
     @Test
@@ -152,7 +152,7 @@ public class HttpBufTest {
     public void testToStringEncoding() {
         HttpBuf buf = new HttpBuf(8);
         buf.write("hello".getBytes());
-        Assertions.assertEquals("hello", buf.toString(Utils.ISO_8859_1));
+        Assertions.assertEquals("hello", buf.toString(StandardCharsets.ISO_8859_1));
     }
 
     @Test
@@ -161,7 +161,7 @@ public class HttpBufTest {
         buf.write("hello".getBytes());
         buf.backOne();
         Assertions.assertEquals(4, buf.size());
-        Assertions.assertEquals("hell", buf.toString(Utils.ISO_8859_1));
+        Assertions.assertEquals("hell", buf.toString(StandardCharsets.ISO_8859_1));
     }
 
     @Test
@@ -169,7 +169,7 @@ public class HttpBufTest {
         HttpBuf buf = new HttpBuf(8);
         buf.write("old".getBytes());
         buf.replace("new".getBytes());
-        Assertions.assertEquals("new", buf.toString(Utils.ISO_8859_1));
+        Assertions.assertEquals("new", buf.toString(StandardCharsets.ISO_8859_1));
         Assertions.assertEquals(3, buf.size());
     }
 

@@ -32,6 +32,7 @@ public class HttpProxyConnection {
     final ChannelContext targetCtx;
     final SocketChannel targetChannel;
     final HttpProxyWorker worker;
+    final HttpProxyRoute route;
     HttpProxyAdapter adapter;
     boolean isUpgrade;
     volatile boolean dataReceived;
@@ -44,22 +45,23 @@ public class HttpProxyConnection {
     final Runnable timeoutTask;
     SelectionKey clientKey;
 
-    public HttpProxyConnection(Long connectionId, String routeId, ChannelContext clientCtx, ChannelContext targetCtx, final HttpProxyWorker worker) throws IOException {
+    public HttpProxyConnection(Long connectionId, String routeId, ChannelContext clientCtx, ChannelContext targetCtx, final HttpProxyWorker worker, HttpProxyRoute route) throws IOException {
         this.routeId = routeId;
         this.connectionId = connectionId;
         this.clientCtx = clientCtx;
         this.targetCtx = targetCtx;
         this.targetChannel = targetCtx.channel();
         this.worker = worker;
+        this.route = route;
         this.clientH2 = isH2(clientCtx);
         this.targetH2 = isH2(targetCtx);
         this.adapter = resolveAdapter(this);
-        this.closeListener = () -> worker.cleanupConnection(HttpProxyConnection.this);
+        this.closeListener = HttpProxyConnection.this::close;
         this.timeoutTask = () -> {
             if (!dataReceived) {
                 log.error("[HttpProxy] Read timeout for connection {}", connectionId);
                 // Close target first to prevent late data from polluting client
-                worker.cleanupConnection(HttpProxyConnection.this);
+                close();
                 try {
                     clientCtx.write(HttpProxyWorkerManager.GATEWAY_TIMEOUT_RESPONSE.duplicate());
                     clientCtx.flush();
@@ -165,7 +167,29 @@ public class HttpProxyConnection {
     }
 
     public void close() {
-        worker.cleanupConnection(this);
+        // Idempotent: only first caller wins
+        if (closed) {
+            return;
+        }
+        closed = true;
+        route.removeConnection(this);
+        // Cancel read timeout future
+        ScheduledFuture<?> future = timeoutFuture;
+        if (future != null) {
+            future.cancel(false);
+            timeoutFuture = null;
+        }
+        log.debug("[Proxy] cleanup connection: {} (route: {})", connectionId, routeId);
+        if (!clientCtx.isChannelClosed()) {
+            // Remove close listener to avoid duplicate cleanup
+            clientCtx.removeCloseListener(closeListener);
+        }
+        // Close target channel
+        targetCtx.close();
+        // Close client channel if registered for bidirectional relay
+        if (clientKey != null) {
+            clientCtx.close();
+        }
     }
 
     public boolean isTargetClosed() {

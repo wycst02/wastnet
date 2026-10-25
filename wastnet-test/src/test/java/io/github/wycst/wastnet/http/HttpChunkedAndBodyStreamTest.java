@@ -1,14 +1,12 @@
 package io.github.wycst.wastnet.http;
 
-import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketUtils;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
-import java.io.InputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
 
 /**
  * Pure memory tests for HttpChunkedStream and HttpBodyStreamDecoder.

@@ -1,7 +1,7 @@
 package io.github.wycst.wastnet.http;
 
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.Test;
 
 import java.nio.channels.SocketChannel;
 import java.util.*;
@@ -352,7 +352,7 @@ public class HttpCoreUtilTest {
 
     @Test
     public void testHttpDateConstructor() {
-        HttpDate date = new HttpDate(0L, TimeZone.getTimeZone("GMT"));
+        HttpDate date = new HttpDate(0L, java.util.TimeZone.getTimeZone("GMT"));
         assertTrue(date.year >= 1970);
         assertTrue(date.month >= 1 && date.month <= 12);
         assertTrue(date.day >= 1 && date.day <= 31);
@@ -362,13 +362,13 @@ public class HttpCoreUtilTest {
     @Test
     public void testHttpDateLeapYear() {
         // Year 2000 is a leap year (divisible by 400)
-        HttpDate leapDate = new HttpDate(951825600000L, TimeZone.getTimeZone("GMT")); // 2000-02-29
+        HttpDate leapDate = new HttpDate(951825600000L, java.util.TimeZone.getTimeZone("GMT")); // 2000-02-29
         assertEquals(2000, leapDate.year);
         assertEquals(2, leapDate.month);
         assertEquals(29, leapDate.day);
 
         // Year 1900 is NOT a leap year (divisible by 100 but not 400)
-        HttpDate nonLeapDate = new HttpDate(-2203977600000L, TimeZone.getTimeZone("GMT")); // 1900-03-01
+        HttpDate nonLeapDate = new HttpDate(-2203977600000L, java.util.TimeZone.getTimeZone("GMT")); // 1900-03-01
         assertEquals(1900, nonLeapDate.year);
     }
 
@@ -402,7 +402,7 @@ public class HttpCoreUtilTest {
 
     @Test
     public void testGetDayOfWeekAtEpoch() {
-        HttpDate epoch = new HttpDate(0L, TimeZone.getTimeZone("GMT"));
+        HttpDate epoch = new HttpDate(0L, java.util.TimeZone.getTimeZone("GMT"));
         assertEquals(5, epoch.getDayOfWeek()); // 1970-01-01 was Thursday (5)
     }
 

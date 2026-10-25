@@ -2,6 +2,7 @@ package io.github.wycst.wastnet.socket.tcp;
 
 import io.github.wycst.wastnet.log.Log;
 import io.github.wycst.wastnet.log.LogFactory;
+import io.github.wycst.wastnet.socket.conf.SocketOptions;
 
 import java.io.IOException;
 import java.nio.channels.SelectionKey;
@@ -18,6 +19,9 @@ class AcceptDispatcher extends Thread {
 
     static final Log LOG = LogFactory.getLog(AcceptDispatcher.class);
 
+    /** Max connections drained from the backlog in one accept event */
+    private static final int MAX_ACCEPTS_PER_EVENT = 256;
+
     private final TCPServer server;
     private final ChannelWorker[] workers;
 
@@ -26,51 +30,64 @@ class AcceptDispatcher extends Thread {
         this.workers = workers;
     }
 
+    /** Close the client channel, logging a warning with the given reason on failure. */
+    private static void closeQuietly(SocketChannel client, String reason) {
+        try {
+            client.close();
+        } catch (IOException ex) {
+            LOG.warn(reason, ex.getMessage());
+        }
+    }
+
     void handleAccept() throws Throwable {
         // Signal that AcceptDispatcher thread has entered its event loop
         CountDownLatch latch = server.startLatch;
         if (latch != null) latch.countDown();
 
         int clientCnt = 0;
+        final Set<SelectionKey> selectedKeys = server.selector.selectedKeys();
         while (server.acceptRunFlag) {
             int num = server.selector.select();
             if (num == 0) continue;
-            Set<SelectionKey> selectedKeys = server.selector.selectedKeys();
             Iterator<SelectionKey> iter = selectedKeys.iterator();
             while (iter.hasNext()) {
                 SelectionKey key = iter.next();
                 iter.remove();
                 if (!key.isValid()) {
-                    LOG.info("isValid false");
+                    LOG.info("accept key invalid, server channel likely closing");
                     continue;
                 }
-                if (key.isAcceptable()) {
-                    final SocketChannel client = server.serverChannel.accept();
+                int accepted = 0;
+                while (accepted++ < MAX_ACCEPTS_PER_EVENT) {
+                    final SocketChannel client;
+                    try {
+                        if ((client = server.serverChannel.accept()) == null) break;
+                    } catch (IOException ex) {
+                        LOG.warn("accept failed, stop draining this event: {}", ex.getMessage());
+                        break;
+                    }
                     try {
                         ConnectionFilter connectionFilter = server.nioConfig.getConnectionFilter();
                         if (connectionFilter != null && (!connectionFilter.onAccept(client) || !client.isOpen())) {
                             LOG.info("Connection rejected from {}", client.getRemoteAddress());
-                            try { client.close(); } catch (IOException ex) { LOG.warn("close rejected connection: {}", ex.getMessage()); }
+                            closeQuietly(client, "close rejected connection: {}");
                             continue;
                         }
                     } catch (Throwable e) {
                         LOG.error("Connection filter error: {}", e, e.getMessage());
-                        try { client.close(); } catch (IOException ex) { LOG.warn("close connection after filter error: {}", ex.getMessage()); }
+                        closeQuietly(client, "close connection after filter error: {}");
                         continue;
                     }
                     client.configureBlocking(false);
                     client.socket().setTcpNoDelay(true);
+                    client.socket().setKeepAlive(server.nioConfig.option(SocketOptions.TCP_KEEPALIVE));
                     final ChannelWorker worker = server.nextWorker(++clientCnt, workers);
                     server.executorService.submit(() -> {
                         try {
                             worker.register(client, server.createConnectionRunner(worker, client));
                         } catch (Exception e) {
                             LOG.error("Client registration failed: {}", e, e.getMessage());
-                            try {
-                                client.close();
-                            } catch (IOException ex) {
-                                LOG.warn("close client on registration fail: {}", ex.getMessage());
-                            }
+                            closeQuietly(client, "close client on registration fail: {}");
                         }
                     });
                 }

@@ -2,11 +2,7 @@ package io.github.wycst.wastnet.examples.http.mvc;
 
 import io.github.wycst.wastnet.http.HttpRequest;
 import io.github.wycst.wastnet.http.HttpResponse;
-import io.github.wycst.wastnet.http.annotation.Controller;
-import io.github.wycst.wastnet.http.annotation.Endpoint;
-import io.github.wycst.wastnet.http.annotation.Inject;
-import io.github.wycst.wastnet.http.annotation.RequestBody;
-import io.github.wycst.wastnet.http.annotation.ResponseBody;
+import io.github.wycst.wastnet.http.annotation.*;
 
 /**
  * REST 控制器 — 演示 {@code @Controller}、{@code @Endpoint}、{@code @Inject}.

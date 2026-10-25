@@ -345,7 +345,7 @@ public class HttpProxyIntegrationTest {
                 .startupBannerEnabled(false)
                 .start();
         try {
-            Thread.sleep(200);
+            Thread.sleep(50);
 
             // Start a proxy server that forwards to the HTTPS backend
             int proxySslPort = findFreePort();
@@ -358,7 +358,7 @@ public class HttpProxyIntegrationTest {
                     .startupBannerEnabled(false)
                     .start();
             try {
-                Thread.sleep(200);
+                Thread.sleep(50);
 
                 // Request through proxy
                 String url = "http://127.0.0.1:" + proxySslPort + "/ssl/hello";
@@ -389,7 +389,7 @@ public class HttpProxyIntegrationTest {
                 .startupBannerEnabled(false)
                 .start();
         try {
-            Thread.sleep(200);
+            Thread.sleep(50);
 
             // Proxy using TRUST_ALL (self-signed backend), verifyHostname disabled
             int proxySslPort = findFreePort();
@@ -403,7 +403,7 @@ public class HttpProxyIntegrationTest {
                     .startupBannerEnabled(false)
                     .start();
             try {
-                Thread.sleep(200);
+                Thread.sleep(50);
                 Response resp = get(proxySslPort, "/api/test");
                 Assertions.assertEquals(200, resp.code());
                 String body = resp.body().string();
@@ -431,7 +431,7 @@ public class HttpProxyIntegrationTest {
                 .printReadErrorLog(true)
                 .start();
         try {
-            Thread.sleep(200);
+            Thread.sleep(50);
 
             // Proxy with default verifyHostname=true — self-signed cert doesn't have 127.0.0.2 in SAN
             int proxySslPort = findFreePort();
@@ -446,7 +446,7 @@ public class HttpProxyIntegrationTest {
                     .printReadErrorLog(true)
                     .start();
             try {
-                Thread.sleep(200);
+                Thread.sleep(50);
                 Response resp = get(proxySslPort, "/svc/test");
                 // Hostname verification fails → proxy returns 502 Bad Gateway
                 Assertions.assertEquals(502, resp.code());

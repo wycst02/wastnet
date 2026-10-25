@@ -50,7 +50,7 @@ public class H2CServerTest {
         });
 
         HTTPServer.of(port)
-                .applicationProtocols(new String[]{"h2c", "http/1.1"})
+                .applicationProtocols("h2c", "http/1.1")
                 .requestHandler(router)
                 .start();
 

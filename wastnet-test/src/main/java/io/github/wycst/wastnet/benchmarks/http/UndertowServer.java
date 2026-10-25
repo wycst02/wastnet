@@ -1,15 +1,13 @@
 package io.github.wycst.wastnet.benchmarks.http;
 
+import io.github.wycst.wastnet.socket.tcp.PEMSSLContextFactory;
 import io.undertow.Undertow;
 import io.undertow.UndertowOptions;
-import io.undertow.util.Headers;
 import io.undertow.server.HttpHandler;
 import io.undertow.server.HttpServerExchange;
-
-import io.github.wycst.wastnet.socket.tcp.PEMSSLContextFactory;
+import io.undertow.util.Headers;
 
 import javax.net.ssl.SSLContext;
-
 import java.util.concurrent.atomic.AtomicReference;
 
 /**

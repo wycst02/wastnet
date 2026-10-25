@@ -1,13 +1,13 @@
 package io.github.wycst.wastnet.http.upgrade.websocket;
 
-import io.github.wycst.wastnet.http.HttpDefaultRequest;
-import io.github.wycst.wastnet.http.HttpHeaderNormalized;
-import io.github.wycst.wastnet.http.HttpHeaderValues;
-import io.github.wycst.wastnet.http.HttpMethod;
-import io.github.wycst.wastnet.http.HttpRequest;
-import io.github.wycst.wastnet.http.HttpVersion;
+import io.github.wycst.wastnet.http.*;
+import io.github.wycst.wastnet.http.upgrade.UpgradeWebSocketHolder;
+import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketConnection;
+import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketResource;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Test;
+
+import static org.mockito.Mockito.mock;
 
 import java.io.IOException;
 import java.nio.channels.SocketChannel;
@@ -20,7 +20,11 @@ public class WebSocketTest {
     static ChannelContext createCtx() throws IOException {
         SocketChannel ch = SocketChannel.open();
         ch.configureBlocking(false);
-        return new ChannelContext(ch, 4096);
+        ChannelContext ctx = new ChannelContext(ch, 4096);
+        // A real WebSocket upgrade binds the holder to the context; bind one here so decode() and
+        // getMaxPayloadSize() (which assume a bound holder) behave as they do in production.
+        ctx.binding(new UpgradeWebSocketHolder(new WebSocketResource(), mock(WebSocketConnection.class), ctx));
+        return ctx;
     }
 
     static HttpRequest mockRequest(ChannelContext ctx) {
@@ -243,10 +247,13 @@ public class WebSocketTest {
 
     @Test
     public void testGetMaxPayloadSize() throws Exception {
-        ChannelContext ctx = createCtx();
-        ctx.binding(null);
+        // Use a fresh context (binding is immutable once set) and bind a holder with a known maxPayloadSize.
+        ChannelContext ctx = new ChannelContext(SocketChannel.open(), 4096);
+        WebSocketResource resource = new WebSocketResource();
+        resource.maxPayloadSize(12345);
+        ctx.binding(new UpgradeWebSocketHolder(resource, mock(WebSocketConnection.class), ctx));
         int size = WebSocketUtils.getMaxPayloadSize(ctx);
-        assertTrue(size > 0);
+        assertEquals(12345, size);
         try { ctx.channel().close(); } catch (Exception ignored) {}
     }
 }

@@ -2,8 +2,6 @@ package io.github.wycst.wastnet.benchmarks.h2;
 
 import io.github.wycst.wastnet.http.h2.HuffmanByteCodec;
 
-import java.util.Arrays;
-
 public class HuffmanCodecSpeedTest {
 
     public static void main(String[] args) {

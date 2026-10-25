@@ -9,7 +9,8 @@ import java.io.Serializable;
 import java.net.InetSocketAddress;
 import java.util.*;
 
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link HttpInternalRequest}.
@@ -159,7 +160,7 @@ public class HttpInternalRequestTest {
     @Test
     public void testSetAttributeNullKeyThrows() {
         TestBaseRequest req = new TestBaseRequest(mock(ChannelContext.class));
-        Assertions.assertThrows(IllegalArgumentException.class, new org.junit.jupiter.api.function.Executable() {
+        Assertions.assertThrows(NullPointerException.class, new org.junit.jupiter.api.function.Executable() {
             @Override
             public void execute() throws Throwable {
                 req.setAttribute(null, "value");
@@ -580,7 +581,7 @@ public class HttpInternalRequestTest {
         @Override public byte[] getBodyData() { return new byte[0]; }
         @Override public String getHeader(String name) { return null; }
         @Override public boolean containsHeader(String name) { return false; }
-        @Override public Set<String> getHeaderNames() { return Collections.emptySet(); }
+        @Override public Set<String> getHeaderNames() { return java.util.Collections.emptySet(); }
         @Override public String getUriParameter(String name) { return null; }
         @Override public String getQueryString() { return null; }
         @Override public StringBuffer getRequestURL() { return null; }
@@ -589,7 +590,7 @@ public class HttpInternalRequestTest {
         @Override public void removeHeader(String key) {}
         @Override public Object getRawHeader(String name) { return null; }
         @Override protected List<String> getUriParameterValues(String name) { return null; }
-        @Override protected Set<String> getUriParameterNames() { return Collections.emptySet(); }
+        @Override protected Set<String> getUriParameterNames() { return java.util.Collections.emptySet(); }
         @Override public void delegate(ChannelContext targetCtx) throws Throwable {}
     }
 }

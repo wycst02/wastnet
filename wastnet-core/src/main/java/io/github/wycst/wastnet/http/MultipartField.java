@@ -1,11 +1,10 @@
 package io.github.wycst.wastnet.http;
 
-import io.github.wycst.wastnet.util.Utils;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Multipart field data holder supporting both text and binary content.
@@ -138,7 +137,7 @@ public abstract class MultipartField {
      * @return field data as string
      */
     public String getDataAsString() {
-        return new String(getData(), Utils.UTF_8);
+        return new String(getData(), StandardCharsets.UTF_8);
     }
 
     /**

@@ -24,6 +24,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -496,7 +497,7 @@ public final class Http2Helper {
      * @param value the string value to encode
      */
     public static void writeHpackString(HttpBuf buf, String value) {
-        byte[] bytes = value.getBytes(Utils.UTF_8);
+        byte[] bytes = value.getBytes(StandardCharsets.UTF_8);
         // ASCII-only (bytes.length == value.length()) is the Huffman candidate:
         // multibyte UTF-8 is left uncompressed to avoid the per-string encode cost.
         writeHpackBytes(buf, bytes, bytes.length == value.length());

@@ -6,8 +6,10 @@ import org.junit.jupiter.api.Test;
 
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 /**
  * Unit tests for {@link HttpProxyRoute}.
@@ -42,7 +44,7 @@ public class HttpProxyRouteTest {
         @Override public long getContentLength() { return 0; }
         @Override public String getContentType() { return null; }
         @Override public void delegate(ChannelContext ctx) throws Throwable {}
-        @Override public HttpBodyInputStream bodyStream() { return null; }
+        @Override public io.github.wycst.wastnet.http.HttpBodyInputStream bodyStream() { return null; }
         @Override public byte[] getBodyData() { return new byte[0]; }
         @Override public String getHeader(String name) { return headers.get(name.toLowerCase()); }
         @Override public boolean containsHeader(String name) { return headers.containsKey(name.toLowerCase()); }

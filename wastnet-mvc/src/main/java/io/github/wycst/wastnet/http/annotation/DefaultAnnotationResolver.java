@@ -49,9 +49,9 @@ final class DefaultAnnotationResolver implements AnnotationResolver {
             if (ann != null) {
                 String path = ann.value().trim();
                 if (!path.isEmpty()) {
-                    MethodRouteInfo routeInfo = new MethodRouteInfo(path, ann.allowMethods(), method, Endpoint.class, ann.responseType());
-                    routeInfo.setInterceptorNames(resolveInterceptorNames(clazz, method));
-                    routes.add(routeInfo);
+                    routes.add(new MethodRouteInfo(path, ann.allowMethods(), method, Endpoint.class, ann.responseType())
+                            .async(ann.async())
+                            .interceptorNames(resolveInterceptorNames(clazz, method)));
                 }
             }
         }
@@ -104,7 +104,7 @@ final class DefaultAnnotationResolver implements AnnotationResolver {
                                 + " must return void");
             }
             MethodRouteInfo endpointInfo = new MethodRouteInfo(path, new HttpMethod[0], method, Sse.class);
-            endpointInfo.setInterceptorNames(resolveInterceptorNames(clazz, method));
+            endpointInfo.interceptorNames(resolveInterceptorNames(clazz, method));
             endpoints.add(endpointInfo);
         }
         return endpoints;

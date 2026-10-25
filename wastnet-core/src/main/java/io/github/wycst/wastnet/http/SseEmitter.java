@@ -1,7 +1,5 @@
 package io.github.wycst.wastnet.http;
 
-import io.github.wycst.wastnet.http.handler.HttpRouterHandler;
-import io.github.wycst.wastnet.http.handler.SseHandler;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 
 import java.io.IOException;
@@ -9,26 +7,31 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Server-Sent Events emitter for use with {@link HttpRouterHandler#sse(String, SseHandler)}.
+ * Server-Sent Events (SSE) emitter. It is created by the framework via
+ * {@link io.github.wycst.wastnet.http.handler.HttpRouterHandler#sse(String, io.github.wycst.wastnet.http.handler.SseHandler)}
+ * and handed to your {@link io.github.wycst.wastnet.http.handler.SseHandler}; you never construct it directly.
  * <p>
- * Thread-safe and supports multi-threaded push. The handler may return immediately
- * after creating an emitter; push events and close from any thread.
+ * <b>Thread-safety:</b> fully thread-safe. {@link #emit(String)},
+ * {@link #emit(String, String, String, long)} and {@link #close()} are internally synchronized, so events may be
+ * pushed and the connection closed from any thread, including concurrently. The handler may return immediately
+ * after scheduling work elsewhere; the stream stays open until {@link #close()} is called.
  * <p>
- * Lifecycle: {@link HttpRouterHandler#sse(String, SseHandler)} → {@link #emit(String)} → {@link #close()}
+ * <b>Lifecycle:</b> the framework opens the SSE stream (sets {@code text/event-stream} and flushes), runs your
+ * handler asynchronously, and keeps the request thread blocked until {@link #close()} is called or the configured
+ * timeout (default 30 minutes) elapses. The emitter must be closed explicitly — there is no automatic cleanup.
  * <p>
  * Usage:
  * <pre>{@code
  * router.sse("/events", emitter -> {
- *     // Simple data-only event
+ *     // simple data-only event
  *     emitter.emit("{\"msg\":\"hello\"}");
- *     // Full control: event type, data, id, retry
+ *     // full control: event type, data, id, retry
  *     emitter.emit("chat", "hi", "msg-001", 3000);
  *     emitter.close();
  * });
  * }</pre>
  *
  * @author wangyc
- * @see HttpRouterHandler#sse(String, SseHandler)
  */
 public class SseEmitter {
 
@@ -99,10 +102,6 @@ public class SseEmitter {
 
     /**
      * Access the underlying HTTP request that opened this SSE connection.
-     * <p>
-     * Handy inside {@code router.sse()} handlers to read query parameters,
-     * headers, path variables, etc. — information that the {@link SseHandler}
-     * lambda alone does not receive.
      *
      * @return the HTTP request for this SSE connection
      */

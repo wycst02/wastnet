@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Arrays;
+import java.util.Objects;
 
 /**
  * Codec for length-prefixed frame protocols (TCP).
@@ -100,7 +101,7 @@ public class LengthFrameCodec<T> extends ChannelCodec<T> {
 
     /** Set byte order for length field (default BIG_ENDIAN). */
     public LengthFrameCodec<T> byteOrder(ByteOrder byteOrder) {
-        if (byteOrder == null) throw new IllegalArgumentException("byteOrder cannot be null");
+        Objects.requireNonNull(byteOrder, "byteOrder cannot be null");
         this.byteOrder = byteOrder;
         return this;
     }

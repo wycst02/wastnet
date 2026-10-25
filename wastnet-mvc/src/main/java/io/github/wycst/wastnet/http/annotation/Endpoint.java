@@ -53,4 +53,13 @@ public @interface Endpoint {
      * @return the produced content type
      */
     ContentType responseType() default ContentType.JSON;
+
+    /**
+     * Whether the endpoint is dispatched asynchronously: the business method runs off
+     * the request thread, so a slow endpoint (blocking wait, slow RPC, sync DB) does
+     * not block it. Parameters are still bound on the request thread.
+     *
+     * @return {@code true} to dispatch this endpoint asynchronously
+     */
+    boolean async() default false;
 }

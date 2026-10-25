@@ -1,11 +1,6 @@
 package io.github.wycst.wastnet.http.upgrade.websocket;
 
-import io.github.wycst.wastnet.http.HttpHeaderNormalized;
-import io.github.wycst.wastnet.http.HttpMethod;
-import io.github.wycst.wastnet.http.HttpRequest;
-import io.github.wycst.wastnet.http.HttpResponse;
-import io.github.wycst.wastnet.http.HttpVersion;
-import io.github.wycst.wastnet.http.MultipartField;
+import io.github.wycst.wastnet.http.*;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Test;
 
@@ -15,12 +10,9 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertSame;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * WebSocket Origin 校验（CSWSH 防护）单元测试。
@@ -107,8 +99,8 @@ public class WebSocketOriginCheckTest {
 
             @Override public String getHost() { return null; }
             @Override public void removeAttribute(String key) {}
-            @Override public java.util.Enumeration<String> getAttributeNames() { return Collections.emptyEnumeration(); }
-            @Override public Map<String, String[]> getParameterMap() { return Collections.emptyMap(); }
+            @Override public java.util.Enumeration<String> getAttributeNames() { return java.util.Collections.emptyEnumeration(); }
+            @Override public java.util.Map<String, String[]> getParameterMap() { return java.util.Collections.emptyMap(); }
         };
     }
 

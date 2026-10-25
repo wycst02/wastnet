@@ -37,6 +37,17 @@ public interface HttpRequest extends HttpMessage {
     HttpVersion getHttpVersion();
 
     /**
+     * Check whether more pipelined requests follow this one in the current read batch.
+     * <p>
+     * Set by the H1 decoder; H2 defaults to false.
+     *
+     * @return true if more pipelined requests follow in the same read batch, false otherwise
+     */
+    default boolean isPipelined() {
+        return false;
+    }
+
+    /**
      * Get request body as input stream
      *
      * @return Request body input stream

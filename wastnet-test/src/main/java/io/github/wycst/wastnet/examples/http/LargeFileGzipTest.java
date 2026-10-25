@@ -113,7 +113,6 @@ public class LargeFileGzipTest {
 
     private static void startTestServer() throws Exception {
         NioConfig nioConfig = new NioConfig();
-        nioConfig.testMode();
         nioConfig.setWorkerNum(4);
 
         HTTPServer server = HTTPServer.of(8086, nioConfig)

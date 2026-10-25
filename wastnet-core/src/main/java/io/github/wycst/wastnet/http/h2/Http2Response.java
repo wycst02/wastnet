@@ -99,6 +99,11 @@ public class Http2Response extends HttpInternalResponse {
     }
 
     @Override
+    protected void directlyPutHeader(String key, Serializable value) {
+        h2Headers.put(key.toLowerCase(), String.valueOf(value));
+    }
+
+    @Override
     public String getHeader(String key) {
         return headerFirstValue(h2Headers, key.toLowerCase());
     }
@@ -126,7 +131,7 @@ public class Http2Response extends HttpInternalResponse {
 
     @Override
     public void write(byte[] buf, int offset, int count) throws IOException {
-        if (committed || count <= 0) return;
+        if (committed || count <= 0 || isHeadRequest) return;
         if (!headersSent) writeHeaders(false);
         if (bodyBuf.size() + count > bodyMemoryThreshold()) {
             sendChunkedData(bodyBuf.getBuf(), bodyBuf.getBegin(), bodyBuf.size(), false);
@@ -140,7 +145,7 @@ public class Http2Response extends HttpInternalResponse {
     @Override
     public void flush() throws IOException {
         if (committed) return;
-        if (!headersSent) writeHeaders(false);
+        if (!headersSent) writeHeaders(isHeadRequest);
         if (!bodyBuf.isEmpty()) {
             sendChunkedData(bodyBuf.getBuf(), bodyBuf.getBegin(), bodyBuf.size(), false);
             bodyBuf.clear();
@@ -152,16 +157,32 @@ public class Http2Response extends HttpInternalResponse {
     public void commit() throws IOException {
         if (committed) return;
         committed = true;
-        if (headersSent) {
-            // Headers already sent; flush remaining body with END_STREAM.
-            if (!bodyBuf.isEmpty()) {
-                sendChunkedData(bodyBuf.getBuf(), bodyBuf.getBegin(), bodyBuf.size(), true);
-                bodyBuf.clear();
+        try {
+            if (headersSent) {
+                // Headers already sent; flush remaining body with END_STREAM.
+                if (!bodyBuf.isEmpty()) {
+                    sendChunkedData(bodyBuf.getBuf(), bodyBuf.getBegin(), bodyBuf.size(), true);
+                    bodyBuf.clear();
+                }
+                stream.flushCtx();
+                return;
             }
-            stream.flushCtx();
-            return;
+            if(bodyBuf.hasRemaining()) { // keep a preset length when body is empty (HEAD); non-empty buffer always wins
+                this.contentLength = bodyBuf.size();
+            }
+            if(isHeadRequest) {
+                writeHeaders(true);
+            } else {
+                writeFullResponse();                       // headers not sent yet; write headers and full body together
+            }
+        } finally {
+            finish();
         }
-        writeFullResponse();                       // headers not sent yet; write headers and full body together
+    }
+
+    private void finish() {
+        stream.completeStream();
+        request.complete();
     }
 
     private void sendChunkedData(byte[] buf, int offset, int len, boolean endStream) throws IOException {
@@ -169,7 +190,7 @@ public class Http2Response extends HttpInternalResponse {
     }
 
     private void sendChunkedData(byte[] buf, int offset, int len, boolean endStream, boolean flush) throws IOException {
-        if (len <= 0) return;
+        if (len <= 0 || isHeadRequest) return;
         int chunkSize = stream.sendChunkSize();
         int remaining = len;
         int off = offset;
@@ -212,6 +233,7 @@ public class Http2Response extends HttpInternalResponse {
     @Override
     public void earlyHints(String linkHeader) throws IOException {
         if (headersSent) return;
+        HttpHeaderUtils.requireNoCRLF(linkHeader, "Early hints link header must not contain CR or LF");
         HttpBuf buf = HttpBuf.of(64);
         // Pre-encoded HPACK prefix: :status: 103 + link header name
         buf.write(_H2_EARLY_HINTS_PREFIX);
@@ -236,61 +258,36 @@ public class Http2Response extends HttpInternalResponse {
     @Override
     protected void sendFile0(File file, long fileSize, String mimeType, boolean shouldCompress) throws IOException {
         if (shouldCompress) {
-            doStreamingCompressAndSend(file);
+            doStreamingCompressAndSend(file, fileSize);
         } else {
-            setContentLength(fileSize);
-            doSendFileContent(file);
+            doSendFileContent(file, fileSize);
         }
     }
 
     @Override
     protected void notFound() throws IOException {
-        status(HttpStatus.NOT_FOUND);
-        bodyBuf.clear();
-        commit();
+        status(HttpStatus.NOT_FOUND).body("404 not found").commit();
+        bodyBuf.reset();
     }
 
-    protected void doSendFileContent(File file) throws IOException {
-        long fileSize = file.length();
+    private void doSendFileContent(File file, final long fileSize) throws IOException {
+        setContentLength(fileSize);
         // Small file (incl. empty): read into bodyBuf and reuse commit()'s merged HEADERS+DATA one-shot write.
         if (fileSize <= stream.sendChunkSize()) {
-            bodyBuf.replace(readFileContent(file, (int) fileSize));
-            commit();
+            body(readFileContent(file, (int) fileSize)).commit();
         } else {
             // Large file: HEADERS without END_STREAM, then stream the file in framed chunks;
             // the final chunk (pos == fileSize) carries END_STREAM.
             writeHeaders(false);
-            sendFileFramed(file);
+            sendFileFramed(file, fileSize);
             committed = true;
+            finish();
         }
     }
 
-    /**
-     * Attempt automatic GZIP compression on buffered body data and send.
-     * <p>
-     * Only applies when: global GZIP enabled, client supports gzip,
-     * headers not sent, body size >= GZIP_MIN_SIZE. Delegates to
-     *
-     * @return true if auto-compress and send succeeded
-     * @throws IOException if compression or send fails
-     */
-    protected boolean attemptAutoGzipAndSend() throws IOException {
-        if (!shouldApplyAutoGzip()) return false;
-        addHeader(HttpHeaderNames.CONTENT_ENCODING, HttpHeaderValues.GZIP);
-        bodyBuf.replace(gzipCompress(bodyBuf.getBuf(), bodyBuf.getBegin(), bodyBuf.size()));
-        commit();
-        return true;
-    }
-
-    protected void doStreamingCompressAndSend(File file) throws IOException {
-        final long fileSize = file.length();
-        // Set Content-Encoding header for all compressed responses
-        addHeader(HttpHeaderNames.CONTENT_ENCODING, HttpHeaderValues.GZIP);
-
-        // For small files, use in-memory compression (same as Http1)
-        if (fileSize <= bodyMemoryThreshold()) {
-            bodyBuf.replace(gzipCompress(readFileContent(file, (int) fileSize)));
-            commit();
+    private void doStreamingCompressAndSend(File file, final long fileSize) throws IOException {
+        // small file: compressed in-memory and committed; large file falls through
+        if (tryCompressAndSendSmall(file, fileSize)) {
             return;
         }
 
@@ -325,14 +322,14 @@ public class Http2Response extends HttpInternalResponse {
         }
         committed = true;
         stream.flushCtx();
+        finish();
     }
 
     // The 'file' argument is guaranteed to already exist (caller/pre-check ensures it),
     // so we open and read it directly without an extra existence check.
-    private void sendFileFramed(File file) throws IOException {
+    private void sendFileFramed(File file, long fileSize) throws IOException {
         RandomAccessFile raf = new RandomAccessFile(file, "r");
         FileChannel fc = raf.getChannel();
-        long fileSize = file.length();
         long pos = 0;
         int chunkSize = stream.sendChunkSize();
         // Reusable buffer: pre-fill streamId (the only non-zero header field)
@@ -379,7 +376,6 @@ public class Http2Response extends HttpInternalResponse {
     private void writeFullResponse() throws IOException {
         // Recompute content-length from the buffered body to prevent length/body mismatch.
         int bodyLen = bodyBuf.size();
-        this.contentLength = bodyLen;
         HttpBuf hb = buildStaticHeaderBlock();             // frameBuf cleared inside
         boolean hasBody = bodyLen > 0;
         boolean windowReady = hasBody && bodyLen <= stream.sendChunkSize()
@@ -439,7 +435,7 @@ public class Http2Response extends HttpInternalResponse {
             buf.writeUnchecked(_H2_CONTENT_LENGTH_PREFIX);
             Http2Helper.writeHpackString(buf, String.valueOf(contentLength));
         }
-        if(!h2Headers.containsKey(HttpHeaderNames.DATE)) {
+        if (ctx.option(HttpOptions.HTTP2_EXPOSE_DATE_HEADER) && !h2Headers.containsKey(HttpHeaderNames.DATE)) {
             buf.writeUnchecked(_H2_DATE_PREFIX);
             // Shared, thread-mutated Date cache (offset 6, len 29); single-pass Huffman.
             writeHpackDate(buf, getCurrentDateHeaderLineBytes());

@@ -1,6 +1,5 @@
 package io.github.wycst.wastnet.http;
 
-import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import io.github.wycst.wastnet.socket.tcp.NioConfig;
 import org.junit.jupiter.api.Assertions;
@@ -9,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.Serializable;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
@@ -565,7 +565,6 @@ public class HttpInternalResponseTest {
         when(mockReq.getHttpVersion()).thenReturn(HttpVersion.HTTP_1_1);
         TestResponse resp = new TestResponse(mockReq, ChannelContext.EMPTY_CONTEXT);
         resp.body("content");
-        resp.autoGzipResult = true;
         Assertions.assertDoesNotThrow(() -> resp.complete());
     }
 
@@ -1178,13 +1177,6 @@ public class HttpInternalResponseTest {
             return request != null ? request.getHttpVersion() : null;
         }
 
-        boolean autoGzipResult = false;
-
-        @Override
-        protected boolean attemptAutoGzipAndSend() {
-            return autoGzipResult;
-        }
-
         @Override
         protected void sendFile0(File file, long fileSize, String mimeType, boolean shouldCompress) {
         }
@@ -1204,6 +1196,11 @@ public class HttpInternalResponseTest {
 
         // Public abstract methods no-op (only methods NOT implemented in HttpCompleteResponse)
         @Override protected void doAddHeader(String key, String value) {}
+
+        @Override
+        protected void directlyPutHeader(String key, Serializable value) {
+        }
+
         @Override public void removeHeader(String key) {}
         @Override public String getHeader(String key) { return null; }
 

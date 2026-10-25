@@ -1,5 +1,9 @@
 package io.github.wycst.wastnet.socket.tcp;
 
+import io.github.wycst.wastnet.log.Log;
+import io.github.wycst.wastnet.log.LogFactory;
+import io.github.wycst.wastnet.util.Utils;
+
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLEngineResult;
@@ -11,7 +15,7 @@ import java.nio.channels.SocketChannel;
  * SSL channel runner that handles SSL handshake and encrypted data processing.
  */
 class ChannelSSLRunner extends ChannelRunner {
-
+    static Log LOG = LogFactory.getLog(ChannelSSLRunner.class);
     boolean isSSL;
     boolean finishHandshake;
     SSLEngineContext sslEngineContext;
@@ -27,8 +31,27 @@ class ChannelSSLRunner extends ChannelRunner {
         super(worker, channelCtx, nioConfig);
     }
 
+    /**
+     * Create a client-mode runner whose handshake is completed synchronously before
+     * returning: a TLS client must send ClientHello first, which an OP_READ-only
+     * registration could never trigger. The returned runner is ready for app data.
+     */
+    static ChannelSSLRunner createClientRunner(ChannelWorker worker, SocketChannel channel,
+                                               NioConfig nioConfig, SSLContext sslCtx,
+                                               String[] sslCipherSuites) throws Exception {
+        SSLEngineContext engineCtx = new SSLEngineContext(sslCtx, sslCipherSuites,
+                nioConfig.getApplicationProtocols(), nioConfig.getEnabledProtocols(), true);
+        ChannelSSLContext channelCtx = ChannelSSLContext.createClientContext(
+                Utils.id(), channel, engineCtx);
+        ChannelSSLRunner runner = new ChannelSSLRunner(worker, channelCtx, nioConfig);
+        runner.isSSL = true;
+        runner.finishHandshake = true;
+        runner.sslEngineContext = engineCtx;
+        return runner;
+    }
+
     @Override
-    protected void beforeReady() {
+    protected boolean beforeReady() {
         if (!finishHandshake) {
             ChannelSSLContext sslChannelContext = (ChannelSSLContext) ctx;
             this.sslEngineContext = sslChannelContext.sslEngineCtx;
@@ -40,11 +63,13 @@ class ChannelSSLRunner extends ChannelRunner {
                 } catch (IOException ignored) {
                     LOG.debug("release after handshake failure");
                 }
-                return;
+                return false;
             }
+            if (handShakeFlag == 2) return false;
             this.isSSL = handShakeFlag == 1;
             this.finishHandshake = true;
         }
+        return true;
     }
 
     @Override
@@ -54,7 +79,7 @@ class ChannelSSLRunner extends ChannelRunner {
             SSLEngine sslEngine = sslEngineContext.sslEngine;
             ByteBuffer packetInBuf = sslEngineContext.packetInBuf;
             ByteBuffer applicationInBuf = sslEngineContext.applicationInBuf;
-            // packetInBuf.clear(); // do not call clear()
+            // may carry residual bytes (e.g. app data after the last flight): append, never clear()
             int bytesNum = sslCtx.channelRead(packetInBuf);
             if (bytesNum == -1) {
                 return -1;
@@ -101,47 +126,34 @@ class ChannelSSLRunner extends ChannelRunner {
      * SSL handshake
      *
      * @param sslEngineContext sslEngineContext
-     * @return 0: not finish handshake (plain text), 1: finish handshake, -1: close/error
+     * @return 0: not finish handshake (plain text), 1: finish handshake, 2: suspended waiting for peer data, -1: close/error
      */
     private int sslHandShake(SSLEngineContext sslEngineContext) {
         try {
+            ChannelSSLContext sslChannelContext = (ChannelSSLContext) ctx;
             ByteBuffer packetInBuf = sslEngineContext.packetInBuf;
-            int size = ctx.channelRead(packetInBuf);
-            // the first time data is read after an SSL connection is completed, the packetInBuf must be empty
-            // if size is 0, read until size is not 0
-            long deadline = ((ChannelSSLContext) ctx).getSSLHandshakeDeadline();
-            while (size == 0) {
-                if (System.currentTimeMillis() > deadline) {
-                    LOG.debug("SSL handshake timeout");
-                    return -1;
+            // Pre-read + plaintext detection run only once; later OP_READ re-enters drive the engine directly.
+            if (!sslChannelContext.handshakeStarted) {
+                int size = channelReadInternal(packetInBuf);
+                if (size < 1) return size == 0 ? 2 : -1;
+                if (nioConfig.isAllowPlaintextWhenSslEnabled() && isMaybePlaintext(packetInBuf)) {
+                    channelReader.init(ctx);
+                    ready = true; // reader initialized here; before() must not init again
+                    sslEngineContext.setDisabled(true);
+                    int capacity = packetInBuf.capacity();
+                    do {
+                        packetInBuf.flip();
+                        read(packetInBuf);
+                        packetInBuf.clear();
+                        if (size < capacity) {
+                            return 0;
+                        }
+                        if ((size = channelReadInternal(packetInBuf)) < 1) return size;
+                    } while (true);
                 }
-                Thread.sleep(5);
-                size = ctx.channelRead(packetInBuf);
             }
-            if (size == -1) {
-                return -1;
-            }
-            if (isMaybePlaintext(packetInBuf)) {
-                if (!nioConfig.isAllowPlaintextWhenSslEnabled()) {
-                    return -1;  // plaintext rejected
-                }
-                channelReader.init(ctx);
-                sslEngineContext.setDisabled(true);
-                int capacity = packetInBuf.capacity();
-                do {
-                    packetInBuf.flip();
-                    read(packetInBuf);
-                    packetInBuf.clear();
-                    if (size < capacity) {
-                        return 0;
-                    }
-                    size = ctx.channelRead(packetInBuf);
-                    if (size == -1) return -1;
-                } while (true);
-            }
-            // Proceed with SSL handshake (packetInBuf already contains pre-read data)
-            ((ChannelSSLContext) ctx).doHandshake();
-            return 1;
+            // Proceed with SSL handshake (packetInBuf may carry pre-read/residual data)
+            return sslChannelContext.doHandshake(false) ? 1 : 2;
         } catch (Throwable e) {
             if (nioConfig.isPrintSSLErrorLog()) {
                 LOG.error("SSL handshake failed", e);

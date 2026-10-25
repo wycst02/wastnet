@@ -11,7 +11,9 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import javax.net.ssl.*;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.security.cert.X509Certificate;
@@ -157,7 +159,7 @@ public class SslTlsIntegrationTest {
             resp.close();
             Assertions.fail("Plain HTTP to TLS port should fail");
         } catch (Exception e) {
-            Assertions.assertTrue(e instanceof IOException || e instanceof SSLException,
+            Assertions.assertTrue(e instanceof java.io.IOException || e instanceof javax.net.ssl.SSLException,
                     "Should fail with IO or SSL exception");
         }
     }

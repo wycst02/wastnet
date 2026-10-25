@@ -17,14 +17,19 @@ package io.github.wycst.wastnet.http.handler;
 
 import io.github.wycst.wastnet.env.RuntimeEnv;
 import io.github.wycst.wastnet.http.*;
+import io.github.wycst.wastnet.log.Log;
+import io.github.wycst.wastnet.log.LogFactory;
 
 import java.io.File;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * static resource route.
@@ -34,6 +39,8 @@ import java.util.Map;
 public class HttpResourceRoute implements HttpRoute {
 
     private static final FileSystem DEFAULT_FS = FileSystems.getDefault(); // cached to avoid File.toPath() sync
+
+    static final Log log = LogFactory.getLog(HttpResourceRoute.class);
 
     // Symlinks are not recommended in static resource dirs (a symlink can point outside docBase and bypass the path-traversal guard); avoid them in production.
     private final File docBaseDir;
@@ -45,7 +52,18 @@ public class HttpResourceRoute implements HttpRoute {
     byte[] forbiddenBytes;
     private boolean strictMode = true;
     boolean checkSymlinks; // true = check symlinks at runtime (unless docBase scanned clean or allowed)
-    private boolean cacheEnabled = true;
+    private boolean cacheControlEnabled = !"false".equalsIgnoreCase(System.getProperty("wastnet.http.static.cache-control.enabled"));
+    private boolean detectPreCompressed;
+    // In-memory cache of pre-compressed variants; active only with detectPreCompressed, lock-free reads.
+    private boolean contentCacheEnabled = !"false".equalsIgnoreCase(System.getProperty("wastnet.http.static.content-cache.enabled"));
+    private static final int CONTENT_CACHE_MAX_ENTRIES = 64;            // must be a power of two
+    private static final long CONTENT_CACHE_MAX_FILE_SIZE = 64L * 1024L; // 64KB cap
+    // Ring buffer: write cursor wraps and overwrites the oldest slot; reads stay lock-free.
+    private final Object contentCacheLock = new Object();
+    private final String[] contentCacheRing = new String[CONTENT_CACHE_MAX_ENTRIES];
+    // path -> entry; the ring holds keys in FIFO order so eviction drops the oldest mapping.
+    private final ConcurrentHashMap<String, ContentCacheEntry> contentCacheIndex = new ConcurrentHashMap<>();
+    private int contentCachePos = 0;
     String defaultCacheControl = "max-age=0, must-revalidate";
     private final Map<String, String> mimeCacheControlRules = new HashMap<String, String>();
     String[] earlyHintLinks;
@@ -151,8 +169,33 @@ public class HttpResourceRoute implements HttpRoute {
      * Default is {@code true}. When disabled, the server always serves the full file
      * without checking {@code If-None-Match} or {@code If-Modified-Since} headers.
      */
-    public HttpResourceRoute cacheEnabled(boolean cacheEnabled) {
-        this.cacheEnabled = cacheEnabled;
+    public HttpResourceRoute cacheControlEnabled(boolean cacheControlEnabled) {
+        this.cacheControlEnabled = cacheControlEnabled;
+        return this;
+    }
+
+    /**
+     * Enable detection of pre-compressed static files ({@code .gz} / {@code .br}).
+     * When enabled and the client sends a matching {@code Accept-Encoding},
+     * the pre-compressed file is served directly, skipping runtime compression.
+     *
+     * @param enabled true to detect pre-compressed files, false to disable (default)
+     */
+    public HttpResourceRoute detectPreCompressed(boolean enabled) {
+        this.detectPreCompressed = enabled;
+        return this;
+    }
+
+    /**
+     * Enable in-memory caching of pre-compressed (.br/.gz) static file variants.
+     * Default is {@code false}. Only effective when {@link #detectPreCompressed(boolean)}
+     * is also enabled, because entries are populated solely on the pre-compressed
+     * serving path. Files larger than 16KB are never cached; the cache holds at most
+     * 64 entries with insertion-order (approximate LRU) eviction. Hot reads are
+     * lock-free; synchronization happens only on a cache miss that fills the cache.
+     */
+    public HttpResourceRoute contentCacheEnabled(boolean enabled) {
+        this.contentCacheEnabled = enabled;
         return this;
     }
 
@@ -307,7 +350,8 @@ public class HttpResourceRoute implements HttpRoute {
 
     @Override
     public void handle(String path, HttpRequest request, HttpResponse response) throws Throwable {
-        if (strictMode && request.getMethod() != HttpMethod.GET) {
+        if (strictMode && request.getMethod() != HttpMethod.GET && request.getMethod() != HttpMethod.HEAD) {
+            log.debug("Method not allowed: {} (request path: {})", request.getMethod(), path);
             response.status(HttpStatus.METHOD_NOT_ALLOWED)
                     .header(HttpHeaderNormalized.getAllow(), "GET, HEAD")
                     .body(notAllowedBytes);
@@ -345,6 +389,7 @@ public class HttpResourceRoute implements HttpRoute {
         }
 
         if (file == null || !file.isFile()) {
+            log.debug("Resource not found or not a regular file: {} (request path: {})", file, path);
             response.status(HttpStatus.NOT_FOUND).body(notFoundBytes);
             return;
         }
@@ -360,7 +405,95 @@ public class HttpResourceRoute implements HttpRoute {
             sendEarlyHints(response);
         }
 
-        String mimeType = HttpHeaderUtils.getMimeTypeByFilename(file.getName(), HttpHeaderValues.APPLICATION_OCTET_STREAM);
-        response.sendFile(file, cacheEnabled, resolveCacheControl(mimeType), mimeType);
+        String mimeType = HttpHeaderUtils.getMimeTypeByFilename(file.getPath(), HttpHeaderValues.APPLICATION_OCTET_STREAM);
+        String cacheControl = resolveCacheControl(mimeType);
+        if (detectPreCompressed) {
+            String acceptEncoding = request.getHeader(HttpHeaderNormalized.getAcceptEncoding(), true);
+            if (acceptEncoding != null) {
+                // br takes priority over gzip (better compression ratio)
+                if (acceptEncoding.contains("br") && trySendPreCompressed(file, ".br", "br", response, cacheControlEnabled, cacheControl, mimeType))
+                    return;
+                if (acceptEncoding.contains("gzip") && trySendPreCompressed(file, ".gz", HttpHeaderValues.GZIP, response, cacheControlEnabled, cacheControl, mimeType))
+                    return;
+            }
+        }
+        response.sendFile(file, cacheControlEnabled, cacheControl, mimeType);
+    }
+
+    private boolean trySendPreCompressed(File file, String suffix, String encoding,
+            HttpResponse response, boolean cacheControlEnabled, String cacheControl, String mimeType) throws IOException {
+        File preCompressed = new File(file.getPath() + suffix);
+        if (preCompressed.isFile()) {
+            if (contentCacheEnabled) {
+                final String path = preCompressed.getPath();
+                BasicFileAttributes attrs = Files.readAttributes(preCompressed.toPath(), BasicFileAttributes.class);
+                long size = attrs.size();
+                long mtime = attrs.lastModifiedTime().toMillis();
+                if (size <= CONTENT_CACHE_MAX_FILE_SIZE) {
+                    if(cacheControlEnabled && ((HttpInternalResponse) response).handleNotModified(size, mtime, cacheControl)) {
+                        return true;
+                    }
+                    // Hot path: lock-free lookup + disk-following validation.
+                    ContentCacheEntry e = contentCacheIndex.get(path);
+                    if (e != null && e.size == size && e.mtime == mtime) {
+                        writeCachedBody(response, e.data, encoding, mimeType);
+                        return true;
+                    }
+                    // Cache miss: resolve inside the lock so concurrent misses read the disk once and reuse a filled entry.
+                    byte[] data;
+                    synchronized (contentCacheLock) {
+                        ContentCacheEntry existing = contentCacheIndex.get(path);
+                        if (existing != null && existing.size == size && existing.mtime == mtime) {
+                            // Another thread just filled it (or it was refreshed); reuse as-is.
+                            data = existing.data;
+                        } else {
+                            data = Files.readAllBytes(preCompressed.toPath());
+                            int slot = (existing != null) ? existing.slot : contentCachePos;
+                            String oldKey = contentCacheRing[slot];
+                            if (oldKey != null && !oldKey.equals(path)) {
+                                contentCacheIndex.remove(oldKey);
+                            }
+                            contentCacheRing[slot] = path;
+                            contentCacheIndex.put(path,
+                                    new ContentCacheEntry(data, size, mtime, slot));
+                            if (existing == null) {
+                                contentCachePos = (contentCachePos + 1) & (CONTENT_CACHE_MAX_ENTRIES - 1);
+                            }
+                        }
+                    }
+                    writeCachedBody(response, data, encoding, mimeType);
+                    return true;
+                }
+                // oversized: fall through to sendFile below
+            }
+            // Not cached (disabled / oversized): fall through to sendFile (streaming/framed, not OS zero-copy)
+            response.header(HttpHeaderNames.CONTENT_ENCODING, encoding);
+            response.header(HttpHeaderNames.VARY, HttpHeaderNames.ACCEPT_ENCODING);
+            response.sendFile(preCompressed, cacheControlEnabled, cacheControl, mimeType);
+            return true;
+        }
+        return false;
+    }
+
+    private void writeCachedBody(HttpResponse response, byte[] data, String encoding,
+            String mimeType) {
+        response.header(HttpHeaderNames.CONTENT_ENCODING, encoding);
+        response.header(HttpHeaderNames.VARY, HttpHeaderNames.ACCEPT_ENCODING);
+        response.contentType(mimeType).body(data);
+    }
+
+    /** Cache value: file bytes plus disk attributes (size/mtime) and its ring slot for in-place updates. */
+    private static final class ContentCacheEntry {
+        final byte[] data;
+        final long size;
+        final long mtime;
+        final int slot;
+
+        ContentCacheEntry(byte[] data, long size, long mtime, int slot) {
+            this.data = data;
+            this.size = size;
+            this.mtime = mtime;
+            this.slot = slot;
+        }
     }
 }

@@ -73,9 +73,9 @@ public class DevHotReloader {
     // On-disk config file paths (besides .class) that additionally trigger a reload; null = .class only.
     volatile Set<String> reloadPaths = null;
 
-    // Non-jar classpath dirs except the framework's own (reloading it breaks annotation identity).
-    // Constant for the JVM's lifetime, so it is computed once and reused by every reload.
-    private static final List<URL> PROJECT_DIRS = Collections.unmodifiableList(computeProjectDirs());
+    // Classpath dirs excluding the framework marker modules; computed on set, constant afterward.
+    private volatile List<URL> projectDirs =
+            Collections.unmodifiableList(computeProjectDirs(DevHotReloader.class));
 
     public DevHotReloader(ReloadAction action) {
         this.action = Objects.requireNonNull(action, "reload action must not be null");
@@ -108,6 +108,19 @@ public class DevHotReloader {
         this.reloadPaths = paths;
     }
 
+    /**
+     * Set the framework marker classes whose module dirs must be excluded from hot reload, so their
+     * classes keep a single identity in the parent loader. Called by the entry point (e.g.
+     * AnnotationRouterHandler) to register the framework modules; defaults to this class only.
+     */
+    public DevHotReloader frameworkMarkerClasses(Class<?>... classes) {
+        if (classes != null && classes.length > 0) {
+            // Recompute the excluded dirs eagerly; called only before the server starts.
+            projectDirs = Collections.unmodifiableList(computeProjectDirs(classes));
+        }
+        return this;
+    }
+
     /** Whether the current run is a development environment. Result is cached. */
     boolean isDevEnvironment() {
         if (devEnvironment == null) {
@@ -118,7 +131,7 @@ public class DevHotReloader {
 
     /** Start the dev watcher over the project dirs (called from the router's prepare()). */
     void startWatcher() {
-        List<URL> dirs = PROJECT_DIRS;
+        List<URL> dirs = projectDirs;
         if (devWatcher != null || hotReloadDisabled || !isDevEnvironment() || dirs.isEmpty()) return;
         WatchService ws;
         try {
@@ -218,7 +231,7 @@ public class DevHotReloader {
     /** Build a fresh app class loader over the project's own compiled output directories. */
     ClassLoader buildAppLoader() {
         ClassLoader base = getBaseClassLoader();
-        List<URL> dirs = PROJECT_DIRS;
+        List<URL> dirs = projectDirs;
         if (dirs.isEmpty()) return base;
         return new RestartClassLoader(dirs.toArray(new URL[0]), base);
     }
@@ -256,20 +269,21 @@ public class DevHotReloader {
         }
     }
 
-    private static List<URL> computeProjectDirs() {
+    private static List<URL> computeProjectDirs(Class<?>... frameworkMarkerClasses) {
         List<URL> dirs = new ArrayList<>();
-        // Exclude the framework's own dir (reloading it breaks annotation identity).
-        // null = "can't tell" -> don't exclude (safe).
-        String frameworkPath = null;
-        try {
-            CodeSource cs = DevHotReloader.class.getProtectionDomain().getCodeSource();
-            if (cs != null) {
-                URL loc = cs.getLocation();
-                if (loc != null && "file".equals(loc.getProtocol())) {
-                    frameworkPath = normalize(loc);
+        // Framework module dirs excluded from hot reload so their classes keep a single identity.
+        Set<String> frameworkPaths = new HashSet<>();
+        for (Class<?> frameworkClass : frameworkMarkerClasses) {
+            try {
+                CodeSource cs = frameworkClass.getProtectionDomain().getCodeSource();
+                if (cs != null) {
+                    URL loc = cs.getLocation();
+                    if (loc != null && "file".equals(loc.getProtocol())) {
+                        frameworkPaths.add(normalize(loc));
+                    }
                 }
+            } catch (Exception ignored) {
             }
-        } catch (Exception ignored) {
         }
         String cp = System.getProperty("java.class.path", "");
         for (String entry : cp.split(Pattern.quote(File.pathSeparator))) {
@@ -278,7 +292,7 @@ public class DevHotReloader {
             try {
                 URL url = f.toURI().toURL();
                 String p = normalize(url); // throws on malformed -> outer catch skips the entry
-                if (frameworkPath != null && frameworkPath.equals(p)) continue;
+                if (frameworkPaths.contains(p)) continue;
                 if (!dirs.contains(url)) dirs.add(url);
             } catch (Exception ignored) {
                 // malformed classpath entry — skip it

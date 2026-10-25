@@ -32,6 +32,17 @@ import java.io.Serializable;
 public interface WebSocketConnection {
 
     /**
+     * Send text message using raw UTF-8 bytes (zero-copy).
+     * <p>
+     * The bytes are framed directly as a TEXT message without an intermediate
+     * {@link String} decode/encode; the caller must ensure they are valid UTF-8.
+     *
+     * @param data text payload in UTF-8 bytes
+     * @throws IOException throws IO exception when sending fails
+     */
+    void sendText(byte[] data) throws IOException;
+
+    /**
      * Send text message
      *
      * @param message text message content

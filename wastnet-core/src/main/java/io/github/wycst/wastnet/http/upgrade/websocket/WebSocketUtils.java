@@ -5,8 +5,9 @@ import io.github.wycst.wastnet.http.upgrade.UpgradeWebSocketHolder;
 import io.github.wycst.wastnet.log.Log;
 import io.github.wycst.wastnet.log.LogFactory;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
-import io.github.wycst.wastnet.util.Utils;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 
 /**
@@ -53,6 +54,33 @@ public class WebSocketUtils {
     }
 
     /**
+     * Send a server WebSocket frame under the channel lock (thread-safe), writing the
+     * header and payload separately to avoid the intermediate {@code byte[]} allocation.
+     * Flushes per frame unless in explicit SYNC (batch) mode.
+     *
+     * @param ctx     channel context (used as the synchronization monitor)
+     * @param type    frame type
+     * @param payload payload bytes (non-null; guaranteed by all callers)
+     * @param fin     final frame flag
+     * @throws IOException if writing fails
+     */
+    static void sendServerFrame(ChannelContext ctx, WebSocketFrame.FrameType type, byte[] payload, boolean fin) throws IOException {
+        synchronized (ctx) {
+            int len = payload.length;
+            int headerLength = frameHeaderLength(len);
+            byte[] header = ctx.scratchBuf;
+            writeServerFrameHeader(type, len, fin, header, 0);
+            ctx.write(header, 0, headerLength);
+            if (len > 0) {
+                ctx.write(payload);
+            }
+            if (!ctx.isSyncMode()) {
+                ctx.flush();
+            }
+        }
+    }
+
+    /**
      * Compute the WebSocket frame header size for a given payload length.
      */
     public static int frameHeaderLength(int payloadLength) {
@@ -71,7 +99,7 @@ public class WebSocketUtils {
      * @param dest     destination buffer
      * @param destOff  offset in destination buffer
      */
-    public static void writeServerFrameHeader(WebSocketFrame.FrameType type, int len, boolean fin,
+    static void writeServerFrameHeader(WebSocketFrame.FrameType type, int len, boolean fin,
                                               byte[] dest, int destOff) {
         int pos = destOff;
         dest[pos++] = (byte) ((fin ? 0x80 : 0x00) | (type.opcode & 0x0F));
@@ -83,7 +111,7 @@ public class WebSocketUtils {
             dest[pos] = (byte) (len & 0xFF);
         } else {
             dest[pos++] = (byte) 127;
-            pos += 4; // high 32 bits always zero (int max < 2^31), skip 4 bytes
+            dest[pos++] = dest[pos++] = dest[pos++] = dest[pos++] = 0;
             dest[pos++] = (byte) ((len >> 24) & 0xFF);
             dest[pos++] = (byte) ((len >> 16) & 0xFF);
             dest[pos++] = (byte) ((len >> 8) & 0xFF);
@@ -101,7 +129,7 @@ public class WebSocketUtils {
     public static void sendCloseFrame(ChannelContext ctx, int code, String reason) {
         try {
             // pre-encode reason string to avoid repeated getBytes calls
-            byte[] reasonBytes = reason != null ? reason.getBytes(Utils.UTF_8) : new byte[0];
+            byte[] reasonBytes = reason != null ? reason.getBytes(StandardCharsets.UTF_8) : new byte[0];
             // RFC 6455: close reason must be <= 123 bytes; truncate if longer
             int reasonLen = Math.min(reasonBytes.length, 123);
 
@@ -195,12 +223,14 @@ public class WebSocketUtils {
 
     /**
      * Get the effective max payload size for the current WebSocket connection.
-     * Reads from the endpoint-level {@link WebSocketResource#getMaxPayloadSize()},
-     * falling back to {@link HttpConf#MAX_WS_FRAME_SIZE} if not bound.
+     * Reads from the endpoint-level {@link WebSocketResource#getMaxPayloadSize()} of
+     * the {@link UpgradeWebSocketHolder} bound to the context.
+     *
+     * <p>Requires the context to have completed the WebSocket upgrade — the holder is
+     * bound during {@code doHandshake} and never cleared afterwards, so it is safe to
+     * dereference directly here.
      */
     public static int getMaxPayloadSize(ChannelContext ctx) {
-        // holder is always non-null after upgrade; null only via illegal reflection on binding
-        UpgradeWebSocketHolder holder = (UpgradeWebSocketHolder) ctx.binding();
-        return holder != null ? holder.resource.getMaxPayloadSize() : HttpConf.MAX_WS_FRAME_SIZE;
+        return ((UpgradeWebSocketHolder) ctx.binding()).resource.getMaxPayloadSize();
     }
 }

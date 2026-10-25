@@ -111,6 +111,7 @@ public class Http2ServerReader extends Http2MessageReader {
             throw e;
         }
         this.createdAt = System.currentTimeMillis();
+        ctx.initSyncTaskQueueIfNeeded(this.maxServerConcurrentStreams);
         H2Monitor.register(ctx.getId(), this);
     }
 

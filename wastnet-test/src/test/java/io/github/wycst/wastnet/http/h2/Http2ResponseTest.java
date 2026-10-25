@@ -1,12 +1,8 @@
 package io.github.wycst.wastnet.http.h2;
 
-import io.github.wycst.wastnet.http.HttpBuf;
-import io.github.wycst.wastnet.http.HttpConf;
-import io.github.wycst.wastnet.http.HttpHeaderNames;
-import io.github.wycst.wastnet.http.HttpOptions;
-import io.github.wycst.wastnet.http.HttpVersion;
-import io.github.wycst.wastnet.socket.tcp.NioConfig;
+import io.github.wycst.wastnet.http.*;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
+import io.github.wycst.wastnet.socket.tcp.NioConfig;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -14,11 +10,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -432,6 +424,16 @@ public class Http2ResponseTest {
         verify(f.stream, never()).writeFrame(any(ByteBuffer.class), anyBoolean());
     }
 
+    @Test
+    void testEarlyHintsRejectsCrLf() throws Exception {
+        MockFixture f = createMockFixture();
+        assertThrows(IllegalArgumentException.class,
+                () -> f.response.earlyHints("</style.css>; rel=preload\r\nX-Injected: evil"));
+        // clean value still passes
+        f.response.earlyHints("</style.css>; rel=preload");
+        verify(f.stream, atLeastOnce()).writeFrame(any(ByteBuffer.class));
+    }
+
     // ==================== isChunked ====================
 
     @Test
@@ -444,7 +446,7 @@ public class Http2ResponseTest {
     @Test
     void testSendFile0SmallFile() throws Exception {
         MockFixture f = createMockFixture();
-        File tmp = File.createTempFile("h2test", ".txt");
+        java.io.File tmp = java.io.File.createTempFile("h2test", ".txt");
         try {
             java.io.FileOutputStream fos = new java.io.FileOutputStream(tmp);
             fos.write("small content".getBytes());
@@ -459,7 +461,7 @@ public class Http2ResponseTest {
     @Test
     void testSendFile0WithGzip() throws Exception {
         MockFixture f = createMockFixture();
-        File tmp = File.createTempFile("h2gzip", ".txt");
+        java.io.File tmp = java.io.File.createTempFile("h2gzip", ".txt");
         try {
             java.io.FileOutputStream fos = new java.io.FileOutputStream(tmp);
             fos.write("compressible content".getBytes());
@@ -644,16 +646,16 @@ public class Http2ResponseTest {
     }
 
     @Test
-    void testResetInternalViaCompleteWhenAutoCommitFalse() throws Exception {
+    void testCompleteAfterHandoverIsNoOp() throws Exception {
         MockFixture f = createMockFixture();
-        // h2Headers populated so resetInternal's h2Headers.clear() has something to clear
         f.response.addHeader("x-test", "value");
         assertNotNull(f.response.getHeader("x-test"));
-        // handover() flips autoCommit to false; complete() then takes the flush()+resetInternal() branch
+        // handover() marks the response committed; complete() then short-circuits in commit()
         f.response.handover();
         f.response.complete();
-        // h2Headers cleared by resetInternal (super.resetInternal clears bodyBuf, subclass clears h2Headers)
-        assertNull(f.response.getHeader("x-test"));
+        // no frame written and internals untouched: the handover owner drives the response
+        verify(f.stream, never()).writeFrame(any(ByteBuffer.class), anyBoolean());
+        assertNotNull(f.response.getHeader("x-test"));
     }
 
     @Test
@@ -773,5 +775,23 @@ public class Http2ResponseTest {
         f.response.body("tiny".getBytes()); // 4 bytes < 2048 GZIP_MIN_SIZE
         f.response.complete();
         assertEquals("200", decodeSentHeaders(f).get(":status"));
+    }
+
+    @Test
+    public void testResetInternalClearsHeaders() {
+        Http2ServerStream stream = mock(Http2ServerStream.class);
+        Http2Request req = mock(Http2Request.class);
+        when(req.getHttpVersion()).thenReturn(HttpVersion.HTTP_2);
+        when(req.stream()).thenReturn(stream);
+        ChannelContext ctx = mock(ChannelContext.class);
+        Http2Response resp = new Http2Response(req, stream, ctx);
+
+        resp.header("Content-Type", "text/plain");
+        assertEquals("text/plain", resp.getHeader("Content-Type"));
+
+        resp.resetInternal();
+        assertNull(resp.getHeader("Content-Type"));
+
+        resp.resetInternal();
     }
 }

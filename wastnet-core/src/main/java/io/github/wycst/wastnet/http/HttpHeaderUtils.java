@@ -398,6 +398,18 @@ public class HttpHeaderUtils {
     }
 
     /**
+     * Require the target to contain no CR or LF (header injection defense); returns it for chaining.
+     * Null passes through unchanged.
+     */
+    public static String requireNoCRLF(String target, String msg) {
+        if (target == null) return null;
+        if (target.indexOf('\r') > -1 || target.indexOf('\n') > -1) {
+            throw new IllegalArgumentException(msg);
+        }
+        return target;
+    }
+
+    /**
      * Immutable Header configuration
      * Used to manage HeaderMergeStrategy and HeaderFormatStrategy configuration
      */

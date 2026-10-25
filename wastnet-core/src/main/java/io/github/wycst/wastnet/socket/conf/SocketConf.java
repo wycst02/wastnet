@@ -32,12 +32,12 @@ public final class SocketConf extends Conf {
     public static final int SELECT_EMPTY_COUNT;
 
     /**
-     * Default sync runner.
-     * Key: {@code wastnet.socket.default-sync-runner}
+     * Default sync mode: {@code true} forces SYNC, {@code false} forces ASYNC, absent falls back to AUTO (fast-path prediction).
+     * Key: {@code wastnet.socket.default-sync-mode}
      * <p>
-     * Example: -Dwastnet.socket.default-sync-runner=true
+     * Example: -Dwastnet.socket.default-sync-mode=true
      */
-    public static final boolean DEFAULT_SYNC_RUNNER;
+    public static final Boolean DEFAULT_SYNC_MODE;
 
     private static final Properties APP_PROPS;
 
@@ -109,13 +109,31 @@ public final class SocketConf extends Conf {
      */
     public static final long GRACEFUL_SHUTDOWN_TIMEOUT_MS;
 
+    /**
+     * Enable TCP keep-alive on accepted connections (default: true).
+     * Key: {@code wastnet.socket.tcp-keepalive}.
+     * Lets the OS detect a silently-disappeared peer (no FIN/RST) and release it
+     * instead of leaking as a half-open socket; use an idle timeout for alive-but-idle peers.
+     */
+    public static final boolean TCP_KEEPALIVE;
+
+    /**
+     * Listen backlog (completed-handshake connections waiting to be accepted).
+     * Key: {@code wastnet.socket.tcp-backlog}.
+     * <p>
+     * Default: 1024. The OS may clamp it (e.g. Linux {@code net.core.somaxconn});
+     * 0 falls back to the platform-specific default.
+     */
+    public static final int TCP_BACKLOG;
+
     static {
         APP_PROPS = ConfigLoader.createFileProps("wastnet-socket.properties");
 
         ENABLE_VIRTUAL_THREAD = RuntimeEnv.JDK_VERSION >= 21f && isPropTrue(APP_PROPS, "wastnet.socket.virtual-thread.enabled");
         SELECT_TIMEOUT_MS = Math.min(100, getPropInt(APP_PROPS, "wastnet.socket.select-timeout-ms", 100)); // 10 - 100ms
         SELECT_EMPTY_COUNT = getPropInt(APP_PROPS, "wastnet.socket.select-empty-count", 1024);
-        DEFAULT_SYNC_RUNNER = isPropTrue(APP_PROPS, "wastnet.socket.default-sync-runner");
+        String syncModeProp = APP_PROPS.getProperty("wastnet.socket.default-sync-mode");
+        DEFAULT_SYNC_MODE = syncModeProp == null ? null : Boolean.parseBoolean(syncModeProp.trim());
         // Maximum concurrent requests (default: CPU cores * 100, -1 = unbounded)
         int cpuCores = Runtime.getRuntime().availableProcessors();
         int maxConcurrent = getPropInt(APP_PROPS, "wastnet.socket.max-concurrent", cpuCores * 100);
@@ -134,6 +152,10 @@ public final class SocketConf extends Conf {
         WRITE_TIMEOUT_MS = Math.max(0, getPropLong(APP_PROPS, "wastnet.socket.write-timeout-ms", 30000L));
         // Graceful shutdown timeout (10 seconds)
         GRACEFUL_SHUTDOWN_TIMEOUT_MS = Math.max(0, getPropLong(APP_PROPS, "wastnet.socket.graceful-shutdown-timeout-ms", 10000L));
+        // TCP keep-alive on accepted connections (default: true)
+        TCP_KEEPALIVE = isPropTrue(APP_PROPS, "wastnet.socket.tcp-keepalive", true);
+        // Listen backlog (default: 1024; 0 = platform default)
+        TCP_BACKLOG = Math.max(0, getPropInt(APP_PROPS, "wastnet.socket.tcp-backlog", 1024));
     }
 
     public static String getProperty(String key) {

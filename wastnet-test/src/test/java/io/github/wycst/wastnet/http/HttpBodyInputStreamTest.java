@@ -7,9 +7,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 
 import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for {@link HttpBodyInputStream} — streaming request body reader.

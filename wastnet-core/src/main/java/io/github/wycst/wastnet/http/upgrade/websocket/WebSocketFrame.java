@@ -1,8 +1,8 @@
 package io.github.wycst.wastnet.http.upgrade.websocket;
 
 import io.github.wycst.wastnet.http.HttpUpgradeMessage;
-import io.github.wycst.wastnet.util.Utils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 /**
@@ -25,7 +25,7 @@ public final class WebSocketFrame implements HttpUpgradeMessage {
 
     public static WebSocketFrame textOf(String payload) {
         return new WebSocketFrame(FrameType.TEXT,
-                WebSocketUtils.encodeServerFrame(FrameType.TEXT, payload.getBytes(Utils.UTF_8), true), true);
+                WebSocketUtils.encodeServerFrame(FrameType.TEXT, payload.getBytes(StandardCharsets.UTF_8), true), true);
     }
 
     public static WebSocketFrame binaryOf(byte[] payload) {

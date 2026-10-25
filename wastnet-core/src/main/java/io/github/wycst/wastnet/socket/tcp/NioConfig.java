@@ -1,5 +1,6 @@
 package io.github.wycst.wastnet.socket.tcp;
 
+import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.socket.channel.ChannelReader;
 import io.github.wycst.wastnet.socket.channel.ChannelReaderFactory;
 import io.github.wycst.wastnet.socket.conf.Option;
@@ -7,6 +8,7 @@ import io.github.wycst.wastnet.socket.conf.SocketConf;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import io.github.wycst.wastnet.socket.handler.ClearableHandler;
 import io.github.wycst.wastnet.socket.handler.IdleStateHandler;
+import io.github.wycst.wastnet.util.Utils;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -26,11 +28,8 @@ public final class NioConfig {
     private static int defaultBufferSize = 1024;
 
     static {
-        int availableProcessors = Runtime.getRuntime().availableProcessors();
-        int hob = Integer.highestOneBit(availableProcessors);
-        int computed = hob == availableProcessors ? availableProcessors : hob >> 1;
-        defaultWorkerNum = Math.max(2, computed);
-        MAX_WORKER_NUM = defaultWorkerNum << 2;
+        defaultWorkerNum = Utils.powerOfWorkerNum(Runtime.getRuntime().availableProcessors());
+        MAX_WORKER_NUM = defaultWorkerNum << 3;
     }
 
     private int readBufferSize = defaultBufferSize;
@@ -40,7 +39,8 @@ public final class NioConfig {
 
     private boolean printSSLErrorLog;
 
-    private boolean syncRunner = SocketConf.DEFAULT_SYNC_RUNNER;
+    // Nullable 3-state sync mode: null = AUTO (defer to connection fast-path prediction), true = SYNC (force), false = ASYNC (force)
+    Boolean syncMode = SocketConf.DEFAULT_SYNC_MODE;
     private boolean printReadErrorLog;
     private boolean printApplicationMessage;
     private ChannelReader<?> channelReader = ChannelReader.UNDO;
@@ -60,6 +60,11 @@ public final class NioConfig {
     // Strongly-typed per-server overrides; absent keys fall back to Option.defaultValue.
     // Option instances are used directly as keys, so no string keys are needed.
     private final Map<Option<?>, Object> options = new HashMap<>();
+
+    // Benchmark-only flag: optimizes the server for measuring pure
+    // throughput by eliminating request-handling thread switches (handler runs inline).
+    // WARNING: MUST NOT be enabled in production
+    boolean testMode;
 
     /**
      * Get a strongly-typed configuration option value for this server instance.
@@ -121,19 +126,48 @@ public final class NioConfig {
         return this;
     }
 
-    public boolean isSyncRunner() {
-        return syncRunner;
+    /**
+     * Whether the sync mode is explicitly forced to SYNC. Returns true only when set to
+     * {@code true}; both AUTO ({@code null}, defer to fast-path prediction) and
+     * explicit {@code ASYNC} (false) return false.
+     */
+    public boolean isSyncMode() {
+        return syncMode == Boolean.TRUE;
     }
 
-    public void setSyncRunner(boolean syncRunner) {
-        this.syncRunner = syncRunner;
+    /**
+     * Explicit sync-mode control. {@code true} forces synchronous execution (SYNC),
+     * {@code false} forces asynchronous dispatch (ASYNC); both ignore the fast-path prediction.
+     * Passing {@code null} resets to AUTO.
+     */
+    public NioConfig syncMode(Boolean syncMode) {
+        this.syncMode = syncMode;
+        return this;
     }
 
-    // Test-only mode: enables pipelining, sync runner and plaintext-over-ssl. Not for production.
+    /**
+     * Benchmark-only mode for measuring raw throughput. It bundles three production-unsafe
+     * toggles that trade correctness/isolation for speed — <b>DO NOT enable in production.</b>
+     * Use strictly for local benchmarking.
+     *
+     * <p>1. Request pipelining ({@code PIPELINE_ENABLED}). Off by default in HTTP/1.1, and the
+     * industry at large discourages it: it is unsafe and asynchronous responses are constrained.
+     * Here it is switched on solely to test the pipeline path — strongly not recommended in production.</p>
+     *
+     * <p>2. Plaintext-over-SSL ({@code allowPlaintextWhenSslEnabled}). When SSL is enabled, this
+     * permits plaintext access so HTTP and HTTPS share one port. Insecure by design — strongly
+     * not recommended in production.</p>
+     *
+     * <p>3. Inline NIO (sync task queue disabled). testMode disables the backpressure-safe serial
+     * queue, so handlers run fully inline on the worker thread — NIO becomes entirely inline mode,
+     * removing the per-context/async thread hop. Concurrency then depends entirely on the worker
+     * count (workerNum) or application-level async handling — strongly not recommended in production.</p>
+     */
     public NioConfig testMode() {
-        System.setProperty("wastnet.http.pipeline.enabled", "true");
-        setSyncRunner(true);
-        setAllowPlaintextWhenSslEnabled(true);
+        option(HttpOptions.PIPELINE_ENABLED, true); // enable http/1.1 request pipelining
+        syncMode(true); // force nio-worker sync
+        setAllowPlaintextWhenSslEnabled(true); // allow plaintext when ssl is enabled
+        this.testMode = true; // set true disabled SyncTaskQueue
         return this;
     }
 

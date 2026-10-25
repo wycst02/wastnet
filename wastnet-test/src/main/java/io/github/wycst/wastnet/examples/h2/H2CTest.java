@@ -73,7 +73,7 @@ public class H2CTest {
         });
 
         HTTPServer server = HTTPServer.of(8080, nioConfig)
-                .applicationProtocols(new String[]{"h2c"})
+                .applicationProtocols("h2c")
                 .requestHandler(router)
                 .start();
 

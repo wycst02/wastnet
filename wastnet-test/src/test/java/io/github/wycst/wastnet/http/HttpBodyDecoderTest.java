@@ -1,20 +1,18 @@
 package io.github.wycst.wastnet.http;
 
-import java.nio.charset.StandardCharsets;
+import io.github.wycst.wastnet.socket.tcp.ChannelContext;
+import org.junit.jupiter.api.Test;
+
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Map;
-
-import io.github.wycst.wastnet.socket.tcp.ChannelContext;
-
-import org.junit.jupiter.api.Test;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
-
-import java.util.List;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Comprehensive test class for HttpBodyDecoder
@@ -585,7 +583,7 @@ public class HttpBodyDecoderTest {
         HttpBodyDefaultDecoder decoder = new HttpBodyDefaultDecoder(
                 "multipart/form-data; boundary=bound", body);
         // With filename, getMultipartFields returns non-null list
-        List<MultipartField> fields = decoder.getMultipartFields("file");
+        java.util.List<MultipartField> fields = decoder.getMultipartFields("file");
         assertNotNull(fields, "Should have file field");
         assertFalse(fields.isEmpty(), "File field list should not be empty");
     }

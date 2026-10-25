@@ -1,5 +1,7 @@
 package io.github.wycst.wastnet.http;
 
+import io.github.wycst.wastnet.socket.tcp.ChannelContext;
+import io.github.wycst.wastnet.socket.tcp.NioConfig;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -7,9 +9,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.channels.SocketChannel;
-
-import io.github.wycst.wastnet.socket.tcp.ChannelContext;
-import io.github.wycst.wastnet.socket.tcp.NioConfig;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -169,13 +168,13 @@ public class HttpBodyStreamDecoderReadFieldTest {
 
         SocketChannel ch = SocketChannel.open();
         ch.configureBlocking(false);
-        ChannelContext ctx =
-                new ChannelContext(ch, 4096);
+        io.github.wycst.wastnet.socket.tcp.ChannelContext ctx =
+                new io.github.wycst.wastnet.socket.tcp.ChannelContext(ch, 4096);
         io.github.wycst.wastnet.socket.handler.ChannelHandler<Object> handler =
                 new io.github.wycst.wastnet.socket.handler.ChannelHandler<Object>() {
-                    public void onHandle(ChannelContext c, Object msg) {}
+                    public void onHandle(io.github.wycst.wastnet.socket.tcp.ChannelContext c, Object msg) {}
                 };
-        java.lang.reflect.Field f = ChannelContext.class
+        java.lang.reflect.Field f = io.github.wycst.wastnet.socket.tcp.ChannelContext.class
                 .getDeclaredField("channelHandler");
         f.setAccessible(true);
         f.set(ctx, handler);
@@ -198,13 +197,13 @@ public class HttpBodyStreamDecoderReadFieldTest {
         // Chunked stream: pre-read data consumed, next chunk read fails → IOException caught
         SocketChannel ch = SocketChannel.open();
         ch.configureBlocking(false);
-        ChannelContext ctx =
-                new ChannelContext(ch, 4096);
+        io.github.wycst.wastnet.socket.tcp.ChannelContext ctx =
+                new io.github.wycst.wastnet.socket.tcp.ChannelContext(ch, 4096);
         io.github.wycst.wastnet.socket.handler.ChannelHandler<Object> handler =
                 new io.github.wycst.wastnet.socket.handler.ChannelHandler<Object>() {
-                    public void onHandle(ChannelContext c, Object msg) {}
+                    public void onHandle(io.github.wycst.wastnet.socket.tcp.ChannelContext c, Object msg) {}
                 };
-        java.lang.reflect.Field hf = ChannelContext.class
+        java.lang.reflect.Field hf = io.github.wycst.wastnet.socket.tcp.ChannelContext.class
                 .getDeclaredField("channelHandler");
         hf.setAccessible(true);
         hf.set(ctx, handler);

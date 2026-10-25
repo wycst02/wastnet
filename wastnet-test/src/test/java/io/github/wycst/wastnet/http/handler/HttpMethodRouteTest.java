@@ -4,8 +4,6 @@ import io.github.wycst.wastnet.http.HttpMethod;
 import io.github.wycst.wastnet.http.HttpRequest;
 import io.github.wycst.wastnet.http.HttpResponse;
 import io.github.wycst.wastnet.http.HttpStatus;
-import io.github.wycst.wastnet.http.handler.HttpMethodRoute;
-import io.github.wycst.wastnet.http.handler.HttpRoute;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -76,6 +74,69 @@ public class HttpMethodRouteTest {
         final byte[][] capturedBody = {null};
         route.handle("/", MockHttpTestBase.mockRequest(HttpMethod.POST), MockHttpTestBase.mockResponse(capturedStatus, capturedHeader, capturedBody, true));
         Assertions.assertEquals("GET", capturedHeader[0]);
+    }
+
+    // ==================== allowOverride ====================
+
+    @Test
+    public void testRebindOverwritesByDefault() throws Throwable {
+        final boolean[] firstCalled = {false};
+        final boolean[] secondCalled = {false};
+        HttpMethodRoute route = new HttpMethodRoute(new HttpRoute() {
+            @Override
+            public void handle(String path, HttpRequest request, HttpResponse response) {
+                firstCalled[0] = true;
+            }
+        }, HttpMethod.GET);
+        route.methodHandler(HttpMethod.GET, new HttpRoute() {
+            @Override
+            public void handle(String path, HttpRequest request, HttpResponse response) {
+                secondCalled[0] = true;
+            }
+        });
+        route.handle("/test", MockHttpTestBase.mockRequest(HttpMethod.GET), null);
+        Assertions.assertFalse(firstCalled[0], "default allowOverride=true must replace the previous handler");
+        Assertions.assertTrue(secondCalled[0]);
+    }
+
+    @Test
+    public void testRebindThrowsWhenOverrideDisabled() {
+        HttpMethodRoute route = new HttpMethodRoute(MockHttpTestBase.noopRoute(), HttpMethod.GET)
+                .allowOverride(false);
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> route.methodHandler(HttpMethod.GET, MockHttpTestBase.noopRoute()));
+    }
+
+    @Test
+    public void testComplementaryMethodsMergeWhenOverrideDisabled() throws Throwable {
+        final boolean[] getCalled = {false};
+        final boolean[] postCalled = {false};
+        HttpMethodRoute route = new HttpMethodRoute()
+                .allowOverride(false)
+                .methodHandler(HttpMethod.GET, new HttpRoute() {
+                    @Override
+                    public void handle(String path, HttpRequest request, HttpResponse response) {
+                        getCalled[0] = true;
+                    }
+                })
+                .methodHandler(HttpMethod.POST, new HttpRoute() {
+                    @Override
+                    public void handle(String path, HttpRequest request, HttpResponse response) {
+                        postCalled[0] = true;
+                    }
+                });
+        route.handle("/test", MockHttpTestBase.mockRequest(HttpMethod.GET), null);
+        route.handle("/test", MockHttpTestBase.mockRequest(HttpMethod.POST), null);
+        Assertions.assertTrue(getCalled[0]);
+        Assertions.assertTrue(postCalled[0]);
+        // merged route advertises both methods on 405
+        final HttpStatus[] capturedStatus = {null};
+        final String[] capturedAllow = {null};
+        final byte[][] capturedBody = {null};
+        route.handle("/test", MockHttpTestBase.mockRequest(HttpMethod.PUT),
+                MockHttpTestBase.mockResponse(capturedStatus, capturedAllow, capturedBody, true));
+        Assertions.assertEquals(HttpStatus.METHOD_NOT_ALLOWED, capturedStatus[0]);
+        Assertions.assertTrue(capturedAllow[0].contains("GET") && capturedAllow[0].contains("POST"), capturedAllow[0]);
     }
 
     @Test

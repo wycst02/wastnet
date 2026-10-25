@@ -2,7 +2,6 @@ package io.github.wycst.wastnet.http.upgrade.websocket;
 
 import io.github.wycst.wastnet.http.HttpRequest;
 import io.github.wycst.wastnet.http.upgrade.UpgradeWebSocketHolder;
-import io.github.wycst.wastnet.log.LogFactory;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Test;
 
@@ -48,14 +47,14 @@ class WebSocketConnectionImplTest {
     void testSendInputStreamNull() {
         WebSocketConnectionImpl conn = new WebSocketConnectionImpl(
                 mock(HttpRequest.class), mock(WebSocketResponse.class), mock(ChannelContext.class));
-        assertThrows(IllegalArgumentException.class, () -> conn.sendInputStream(null));
+        assertThrows(NullPointerException.class, () -> conn.sendInputStream(null));
     }
 
     @Test
     void testSendFileNull() {
         WebSocketConnectionImpl conn = new WebSocketConnectionImpl(
                 mock(HttpRequest.class), mock(WebSocketResponse.class), mock(ChannelContext.class));
-        assertThrows(IllegalArgumentException.class, () -> conn.sendFile(null));
+        assertThrows(NullPointerException.class, () -> conn.sendFile(null));
     }
 
     @Test
@@ -102,6 +101,7 @@ class WebSocketConnectionImplTest {
     @Test
     void testSendInputStreamWithData() throws Exception {
         ChannelContext mockCtx = mock(ChannelContext.class);
+        when(mockCtx.binding()).thenReturn(new UpgradeWebSocketHolder(new WebSocketResource(), mock(WebSocketConnection.class), mockCtx));
         WebSocketConnectionImpl conn = new WebSocketConnectionImpl(
                 mock(HttpRequest.class), mock(WebSocketResponse.class), mockCtx);
         conn.sendInputStream(new ByteArrayInputStream("x".getBytes()));
@@ -109,14 +109,6 @@ class WebSocketConnectionImplTest {
     }
 
     // ==================== Simple branch for sendText/sendBinary/pong etc. ====================
-
-    @Test
-    void testSendTextNull() {
-        WebSocketConnectionImpl conn = new WebSocketConnectionImpl(
-                mock(HttpRequest.class), mock(WebSocketResponse.class), mock(ChannelContext.class));
-        assertThrows(IllegalArgumentException.class, () -> conn.sendText(null));
-    }
-
     @Test
     void testSendTextClosed() throws Exception {
         WebSocketConnectionImpl conn = new WebSocketConnectionImpl(
@@ -132,13 +124,6 @@ class WebSocketConnectionImplTest {
                 mock(HttpRequest.class), mockResp, mock(ChannelContext.class));
         conn.sendText("hello");
         verify(mockResp).sendText("hello");
-    }
-
-    @Test
-    void testSendBinaryNull() {
-        WebSocketConnectionImpl conn = new WebSocketConnectionImpl(
-                mock(HttpRequest.class), mock(WebSocketResponse.class), mock(ChannelContext.class));
-        assertThrows(IllegalArgumentException.class, () -> conn.sendBinary(null));
     }
 
     @Test
@@ -171,6 +156,7 @@ class WebSocketConnectionImplTest {
     @Test
     void testSendInputStreamEmpty() throws Exception {
         ChannelContext mockCtx = mock(ChannelContext.class);
+        when(mockCtx.binding()).thenReturn(new UpgradeWebSocketHolder(new WebSocketResource(), mock(WebSocketConnection.class), mockCtx));
         WebSocketConnectionImpl conn = new WebSocketConnectionImpl(
                 mock(HttpRequest.class), new WebSocketResponse(mock(HttpRequest.class), mockCtx), mockCtx);
         conn.sendInputStream(new ByteArrayInputStream(new byte[0]));
@@ -180,8 +166,8 @@ class WebSocketConnectionImplTest {
     @Test
     void testSendInputStreamMultiChunk() throws Exception {
         WebSocketResource resource = new WebSocketResource().maxPayloadSize(100);
-        UpgradeWebSocketHolder holder = new UpgradeWebSocketHolder(resource, mock(WebSocketConnection.class));
         ChannelContext mockCtx = mock(ChannelContext.class);
+        UpgradeWebSocketHolder holder = new UpgradeWebSocketHolder(resource, mock(WebSocketConnection.class), mockCtx);
         when(mockCtx.binding()).thenReturn(holder);
         byte[] bigData = new byte[250];
         for (int i = 0; i < bigData.length; ++i) bigData[i] = (byte) i;
@@ -194,8 +180,8 @@ class WebSocketConnectionImplTest {
     @Test
     void testSendInputStreamExactMultiples() throws Exception {
         WebSocketResource resource = new WebSocketResource().maxPayloadSize(100);
-        UpgradeWebSocketHolder holder = new UpgradeWebSocketHolder(resource, mock(WebSocketConnection.class));
         ChannelContext mockCtx = mock(ChannelContext.class);
+        UpgradeWebSocketHolder holder = new UpgradeWebSocketHolder(resource, mock(WebSocketConnection.class), mockCtx);
         when(mockCtx.binding()).thenReturn(holder);
         byte[] exactData = new byte[200];
         for (int i = 0; i < exactData.length; ++i) exactData[i] = (byte) (i & 0xFF);
@@ -250,7 +236,7 @@ class WebSocketConnectionImplTest {
     void testSendFileNormal() throws Exception {
         ChannelContext mockCtx = mock(ChannelContext.class);
         when(mockCtx.binding()).thenReturn(new UpgradeWebSocketHolder(
-                new WebSocketResource().maxPayloadSize(100), mock(WebSocketConnection.class)));
+                new WebSocketResource().maxPayloadSize(100), mock(WebSocketConnection.class), mockCtx));
         WebSocketConnectionImpl conn = new WebSocketConnectionImpl(
                 mock(HttpRequest.class), new WebSocketResponse(mock(HttpRequest.class), mockCtx), mockCtx);
         java.io.File f = java.io.File.createTempFile("wstest", ".tmp");
@@ -492,9 +478,9 @@ class WebSocketConnectionImplTest {
             server = ssc.accept();
             server.configureBlocking(false);
             ctx = new ChannelContext(client, 4096);
-            UpgradeWebSocketHolder holder =
-                    new UpgradeWebSocketHolder(
-                            new WebSocketResource(), null);
+            io.github.wycst.wastnet.http.upgrade.UpgradeWebSocketHolder holder =
+                    new io.github.wycst.wastnet.http.upgrade.UpgradeWebSocketHolder(
+                            new WebSocketResource(), null, ctx);
             ctx.binding(holder);
         }
 

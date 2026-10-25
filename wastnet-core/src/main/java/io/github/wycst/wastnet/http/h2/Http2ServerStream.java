@@ -22,6 +22,7 @@ import io.github.wycst.wastnet.http.HttpUriDecoder;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -107,12 +108,27 @@ public class Http2ServerStream extends Http2Stream {
                 // RFC 7230 asterisk-form: a valid request target, handed to the application layer
             }
             // URI parsing applies to non-CONNECT only: CONNECT omits :path (RFC 7540 §8.3)
-            HttpUriDecoder uriDecoder = new HttpUriDecoder(false);
-            uriDecoder.codec(path.getBytes());
-            uriDecoder.endCodec();
-            requestUri = uriDecoder.getUri();
-            parameters = uriDecoder.getParameters();
+            if (isPlainPath(path)) {
+                // Nothing the decoder would change: skip it and reuse the path as-is.
+                requestUri = path;
+                parameters = Collections.emptyMap();
+            } else {
+                HttpUriDecoder uriDecoder = new HttpUriDecoder(false);
+                uriDecoder.codec(path.getBytes());
+                uriDecoder.endCodec();
+                requestUri = uriDecoder.getUri();
+                parameters = uriDecoder.getParameters();
+            }
         }
+    }
+
+    /** True when {@code path} has none of '?', '+', '%', '#', i.e. decoding is a no-op. */
+    private static boolean isPlainPath(String path) {
+        for (int i = 0, n = path.length(); i < n; ++i) {
+            char c = path.charAt(i);
+            if (c == '?' || c == '+' || c == '%' || c == '#') return false;
+        }
+        return true;
     }
 
     @Override
@@ -120,15 +136,14 @@ public class Http2ServerStream extends Http2Stream {
         final Http2Request request = new Http2Request(this).errorStatus(errorStatus);
         requestInvoked = true;
         H2Monitor.incrSubmitRequests();
-        ctx.runAsync(() -> {
+        reader.inflightRequests.incrementAndGet();
+        ctx.runTask(() -> {
             try {
                 ctx.invokeHandle(request);
             } catch (IOException e) {
                 log.error("Invoke handle error, streamId=" + streamId, e);
             } finally {
-                if (!handovered) {
-                    completeStream();
-                }
+                reader.inflightRequests.decrementAndGet();
             }
         });
     }
@@ -136,9 +151,14 @@ public class Http2ServerStream extends Http2Stream {
     /**
      * Complete this server-side stream. Counts one completed response here (instead of in
      * {@code submit()}) so that handed-over streams (proxy forwarding) are also counted.
+     * <p>
+     * Triggered by {@code Http2Response.complete()} - both sync (framework complete) and
+     * async (executor thread) handlers - plus the proxy/error paths in {@code Http2Helper};
+     * nothing completes a stream on handler return.
      */
     @Override
     void completeStream() {
+        if(removed) return;
         H2Monitor.incrTotalResponses(createdAt);
         super.completeStream();
     }

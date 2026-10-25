@@ -9,9 +9,6 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.Selector;
 import java.util.Iterator;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ScheduledFuture;
 
 /**
  * Worker thread that manages a shared Selector for multiple HttpProxyConnection instances.
@@ -43,7 +40,6 @@ public class HttpProxyWorker extends Thread {
 
     Selector selector;
     volatile boolean registering;
-    final Map<Long, HttpProxyConnection> connections = new ConcurrentHashMap<>();
     final HttpProxyWorkerManager manager;
     private volatile boolean shutdown = false;
 
@@ -83,7 +79,7 @@ public class HttpProxyWorker extends Thread {
                         final boolean isTarget = key == conn.targetKey;
                         ChannelContext writeCtx = isTarget ? conn.clientCtx : conn.targetCtx;
                         if (writeCtx.isChannelClosed()) {
-                            cleanupConnection(conn);
+                            conn.close();
                             continue;
                         }
                         ChannelContext readCtx = isTarget ? conn.targetCtx : conn.clientCtx;
@@ -97,11 +93,14 @@ public class HttpProxyWorker extends Thread {
                             if(isTarget) {
                                 conn.checkDataReceived(buffer);
                             }
-                            conn.adapter.onData(buffer, writeCtx, isTarget, conn);
-                            buffer.clear();
+                            try {
+                                conn.adapter.onData(buffer, writeCtx, isTarget, conn);
+                            } finally {
+                                buffer.clear();
+                            }
                         }
                         if (n < 0) {
-                            cleanupConnection(conn);
+                            conn.close();
                         }
                     } catch (Exception e) {
                         log.error("[HttpProxy] Error processing key: {}", e.getMessage());
@@ -114,40 +113,6 @@ public class HttpProxyWorker extends Thread {
         try {
             selector.close();
         } catch (IOException ignored) {
-        }
-    }
-
-    void cleanupConnection(HttpProxyConnection connection) {
-        // Idempotent: only first caller wins
-        if (connection.closed) {
-            return;
-        }
-        connection.closed = true;
-        connections.remove(connection.connectionId);
-        // Cancel read timeout future
-        ScheduledFuture<?> future = connection.timeoutFuture;
-        if (future != null) {
-            future.cancel(false);
-            connection.timeoutFuture = null;
-        }
-        log.debug("[Proxy] cleanup connection: {} (route: {})", connection.connectionId, connection.routeId);
-        if(!connection.clientCtx.isChannelClosed()) {
-            // Remove close listener to avoid duplicate cleanup
-            connection.clientCtx.removeCloseListener(connection.closeListener);
-        }
-        // Close target channel
-        connection.targetCtx.close();
-        // Close client channel if registered for bidirectional relay
-        if (connection.clientKey != null) {
-            connection.clientCtx.close();
-        }
-    }
-
-    public void clearConnections(String routeId) {
-        for (HttpProxyConnection connection : connections.values()) {
-            if (routeId.equals(connection.routeId)) {
-                cleanupConnection(connection);
-            }
         }
     }
 

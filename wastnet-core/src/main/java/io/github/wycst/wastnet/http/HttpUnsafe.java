@@ -3,6 +3,7 @@ package io.github.wycst.wastnet.http;
 import io.github.wycst.wastnet.env.RuntimeEnv;
 import sun.misc.Unsafe;
 
+import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Field;
 import java.nio.ByteOrder;
 
@@ -116,6 +117,16 @@ public final class HttpUnsafe {
         }
     }
 
+    static byte[] getBytesOrReuseLatin1(String value, String charsetName) throws UnsupportedEncodingException {
+        if(JDK_9_PLUS) {
+            byte[] bytes = (byte[]) getStringValue(value);
+            if(bytes.length == value.length()) {
+                return bytes;
+            }
+        }
+        return value.getBytes(charsetName);
+    }
+
     static void copyOfRange(byte[] source, int srcOff, byte[] target, int targetOff, int len) {
         if (len < 32) {
             int i = 0, count = 0;
@@ -214,6 +225,17 @@ public final class HttpUnsafe {
 
     // \r\n\r\n as int value
     static final int CRLF_CRLF = CRLF | (CRLF << 16);
+
+    /**
+     * Returns true if {@code body} is a complete chunked body ending in {@code 0\r\n\r\n}.
+     * The terminator '0' must sit at a chunk boundary (preceded by the previous chunk's trailing
+     * {@code \r\n}), so the body must be at least 7 bytes.
+     */
+    static boolean endsWithChunkEnd(byte[] body) {
+        int len = body.length;
+        return len >= 7 && body[len - 5] == '0' && getInt(body, len - 4) == CRLF_CRLF
+                && getShort(body, len - 7) == CRLF;
+    }
 
     static int offsetTokenBytes(long mask) {
         if (LITTLE_ENDIAN) {

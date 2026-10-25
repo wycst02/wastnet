@@ -1,6 +1,5 @@
 package io.github.wycst.wastnet.http;
 
-import io.github.wycst.wastnet.http.HttpMethod;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 

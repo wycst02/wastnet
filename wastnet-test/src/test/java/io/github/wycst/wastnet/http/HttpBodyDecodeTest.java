@@ -1,6 +1,5 @@
 package io.github.wycst.wastnet.http;
 
-import io.github.wycst.wastnet.http.HttpBodyDecoder;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 

@@ -1,20 +1,17 @@
 package io.github.wycst.wastnet.http.annotation;
 
-import io.github.wycst.wastnet.http.HttpMethod;
-import io.github.wycst.wastnet.http.HttpRequest;
-import io.github.wycst.wastnet.http.HttpResponse;
-import io.github.wycst.wastnet.http.HTTPServer;
-import io.github.wycst.wastnet.http.SseEmitter;
+import io.github.wycst.wastnet.http.*;
 import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketResource;
-import okhttp3.*;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
 import java.util.*;
 
-import static org.mockito.Mockito.*;
-
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.mock;
 
 /**
  * Comprehensive for annotation package core classes.
@@ -908,8 +905,8 @@ public class AnnotationPackageTest {
             @Override public boolean isWebSocketEndpoint(Class<?> c) { return false; }
             @Override public String resolveControllerPath(Class<?> c) { return ""; }
             @Override public String resolveWebSocketPath(Class<?> c) { return ""; }
-            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return Collections.emptyList(); }
-            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return java.util.Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return java.util.Collections.emptyList(); }
             @Override public boolean isConfiguration(Class<?> c) { return false; }
             @Override public String resolveValueExpression(java.lang.annotation.Annotation a) { return null; }
             @Override public String resolveInjectName(java.lang.annotation.Annotation a) { return null; }
@@ -953,8 +950,8 @@ public class AnnotationPackageTest {
             @Override public boolean isWebSocketEndpoint(Class<?> c) { return false; }
             @Override public String resolveControllerPath(Class<?> c) { return ""; }
             @Override public String resolveWebSocketPath(Class<?> c) { return ""; }
-            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return Collections.emptyList(); }
-            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return java.util.Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return java.util.Collections.emptyList(); }
             @Override public boolean isConfiguration(Class<?> c) { return c == testonly.retrybeans.BeanDeferredConfig.DeferredConfig.class; }
             @Override public String resolveValueExpression(java.lang.annotation.Annotation ann) { return ((Value) ann).value(); }
             @Override public String resolveInjectName(java.lang.annotation.Annotation ann) { return ((Inject) ann).value(); }
@@ -979,8 +976,8 @@ public class AnnotationPackageTest {
             @Override public boolean isWebSocketEndpoint(Class<?> c) { return false; }
             @Override public String resolveControllerPath(Class<?> c) { return ""; }
             @Override public String resolveWebSocketPath(Class<?> c) { return ""; }
-            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return Collections.emptyList(); }
-            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return java.util.Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return java.util.Collections.emptyList(); }
             @Override public boolean isConfiguration(Class<?> c) { return c == testonly.retrybeans.BeanDeferredConfig.ExhaustRetryConfig.class; }
             @Override public String resolveValueExpression(java.lang.annotation.Annotation ann) { return ((Value) ann).value(); }
             @Override public String resolveInjectName(java.lang.annotation.Annotation ann) { return ((Inject) ann).value(); }
@@ -1023,11 +1020,11 @@ public class AnnotationPackageTest {
             @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) {
                 try {
                     Method m = NoDepController.class.getMethod("fail", HttpRequest.class, HttpResponse.class);
-                    return Collections.singletonList(
+                    return java.util.Collections.singletonList(
                             new MethodRouteInfo("/fail", new HttpMethod[]{}, m));
-                } catch (Exception e) { return Collections.emptyList(); }
+                } catch (Exception e) { return java.util.Collections.emptyList(); }
             }
-            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return java.util.Collections.emptyList(); }
             @Override public boolean isWebSocketEndpoint(Class<?> c) { return false; }
             @Override public String resolveWebSocketPath(Class<?> c) { return ""; }
             @Override public boolean isConfiguration(Class<?> c) { return false; }
@@ -1053,11 +1050,11 @@ public class AnnotationPackageTest {
             @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) {
                 try {
                     Method m = FailingController.class.getMethod("handle");
-                    return Collections.singletonList(
+                    return java.util.Collections.singletonList(
                             new MethodRouteInfo("/test", new HttpMethod[]{HttpMethod.GET}, m));
-                } catch (Exception e) { return Collections.emptyList(); }
+                } catch (Exception e) { return java.util.Collections.emptyList(); }
             }
-            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return java.util.Collections.emptyList(); }
             @Override public boolean isWebSocketEndpoint(Class<?> c) { return false; }
             @Override public String resolveWebSocketPath(Class<?> c) { return ""; }
             @Override public boolean isConfiguration(Class<?> c) { return false; }
@@ -1083,8 +1080,8 @@ public class AnnotationPackageTest {
             @Override public boolean isController(Class<?> c) { return false; }
             @Override public boolean isComponent(Class<?> c) { return false; }
             @Override public String resolveControllerPath(Class<?> c) { return ""; }
-            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return Collections.emptyList(); }
-            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveEndpointRoutes(Class<?> c) { return java.util.Collections.emptyList(); }
+            @Override public List<MethodRouteInfo> resolveSseEndpoints(Class<?> c) { return java.util.Collections.emptyList(); }
             @Override public String resolveComponentName(Class<?> c) { return ""; }
             @Override public boolean isConfiguration(Class<?> c) { return false; }
             @Override public String resolveValueExpression(java.lang.annotation.Annotation a) { return null; }
@@ -1100,13 +1097,20 @@ public class AnnotationPackageTest {
 
     /** Real HTTP server request to exercise anonymous class handle() methods */
     @Test
-    public void testRouterRealRequests() throws Exception {
+    public void testRouterRealRequestsAndStreamBody() throws Exception {
+        // Converter that actually writes the body: satisfies both the status-only router
+        // assertions below and the streamed-body content assertion.
         HttpMessageConverter conv = new HttpMessageConverter() {
             @Override public Object read(HttpRequest req, ConverterConfig cfg, java.lang.reflect.Type type) { return null; }
-            @Override public void write(Object v, ConverterConfig cfg, HttpResponse resp) {}
+            @Override public void write(Object v, ConverterConfig cfg, HttpResponse resp) {
+                resp.contentType(ContentType.JSON.getContentType()).body(String.valueOf(v));
+            }
         };
         AnnotationRouterHandler handler = new AnnotationRouterHandler()
                 .messageConverter(conv)
+                // the whole-package scan intentionally contains colliding fixture paths
+                // (pathbranches /root vs RootBaseController /root): keep the legacy replace behavior
+                .allowOverride(true)
                 .property("null.val", "defaultNull")
                 .property("exists", "existsValue")
                 .scanPackages("io.github.wycst.wastnet.http.annotation");
@@ -1127,8 +1131,8 @@ public class AnnotationPackageTest {
             assertEquals(200, r2.code());
             r2.close();
 
-            // General path with body: BodyController.readBody(@RequestBody String)
-            MediaType mt = MediaType.parse("text/plain");
+            // General path with body: BodyController.readBody(@RequestBody String) - non-stream
+            okhttp3.MediaType mt = okhttp3.MediaType.parse("text/plain");
             Response r3 = client.newCall(new Request.Builder()
                     .url("http://127.0.0.1:51008/body/read")
                     .post(okhttp3.RequestBody.create(mt, "test"))
@@ -1168,6 +1172,25 @@ public class AnnotationPackageTest {
                     .url("http://127.0.0.1:51008/responly/handle").get().build()).execute();
             assertEquals(200, r9.code());
             r9.close();
+
+            // Streamed (chunked) request body: server builds HttpChunkedRequest (isStream() == true),
+            // so TextMessageConverter.read goes through the streaming read path.
+            okhttp3.RequestBody chunkedBody = new okhttp3.RequestBody() {
+                @Override public okhttp3.MediaType contentType() {
+                    return okhttp3.MediaType.parse("text/plain; charset=utf-8");
+                }
+                @Override public long contentLength() { return -1; }
+                @Override public void writeTo(okio.BufferedSink sink) throws java.io.IOException {
+                    sink.writeUtf8("streamed-text-body-via-toBytes");
+                }
+            };
+            Response resp = client.newCall(new Request.Builder()
+                    .url("http://127.0.0.1:51008/body/read")
+                    .post(chunkedBody)
+                    .build()).execute();
+            assertEquals(200, resp.code());
+            assertTrue(resp.body().string().contains("streamed-text-body-via-toBytes"));
+            resp.close();
         } finally {
             server.shutdown();
         }
@@ -1182,8 +1205,8 @@ public class AnnotationPackageTest {
 
         // exactRoutes is protected in HttpRouterHandler; exposed via same-package accessor
         @SuppressWarnings("unchecked")
-        Map<String, io.github.wycst.wastnet.http.handler.HttpRoute> routes =
-                (Map<String, io.github.wycst.wastnet.http.handler.HttpRoute>)
+        java.util.Map<String, io.github.wycst.wastnet.http.handler.HttpRoute> routes =
+                (java.util.Map<String, io.github.wycst.wastnet.http.handler.HttpRoute>)
                         handler.exactRoutes();
 
         // Create mock request/response
@@ -1191,7 +1214,7 @@ public class AnnotationPackageTest {
         HttpResponse resp = mock(HttpResponse.class);
 
         // Invoke each registered route to cover anonymous class handle() methods
-        for (Map.Entry<String, io.github.wycst.wastnet.http.handler.HttpRoute> entry : routes.entrySet()) {
+        for (java.util.Map.Entry<String, io.github.wycst.wastnet.http.handler.HttpRoute> entry : routes.entrySet()) {
             try {
                 entry.getValue().handle(entry.getKey(), req, resp);
             } catch (Throwable ignored) {
@@ -1213,8 +1236,8 @@ public class AnnotationPackageTest {
         h.scan();
 
         @SuppressWarnings("unchecked")
-        Map<String, io.github.wycst.wastnet.http.handler.HttpRoute> routes =
-                (Map<String, io.github.wycst.wastnet.http.handler.HttpRoute>) h.exactRoutes();
+        java.util.Map<String, io.github.wycst.wastnet.http.handler.HttpRoute> routes =
+                (java.util.Map<String, io.github.wycst.wastnet.http.handler.HttpRoute>) h.exactRoutes();
 
         // base "/api/" + "/users" must normalize to "/api/users", never "//"
         assertTrue(routes.containsKey("/api/users"),
@@ -1242,8 +1265,8 @@ public class AnnotationPackageTest {
                 .scanPackages("io.github.wycst.wastnet.http.annotation.pathbranches");
         h.scan();
         @SuppressWarnings("unchecked")
-        Map<String, io.github.wycst.wastnet.http.handler.HttpRoute> routes =
-                (Map<String, io.github.wycst.wastnet.http.handler.HttpRoute>) h.exactRoutes();
+        java.util.Map<String, io.github.wycst.wastnet.http.handler.HttpRoute> routes =
+                (java.util.Map<String, io.github.wycst.wastnet.http.handler.HttpRoute>) h.exactRoutes();
 
         // base "" + "/empty" -> first branch -> "/empty"
         assertTrue(routes.containsKey("/empty"), "empty base + /empty -> /empty, got: " + routes.keySet());
@@ -1351,54 +1374,6 @@ public class AnnotationPackageTest {
         assertTrue(ResponseBody.class.isAnnotation());
     }
 
-    // ==================== Streamed request body (TextMessageConverter streaming read) ====================
-
-    /**
-     * A chunked (Transfer-Encoding: chunked) text/plain POST makes the server build
-     * an HttpChunkedRequest (isStream() == true), so {@link TextMessageConverter#read}
-     * goes through the streaming read path (readString) instead of getBodyData().
-     * Reuses the existing BodyController#readBody endpoint - no new fixtures / files.
-     */
-    @Test
-    public void testRequestBodyStreamReadsViaReadString() throws Exception {
-        HttpMessageConverter jsonConv = new HttpMessageConverter() {
-            @Override public Object read(HttpRequest req, ConverterConfig cfg, java.lang.reflect.Type type) { return null; }
-            @Override public void write(Object v, ConverterConfig cfg, HttpResponse response) {
-                response.contentType(ContentType.JSON.getContentType()).body(String.valueOf(v));
-            }
-        };
-        AnnotationRouterHandler handler = new AnnotationRouterHandler()
-                .messageConverter(jsonConv)
-                .property("null.val", "defaultNull")
-                .property("exists", "existsValue")
-                .scanPackages("io.github.wycst.wastnet.http.annotation");
-        OkHttpClient client = new OkHttpClient.Builder()
-                .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
-                .build();
-        HTTPServer server = HTTPServer.of(51233).requestHandler(handler).startupBannerEnabled(false).start();
-        try {
-            // contentLength() == -1 -> OkHttp uses Transfer-Encoding: chunked,
-            // so the server treats the body as a stream (isStream() == true).
-            okhttp3.RequestBody chunkedBody = new okhttp3.RequestBody() {
-                @Override public MediaType contentType() {
-                    return MediaType.parse("text/plain; charset=utf-8");
-                }
-                @Override public long contentLength() { return -1; }
-                @Override public void writeTo(okio.BufferedSink sink) throws java.io.IOException {
-                    sink.writeUtf8("streamed-text-body-via-toBytes");
-                }
-            };
-            Response resp = client.newCall(new Request.Builder()
-                    .url("http://127.0.0.1:51233/body/read")
-                    .post(chunkedBody)
-                    .build()).execute();
-            assertEquals(200, resp.code());
-            assertTrue(resp.body().string().contains("streamed-text-body-via-toBytes"));
-            resp.close();
-        } finally {
-            server.shutdown();
-        }
-    }
 
     // ==================== Text response write (TextMessageConverter.write) ====================
 

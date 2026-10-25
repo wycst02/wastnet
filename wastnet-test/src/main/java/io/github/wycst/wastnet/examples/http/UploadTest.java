@@ -36,7 +36,6 @@ public class UploadTest {
         }
 
         NioConfig nioConfig = new NioConfig();
-        nioConfig.testMode();
         nioConfig.setWorkerNum(4);
 
         int targetPort = 8083;
@@ -242,8 +241,6 @@ public class UploadTest {
         System.setProperty("wastnet.http.body-max-size", "-1");
 
         NioConfig config = new NioConfig();
-        config.testMode();
-
         HTTPServer.of(8084, config)
                 .bufferSize(16384)
                 .requestHandler(new HttpRequestHandler() {

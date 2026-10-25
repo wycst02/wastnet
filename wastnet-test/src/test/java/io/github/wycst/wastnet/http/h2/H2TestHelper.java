@@ -1,10 +1,11 @@
 package io.github.wycst.wastnet.http.h2;
 
+import io.github.wycst.wastnet.http.HttpConf;
+
 import java.lang.reflect.Field;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-
-import io.github.wycst.wastnet.http.HttpConf;
 
 /**
  * Test utility to initialize fields on mocked Http2MessageReader instances.
@@ -79,6 +80,7 @@ public final class H2TestHelper {
 
     public static void initMockReader(Http2MessageReader mockReader) {
         Object unsafe = theUnsafe();
+        put(unsafe, mockReader, "inflightRequests", new AtomicInteger());
         put(unsafe, mockReader, "flushPending", new AtomicBoolean());
         putBoolean(unsafe, mockReader, "streamEarly", HttpConf.HTTP2_STREAM_EARLY);
         put(unsafe, mockReader, "connectRecvWindow", new AtomicLong((long) HttpConf.HTTP2_INITIAL_SEND_WINDOW_SIZE << 4));

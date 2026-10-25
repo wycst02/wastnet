@@ -281,14 +281,14 @@ public class HttpBodyStreamDecoderTest {
                 "multipart/form-data; boundary=" + BOUNDARY,
                 new ByteArrayInputStream(body.getBytes()));
 
-        List<MultipartField> tags = decoder.getMultipartFields("tag");
+        java.util.List<MultipartField> tags = decoder.getMultipartFields("tag");
         Assertions.assertNotNull(tags);
         Assertions.assertEquals(2, tags.size());
         Assertions.assertEquals("red", tags.get(0).getDataAsString(decoder.getCharset()));
         Assertions.assertEquals("blue", tags.get(1).getDataAsString(decoder.getCharset()));
 
         // getMultipartFieldValues returns the values
-        List<String> values = decoder.getMultipartFieldValues("tag");
+        java.util.List<String> values = decoder.getMultipartFieldValues("tag");
         Assertions.assertEquals(2, values.size());
         Assertions.assertEquals("red", values.get(0));
         Assertions.assertEquals("blue", values.get(1));

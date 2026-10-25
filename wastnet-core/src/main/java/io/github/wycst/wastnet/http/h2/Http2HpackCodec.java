@@ -21,6 +21,7 @@ import io.github.wycst.wastnet.util.Utils;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
@@ -32,7 +33,7 @@ import java.util.*;
  */
 public final class Http2HpackCodec {
 
-    public final static Charset UTF_8 = Utils.UTF_8;
+    public final static Charset UTF_8 = StandardCharsets.UTF_8;
 
     /**
      * Upper bound for a dynamic table size update (RFC 7541 §6.3).
@@ -209,7 +210,7 @@ public final class Http2HpackCodec {
         return offset;
     }
 
-    int decodeString(byte[] buf, int offset, boolean isName, String[] result) {
+    int decodeString(byte[] buf, int offset, int endOffset, boolean isName, String[] result) {
         int count, cmd;
         final int[] countRef = this.countRef;
         if ((count = (cmd = buf[offset++]) & 0x7f) == 0x7f) {
@@ -219,7 +220,7 @@ public final class Http2HpackCodec {
         if (cmd < 0) {
             String decodeValue = "";
             if (!isName || count > MAX_CACHE_STRING_LEN) {
-                if (offset + count > buf.length) {  // cap count to buffer size; blocks the len<<1 heap pre-allocation blow-up
+                if (offset + count > endOffset) {  // cap count to buffer size; blocks the len<<1 heap pre-allocation blow-up
                     throw new Http2HpackException("HPACK string length exceeds input buffer boundary");
                 }
                 decodeValue = decodeHuffmanString(buf, offset, count, countRef, isName);
@@ -301,10 +302,10 @@ public final class Http2HpackCodec {
                 }
                 if (cmd >= 64) {                 // B) Incremental Indexing, cmd ≥ 64 → bit 7-6 = 01
                     if (cmd == 64) {             // B-a index = 0 → inline name
-                        offset = decodeString(buf, offset, true, result);
+                        offset = decodeString(buf, offset, endOffset, true, result);
                         name = result[0];
                         int nameLen = countRef[0];
-                        offset = decodeString(buf, offset, false, result);
+                        offset = decodeString(buf, offset, endOffset, false, result);
                         value = result[0];
                         putHeader(headers, name, value);
                         decodeHpackTable.addHeader(new Http2Header(name, nameLen, value, countRef[0]));
@@ -315,7 +316,7 @@ public final class Http2HpackCodec {
                         }
                         indexHeader = decodeHpackTable.getHeader(index);
                         name = indexHeader.name;
-                        offset = decodeString(buf, offset, false, result);
+                        offset = decodeString(buf, offset, endOffset, false, result);
                         value = result[0];
                         putHeader(headers, name, value);
                         decodeHpackTable.addHeader(new Http2Header(name, indexHeader.nameLen, value, countRef[0]));
@@ -325,7 +326,7 @@ public final class Http2HpackCodec {
                 if (cmd < 32) {                  // C/D) Without Indexing / Never Indexed, cmd < 32 → bit 7-5 = 000
                     int mantissa = cmd & 0xF;    // C: bit 4 = 0 (0000xxxx), D: bit 4 = 1 (0001xxxx)
                     if (mantissa == 0) {         // index = 0 → inline name
-                        offset = decodeString(buf, offset, true, result);
+                        offset = decodeString(buf, offset, endOffset, true, result);
                         name = result[0];
                     } else {                     // index > 0 → name ref
                         index = mantissa;
@@ -336,7 +337,7 @@ public final class Http2HpackCodec {
                         indexHeader = decodeHpackTable.getHeader(index);
                         name = indexHeader.name;
                     }
-                    offset = decodeString(buf, offset, false, result);
+                    offset = decodeString(buf, offset, endOffset, false, result);
                     value = result[0];
                     putHeader(headers, name, value);
                 } else {                         // E) Dynamic Table Size Update, cmd ≥ 32 → bit 7-5 = 001

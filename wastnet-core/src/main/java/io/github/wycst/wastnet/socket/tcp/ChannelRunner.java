@@ -17,34 +17,42 @@ import java.nio.channels.SocketChannel;
 /**
  * Per-connection runner that handles read, decode and dispatch for a single SocketChannel.
  */
-class ChannelRunner extends Thread {
-    protected static final Log LOG = LogFactory.getLog(ChannelRunner.class);
+class ChannelRunner implements Runnable {
+    static Log LOG = LogFactory.getLog(ChannelRunner.class);
     protected final ChannelWorker worker;
     protected final ChannelContext ctx;
     protected final NioConfig nioConfig;
     protected final ChannelReader<?> channelReader;
     protected final ChannelHandler<?> channelHandler;
+    final ByteBuffer byteBuffer;
 
     protected boolean ready;
     protected boolean closed;
     volatile boolean runFlag;
-    final ByteBuffer byteBuffer;
 
-    // Fast path flag: true = sync execution, false = async execution
-    // Initialized to false to default async for the first request
+    // AUTO fast-path: sync only after FAST_PATH_MIN_STREAK consecutive fast (<FAST_PATH_THRESHOLD_NANOS) requests; any slow one resets.
     private volatile boolean isFastPath;
+    private int fastStreak;
+
+    // A request is "fast" when it completes under this duration (nanoseconds).
+    static final long FAST_PATH_THRESHOLD_NANOS = 1_000_000L;
+    // Consecutive fast requests required before a connection switches to synchronous dispatch.
+    static final int FAST_PATH_MIN_STREAK = 3;
+    // Cap reads per cycle so one connection can't monopolize the read path and starve others.
+    static final int MAX_READ_WAVE = 8;
 
     public boolean isRunFlag() {
-        return runFlag;
+        // true while busy (runFlag) or an HTTP/1.1 streaming body is read by the handler (readHandover); stops the worker re-dispatching run0 and racing on the shared socket.
+        return runFlag || ctx.isReadHandedOver();
     }
 
     /**
-     * Predict whether to use sync mode for next execution
-     *
-     * @return true for fast path (sync), false for slow path (async)
+     * Sync dispatch decision for this connection: explicit sync-mode config wins,
+     * otherwise fall back to the per-connection fast-path flag.
      */
-    public boolean predictSync() {
-        return isFastPath;
+    public final boolean isSync() {
+        Boolean syncMode = nioConfig.syncMode;
+        return syncMode != null ? syncMode : isFastPath;
     }
 
     ChannelRunner(ChannelWorker worker, SocketChannel channel, NioConfig nioConfig) throws IOException {
@@ -76,15 +84,19 @@ class ChannelRunner extends Thread {
     }
 
     ByteBuffer createReadByteBuffer() {
-        return nioConfig.isSyncRunner() ? worker.workerBuffer : ByteBuffer.allocate(nioConfig.getReadBufferSize());
+        return nioConfig.isSyncMode() ? worker.workerBuffer : ByteBuffer.allocate(nioConfig.getReadBufferSize());
     }
 
     protected final void run0() {
-        long startTime = System.nanoTime();
+        // Only predict fast path in AUTO mode (syncMode == null); explicit SYNC/ASYNC ignores it.
+        boolean autoMode = nioConfig.syncMode == null;
+        long startTime = 0L;
+        if (autoMode) startTime = System.nanoTime();
         try {
             runFlag = true;
             before();
-            if (this.closed) return;
+            // !ready: pre-ready hook suspended (e.g. SSL handshake waits for more peer data); skip reads this round
+            if (this.closed || !this.ready) return;
             try {
                 if (ctx.isChannelClosed()) {
                     release();
@@ -115,8 +127,14 @@ class ChannelRunner extends Thread {
             }
         } finally {
             runFlag = false;
-            // Mark as fast path if execution time < 1ms (1,000,000 nanoseconds)
-            isFastPath = (System.nanoTime() - startTime) < 1000000L;
+            if (autoMode) {
+                if ((System.nanoTime() - startTime) < FAST_PATH_THRESHOLD_NANOS) {
+                    isFastPath = (++fastStreak >= FAST_PATH_MIN_STREAK);
+                } else {
+                    fastStreak = 0;
+                    isFastPath = false;
+                }
+            }
         }
     }
 
@@ -126,26 +144,39 @@ class ChannelRunner extends Thread {
 
     final void before() {
         if (!ready) {
+            // ready may already be true if the hook initialized the reader itself (plaintext fallback)
+            if (!beforeReady() || ready || ctx.isCloseResolved()) return;
             try {
-                beforeReady();
-            } finally {
-                try {
-                    channelReader.init(ctx);
-                    ready = true;
-                } catch (Throwable throwable) {
-                    if (nioConfig.isPrintReadErrorLog()) {
-                        LOG.error("Channel init failed", throwable);
-                    }
-                    ready = false;
+                channelReader.init(ctx);
+                ready = true;
+            } catch (Throwable throwable) {
+                if (nioConfig.isPrintReadErrorLog()) {
+                    LOG.error("Channel init failed", throwable);
                 }
+                ready = false;
             }
         }
     }
 
     /**
-     * Hook method called before channel is ready
+     * One-time hook invoked before the runner starts serving reads.
+     *
+     * @return true if ready to serve; false if still waiting for more events
+     *         (e.g. SSL handshake suspended until the next OP_READ).
+     *         An implementation that initializes the reader itself must set {@link #ready};
+     *         before() then skips its own init.
      */
-    protected void beforeReady() {
+    protected boolean beforeReady() {
+        return true;
+    }
+
+    /**
+     * Wraps {@link ChannelContext#channelRead(ByteBuffer)}: returns 0 (no data) once the
+     * request body is handed over to the handler thread, so the decode loop stops draining
+     * the socket and the handler can read the remaining body without contention.
+     */
+    final int channelReadInternal(ByteBuffer buf) throws IOException {
+        return ctx.isReadHandedOver() ? 0 : ctx.channelRead(buf);
     }
 
     /**
@@ -156,8 +187,7 @@ class ChannelRunner extends Thread {
      */
     protected int handleChannelRead() throws IOException {
         ByteBuffer buf = byteBuffer;
-        ctx.channelRead(buf);
-        int size;
+        int size = channelReadInternal(buf), cap = buf.capacity(), wave = 0;
         do {
             buf.flip();
             try {
@@ -165,7 +195,8 @@ class ChannelRunner extends Thread {
             } finally {
                 buf.clear();
             }
-        } while ((size = ctx.channelRead(buf)) > 0);
+            if(size < cap || ++wave > MAX_READ_WAVE) return size;
+        } while ((size = channelReadInternal(buf)) > 0);
         return size;
     }
 

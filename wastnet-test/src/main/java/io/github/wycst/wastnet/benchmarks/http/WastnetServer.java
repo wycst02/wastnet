@@ -1,6 +1,7 @@
 package io.github.wycst.wastnet.benchmarks.http;
 
 import io.github.wycst.wastnet.http.HTTPServer;
+import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.http.HttpRequest;
 import io.github.wycst.wastnet.http.HttpResponse;
 import io.github.wycst.wastnet.http.handler.HttpRequestHandler;
@@ -35,10 +36,12 @@ public class WastnetServer implements BenchmarkServer {
         NioConfig nioConfig = new NioConfig().testMode(); // 测试模式支持pipeline(h1)
         HTTPServer s = HTTPServer.of(port, nioConfig);
         if (http2) {
+            nioConfig.option(HttpOptions.HTTP2_EXPOSE_DATE_HEADER, false);
             if (h2Tls) {
                 // HTTP/2 over TLS (browser-supported h2); pemSSL enables SSL, h2() sets ALPN.
                 s.h2().pemSSL("cert/cert.pem", "cert/server.pem");
             } else {
+                s.bufferSize(16 * 1024);
                 // cleartext HTTP/2 (h2c): prior-knowledge, declare h2c per docs.
                 s.applicationProtocols("h2c");
             }

@@ -39,6 +39,8 @@ public class HttpMethodRoute implements HttpRoute {
     final HttpRoute delegate;
     private final HttpRoute[] handlers = new HttpRoute[HttpMethod.values().length];
     private String allowHeader;
+    /** When false, binding an already-bound method throws instead of overwriting (route merge guard). */
+    private boolean allowOverride = true;
 
     /** No-arg constructor for builder pattern (#2). */
     public HttpMethodRoute() {
@@ -127,13 +129,32 @@ public class HttpMethodRoute implements HttpRoute {
     }
 
     /**
+     * Set whether binding a method that is already bound is allowed. Default true
+     * (rebinding overwrites); set false to merge routes by complementary methods,
+     * where an overlapping method must fail instead of being silently replaced.
+     *
+     * @param allowOverride whether rebinding an already-bound method is allowed
+     * @return this builder for chaining
+     */
+    public HttpMethodRoute allowOverride(boolean allowOverride) {
+        this.allowOverride = allowOverride;
+        return this;
+    }
+
+    /**
      * Bind a handler for the specified HTTP method (shared by builder methods).
+     * <p>
+     * Throws {@link IllegalArgumentException} when the method is already bound and
+     * {@link #allowOverride(boolean)} is false.
      *
      * @param method  the HTTP method to bind
      * @param handler the route handler for the method
      * @return this builder for chaining
      */
-    HttpMethodRoute methodHandler(HttpMethod method, HttpRoute handler) {
+    public HttpMethodRoute methodHandler(HttpMethod method, HttpRoute handler) {
+        if (!allowOverride && handlers[method.ordinal()] != null) {
+            throw new IllegalArgumentException("Ambiguous route: method " + method + " is already bound to another handler");
+        }
         handlers[method.ordinal()] = handler;
         buildAllowHeader();
         return this;

@@ -50,8 +50,8 @@ abstract class HttpGenerativeResponse extends HttpInternalResponse {
 
     // ==================== Final FIELDS ====================
     protected final HttpVersion httpVersion;
-    final Map<String, Object> headers;
-    protected final HttpBuf headerBuf;
+    protected final Map<String, Object> headers;
+    protected HttpBuf headerBuf;
     protected boolean chunked;
     protected boolean hasExplicitContentType;
     protected boolean hasExplicitContentLength;
@@ -87,7 +87,8 @@ abstract class HttpGenerativeResponse extends HttpInternalResponse {
         headers.put(HttpHeaderUtils.normalizeHeaderKey(String.valueOf(key)), String.valueOf(value));
     }
 
-    protected final void directlyPutHeader(String key, Serializable value) {
+    @Override
+    protected void directlyPutHeader(String key, Serializable value) {
         headers.put(key, String.valueOf(value));
     }
 
@@ -100,6 +101,15 @@ abstract class HttpGenerativeResponse extends HttpInternalResponse {
     protected final String directlyGetHeader(String key) {
         Object value = headers.get(key);
         return value != null ? String.valueOf(value) : null;
+    }
+
+    /**
+     * Remove header directly without key normalization
+     *
+     * @param key the normalized header key
+     */
+    protected final void directlyRemoveHeader(String key) {
+        headers.remove(key);
     }
 
     /**
@@ -204,6 +214,7 @@ abstract class HttpGenerativeResponse extends HttpInternalResponse {
      * @throws IOException if an I/O error occurs
      */
     void writeChunk(ByteBuffer buf, int length, boolean flush) throws IOException {
+        if(isHeadRequest) return;
         byte[] hexBuf = headerBuf.getBuf();
         int hlen = Utils.intToHexBytes(length, hexBuf, 0);
         ctx.write(ByteBuffer.wrap(hexBuf, 0, hlen));
@@ -235,11 +246,6 @@ abstract class HttpGenerativeResponse extends HttpInternalResponse {
     public final void setKeepAlive(boolean keepAlive) {
         String connectionValue = keepAlive ? HttpHeaderValues.KEEP_ALIVE : HttpHeaderValues.CLOSE;
         directlyPutHeader(HttpHeaderNormalized.getConnection(), connectionValue);
-    }
-
-    @Override
-    public final void setLastModified(long lastModifiedMillis) {
-        directlyPutHeader(HttpHeaderNormalized.getLastModified(), HttpHeaderUtils.getDateHeaderValue(lastModifiedMillis));
     }
 
     /**

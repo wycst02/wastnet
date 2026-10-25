@@ -58,7 +58,7 @@ public class WebSocketIntegrationTest {
      */
     @AfterEach
     public void drainPendingCallbacks() throws InterruptedException {
-        TimeUnit.MILLISECONDS.sleep(100);
+        TimeUnit.MILLISECONDS.sleep(20);
         serverTextLatch = null;
         serverBinaryLatch = null;
         lastTextMessage = null;
@@ -850,8 +850,8 @@ public class WebSocketIntegrationTest {
         assertServerConnectionEstablished(serverConnection);
 
         WebSocketConnection conn = serverConnection.get();
-        // sendText(null) should throw IllegalArgumentException
-        Assertions.assertThrows(IllegalArgumentException.class, () -> conn.sendText(null));
+        // sendText(null) should throw NullPointerException
+        Assertions.assertThrows(NullPointerException.class, () -> conn.sendText((String) null));
 
         ws.close(1000, "Test complete");
         client.dispatcher().executorService().shutdown();
@@ -883,7 +883,7 @@ public class WebSocketIntegrationTest {
 
         WebSocketConnection conn = serverConnection.get();
         // sendBinary(null) should throw IllegalArgumentException
-        Assertions.assertThrows(IllegalArgumentException.class, () -> conn.sendBinary(null));
+        Assertions.assertThrows(NullPointerException.class, () -> conn.sendBinary(null));
 
         ws.close(1000, "Test complete");
         client.dispatcher().executorService().shutdown();
@@ -894,7 +894,7 @@ public class WebSocketIntegrationTest {
     private static void assertServerConnectionEstablished(AtomicReference<WebSocketConnection> ref) throws InterruptedException {
         for (int i = 0; i < 50; ++i) {
             if (ref != null && ref.get() != null) return;
-            TimeUnit.MILLISECONDS.sleep(100);
+            TimeUnit.MILLISECONDS.sleep(20);
         }
         Assertions.fail("Server-side WebSocketConnection should be established within 5s");
     }

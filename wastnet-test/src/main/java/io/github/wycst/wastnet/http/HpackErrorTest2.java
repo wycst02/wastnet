@@ -1,11 +1,8 @@
 package io.github.wycst.wastnet.http;
 
-import io.github.wycst.wast.common.utils.ByteUtils;
-import io.github.wycst.wastnet.http.h2.Http2HpackCodec;
 import io.github.wycst.wastnet.http.h2.HuffmanByteCodec;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
 
 public class HpackErrorTest2 {
 

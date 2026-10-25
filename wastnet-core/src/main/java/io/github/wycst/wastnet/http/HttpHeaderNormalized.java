@@ -57,6 +57,10 @@ public class HttpHeaderNormalized {
         return HttpHeaderUtils.isTitleCase() ? "Accept-Encoding" : "accept-encoding";
     }
 
+    public static String getVary() {
+        return HttpHeaderUtils.isTitleCase() ? "Vary" : "vary";
+    }
+
     public static String getTransferEncoding() {
         return HttpHeaderUtils.isTitleCase() ? "Transfer-Encoding" : "transfer-encoding";
     }

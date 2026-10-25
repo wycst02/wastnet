@@ -18,6 +18,7 @@ package io.github.wycst.wastnet.socket.tcp;
 import io.github.wycst.wastnet.env.RuntimeEnv;
 import io.github.wycst.wastnet.exception.SocketException;
 import io.github.wycst.wastnet.socket.conf.SocketOptions;
+import io.github.wycst.wastnet.util.Utils;
 
 import javax.net.ssl.*;
 import java.io.IOException;
@@ -32,6 +33,8 @@ import java.util.Map;
 public final class ChannelSSLContext extends ChannelContext {
     final SSLEngineContext sslEngineCtx;
     boolean readFullyRemaining;
+    boolean handshakeStarted;
+    long handshakeDeadline;
 
     /**
      * Atomically read and clear the readFullyRemaining flag.
@@ -52,8 +55,7 @@ public final class ChannelSSLContext extends ChannelContext {
      * @throws IOException if initialization fails
      */
     public ChannelSSLContext(SocketChannel channel, SSLEngineContext sslEngineCtx) throws IOException {
-        super(channel, 0);
-        this.sslEngineCtx = sslEngineCtx;
+        this(Utils.id(), channel, sslEngineCtx);
     }
 
     /**
@@ -65,7 +67,7 @@ public final class ChannelSSLContext extends ChannelContext {
      * @throws IOException if initialization fails
      */
     public ChannelSSLContext(long id, SocketChannel channel, SSLEngineContext sslEngineCtx) throws IOException {
-        super(id, channel);
+        super(id, channel, sslEngineCtx.getSSLEngine().getSession().getApplicationBufferSize());
         this.sslEngineCtx = sslEngineCtx;
     }
 
@@ -170,7 +172,7 @@ public final class ChannelSSLContext extends ChannelContext {
      */
     public static ChannelSSLContext createClientContext(long id, SocketChannel channel, SSLEngineContext sslEngineCtx) throws IOException {
         ChannelSSLContext ctx = new ChannelSSLContext(id, channel, sslEngineCtx);
-        ctx.doHandshake();
+        ctx.doHandshake(true);
         return ctx;
     }
 
@@ -188,24 +190,38 @@ public final class ChannelSSLContext extends ChannelContext {
         return handshakeTimeoutMs > 0 ? System.currentTimeMillis() + handshakeTimeoutMs : Long.MAX_VALUE;
     }
 
+    // Lazily resolved absolute handshake deadline, shared across event-driven re-entries.
+    long handshakeDeadline() {
+        if (handshakeDeadline == 0) handshakeDeadline = getSSLHandshakeDeadline();
+        return handshakeDeadline;
+    }
+
     /**
-     * Perform SSL handshake (blocking).
-     * If packetInBuf already contains data (e.g. pre-read by caller), it will be consumed first.
+     * Perform or continue the SSL handshake (re-entrant across OP_READ events).
+     * Bytes already buffered in packetInBuf (e.g. pre-read by the caller) are consumed first.
      *
-     * @throws IOException if handshake fails
+     * @param blocking true: spin-retry until finished or deadline (client user thread);
+     *                 false: suspend as soon as the engine needs more peer data — nothing read,
+     *                 or BUFFER_UNDERFLOW on a partial record — and resume on next OP_READ (server event loop)
+     * @return true if handshake finished; false if suspended (blocking=false only)
+     * @throws IOException if handshake fails or the absolute deadline expires
      */
-    void doHandshake() throws IOException {
+    boolean doHandshake(boolean blocking) throws IOException {
         SSLEngine sslEngine = sslEngineCtx.sslEngine;
         ByteBuffer packetInBuf = sslEngineCtx.packetInBuf;
         ByteBuffer applicationInBuf = sslEngineCtx.applicationInBuf;
         ByteBuffer packetOutBuf = sslEngineCtx.packetOutBuf;
         ByteBuffer applicationOutBuf = sslEngineCtx.applicationOutBuf;
 
-        sslEngine.beginHandshake();
+        // beginHandshake() is one-shot: later OP_READ re-entries resume the existing engine state
+        if (!handshakeStarted) {
+            sslEngine.beginHandshake();
+            handshakeStarted = true;
+        }
         SSLEngineResult.HandshakeStatus handshakeStatus = sslEngine.getHandshakeStatus();
         SSLEngineResult res;
 
-        long deadline = getSSLHandshakeDeadline();
+        long deadline = handshakeDeadline();
         while (handshakeStatus != SSLEngineResult.HandshakeStatus.FINISHED && handshakeStatus != SSLEngineResult.HandshakeStatus.NOT_HANDSHAKING) {
             if (System.currentTimeMillis() > deadline) {
                 throw new SSLException("SSL handshake timeout");
@@ -215,6 +231,8 @@ public final class ChannelSSLContext extends ChannelContext {
                     if (channelRead(packetInBuf) == -1) {
                         throw new SSLException("SSL handshake: connection closed");
                     }
+                    // nothing read and no residual record (buffer stays in write mode): suspend until next OP_READ
+                    if (!blocking && packetInBuf.position() == 0) return false;
                     packetInBuf.flip();
                     res = sslEngine.unwrap(packetInBuf, applicationInBuf);
                     packetInBuf.compact();
@@ -222,6 +240,8 @@ public final class ChannelSSLContext extends ChannelContext {
                         throw new SSLException("SSL handshake closed during unwrap");
                     }
                     handshakeStatus = res.getHandshakeStatus();
+                    // partial record buffered: no progress until more bytes arrive
+                    if (!blocking && res.getStatus() == SSLEngineResult.Status.BUFFER_UNDERFLOW) return false;
                     break;
 
                 case NEED_WRAP:
@@ -245,6 +265,7 @@ public final class ChannelSSLContext extends ChannelContext {
             }
         }
         packetOutBuf.clear();
+        return true;
     }
 
     @Override
@@ -256,38 +277,38 @@ public final class ChannelSSLContext extends ChannelContext {
         }
     }
 
-    /**
-     * Write data with SSL encryption
-     *
-     * @param buf the buffer containing data to write
-     * @return the number of bytes written, or -1 if the SSL engine is closed
-     * @throws IOException if write operation fails
-     */
-    @Override
-    public int write(ByteBuffer buf) throws IOException {
-        final int remaining = buf.remaining();
-        if (sslEngineCtx.isDisabled()) {
-            channelWrite(buf);
-            buf.clear();
-        } else {
-            SSLEngine sslEngine = sslEngineCtx.sslEngine;
-            ByteBuffer packetOutBuf = sslEngineCtx.packetOutBuf;
-            // Loop processing until all data is encrypted
-            while (buf.hasRemaining()) {
-                SSLEngineResult res = sslEngine.wrap(buf, packetOutBuf);
-                SSLEngineResult.Status status = res.getStatus();
-                if (!packetOutBuf.hasRemaining() || status == SSLEngineResult.Status.BUFFER_OVERFLOW) {
-                    flush();
-                    continue;
-                }
-                if (status != SSLEngineResult.Status.OK) {
-                    if (status == SSLEngineResult.Status.CLOSED) return -1;
-                    throw new SocketException("Unexpected exception, SSL encryption failed status: " + status);
-                }
-            }
-        }
-        return remaining;
-    }
+//    /**
+//     * Write data with SSL encryption
+//     *
+//     * @param buf the buffer containing data to write
+//     * @return the number of bytes written, or -1 if the SSL engine is closed
+//     * @throws IOException if write operation fails
+//     */
+//    @Override
+//    public int write(ByteBuffer buf) throws IOException {
+//        final int remaining = buf.remaining();
+//        if (sslEngineCtx.isDisabled()) {
+//            channelWrite(buf);
+//            buf.clear();
+//        } else {
+//            SSLEngine sslEngine = sslEngineCtx.sslEngine;
+//            ByteBuffer packetOutBuf = sslEngineCtx.packetOutBuf;
+//            // Loop processing until all data is encrypted
+//            while (buf.hasRemaining()) {
+//                SSLEngineResult res = sslEngine.wrap(buf, packetOutBuf);
+//                SSLEngineResult.Status status = res.getStatus();
+//                if (!packetOutBuf.hasRemaining() || status == SSLEngineResult.Status.BUFFER_OVERFLOW) {
+//                    flush();
+//                    continue;
+//                }
+//                if (status != SSLEngineResult.Status.OK) {
+//                    if (status == SSLEngineResult.Status.CLOSED) return -1;
+//                    throw new SocketException("Unexpected exception, SSL encryption failed status: " + status);
+//                }
+//            }
+//        }
+//        return remaining;
+//    }
 
     /**
      * Flush SSL encrypted data to channel
@@ -299,10 +320,47 @@ public final class ChannelSSLContext extends ChannelContext {
         if (sslEngineCtx.isDisabled()) {
             super.flush();
         } else {
-            ByteBuffer packetOutBuf = sslEngineCtx.packetOutBuf;
-            packetOutBuf.flip();
-            channelWrite(packetOutBuf);
-            packetOutBuf.clear();
+            byteBuffer.flip();
+            writeDirectToChannel(byteBuffer);
+        }
+    }
+
+    /**
+     * Encrypt the given plaintext buffer via SSL and write the resulting TLS
+     * records directly to the channel (large-data and flush paths).
+     *
+     * @param buf the plaintext to encrypt and send (in read mode)
+     * @return the number of plaintext bytes consumed
+     * @throws IOException if encryption or write fails
+     */
+    @Override
+    protected int writeDirectToChannel(ByteBuffer buf) throws IOException {
+        if (sslEngineCtx.isDisabled()) {
+            int n = channelWrite(buf);
+            buf.clear();
+            return n;
+        }
+        int len = buf.remaining();
+        SSLEngine sslEngine = sslEngineCtx.sslEngine;
+        ByteBuffer packetOutBuf = sslEngineCtx.packetOutBuf;
+        // Encrypt all buffered plaintext; finally flushes the trailing record and resets buf on every exit.
+        try {
+            while (buf.hasRemaining()) {
+                SSLEngineResult res = sslEngine.wrap(buf, packetOutBuf);
+                SSLEngineResult.Status status = res.getStatus();
+                if (!packetOutBuf.hasRemaining() || status == SSLEngineResult.Status.BUFFER_OVERFLOW) {
+                    flushBuffer(packetOutBuf);
+                    continue;
+                }
+                if (status != SSLEngineResult.Status.OK) {
+                    if (status == SSLEngineResult.Status.CLOSED) return len - buf.remaining();
+                    throw new SocketException("Unexpected exception, SSL encryption failed status: " + status);
+                }
+            }
+            return len;
+        } finally {
+            flushBuffer(packetOutBuf);
+            buf.clear();
         }
     }
 
@@ -494,25 +552,21 @@ public final class ChannelSSLContext extends ChannelContext {
     }
 
     /**
-     * Close the SSL channel gracefully by sending close_notify alert,
-     * then delegate to the parent's close logic (cancel key, close socket, etc.).
+     * Sends the close_notify alert before the socket teardown; invoked once by the parent's close CAS.
      */
     @Override
-    public void close() {
-        if (!isChannelClosed()) {
-            try {
-                SSLEngine sslEngine = sslEngineCtx.sslEngine;
-                sslEngine.closeOutbound();
-                // closeOutbound() marks the engine as closing; the subsequent wrap()
-                // triggers SSLEngine to produce an encrypted close_notify alert into packetOutBuf.
-                ByteBuffer packetOutBuf = sslEngineCtx.packetOutBuf;
-                packetOutBuf.clear();
-                sslEngine.wrap(ByteBuffer.allocate(0), packetOutBuf);
-                packetOutBuf.flip();
-                channelWrite(packetOutBuf);
-            } catch (Throwable ignored) {
-            }
+    protected void closeBefore() {
+        if (sslEngineCtx.isDisabled()) return;
+        try {
+            SSLEngine sslEngine = sslEngineCtx.sslEngine;
+            sslEngine.closeOutbound();
+            // wrap() produces one encrypted close_notify record; measured max 85B on JDK 21 (TLS1.2 AES256-CBC/SHA384), 256 is 3x headroom
+            ByteBuffer alert = ByteBuffer.allocate(256);
+            sslEngine.wrap(EMPTY_BUFFER, alert);
+            alert.flip();
+            // Blocking complete write so the close_notify is fully delivered (bounded by writeTimeoutMs, never partial)
+            channelWrite(alert);
+        } catch (Throwable ignored) {
         }
-        super.close();
     }
 }

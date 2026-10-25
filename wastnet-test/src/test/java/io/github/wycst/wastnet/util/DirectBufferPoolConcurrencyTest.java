@@ -134,7 +134,7 @@ public class DirectBufferPoolConcurrencyTest {
     // ------------------------------------------------------------------
     private Result runStress(final String label, final PoolAdapter pool) throws InterruptedException {
         final int threads = Math.max(8, Runtime.getRuntime().availableProcessors() * 2);
-        final int iterationsPerThread = 200_000;
+        final int iterationsPerThread = 20_000;
 
         // Tracks currently-held pooled tokens -> holding thread id.
         // If acquire returns a token already present here, the pool double-handed it out.

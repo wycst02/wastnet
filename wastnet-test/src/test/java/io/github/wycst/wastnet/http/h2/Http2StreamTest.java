@@ -8,8 +8,6 @@ import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
-
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -17,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 /**
@@ -551,7 +550,7 @@ public class Http2StreamTest {
 
     @Test void testWriteFrameAfterEndStream() throws Exception {
         Fixture f = createFixture(); f.stream.endStreamSent = true;
-        f.stream.writeFrame(ByteBuffer.allocate(9));
+        f.stream.writeFrame(java.nio.ByteBuffer.allocate(9));
     }
 
     @Test void testOnDataFrameEndStreamEmptyBody() throws Exception {
@@ -663,16 +662,16 @@ public class Http2StreamTest {
     @Test void testFillDiagnosticWithBodyStream() throws Exception {
         Fixture f = createFixture();
         f.stream.prepareSubmit(false);
-        Map<String, Object> m = new HashMap<String, Object>();
+        java.util.Map<String, Object> m = new java.util.HashMap<String, Object>();
         f.stream.fillDiagnostic(m);
         assertTrue(m.containsKey("bodyUnconsumed"));
     }
 
     @Test void testWriteFramesBatch() throws Exception {
         Fixture f = createFixture();
-        List<ByteBuffer> frames = new ArrayList<ByteBuffer>();
-        frames.add(ByteBuffer.allocate(9));
-        frames.add(ByteBuffer.allocate(9));
+        List<java.nio.ByteBuffer> frames = new ArrayList<java.nio.ByteBuffer>();
+        frames.add(java.nio.ByteBuffer.allocate(9));
+        frames.add(java.nio.ByteBuffer.allocate(9));
         f.stream.writeFrames(frames);
         assertEquals(2, frames.size());
     }

@@ -373,8 +373,8 @@ public class Http2PriorKnowledgeIntegrationTest {
     @SuppressWarnings("deprecation")
     @Test
     public void testH2PostRequest() throws Exception {
-        MediaType mediaType = MediaType.get("text/plain; charset=utf-8");
-        RequestBody reqBody = RequestBody.create(mediaType, "Hello H2 World!");
+        okhttp3.MediaType mediaType = okhttp3.MediaType.get("text/plain; charset=utf-8");
+        okhttp3.RequestBody reqBody = okhttp3.RequestBody.create(mediaType, "Hello H2 World!");
 
         Request request = new Request.Builder()
                 .url("http://localhost:" + port + "/app/api/echo")
@@ -479,8 +479,8 @@ public class Http2PriorKnowledgeIntegrationTest {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < 5000; ++i) sb.append("data chunk " + i + " ");
         String bigBody = sb.toString();
-        MediaType mediaType = MediaType.get("text/plain; charset=utf-8");
-        RequestBody reqBody = RequestBody.create(mediaType, bigBody);
+        okhttp3.MediaType mediaType = okhttp3.MediaType.get("text/plain; charset=utf-8");
+        okhttp3.RequestBody reqBody = okhttp3.RequestBody.create(mediaType, bigBody);
 
         Request request = new Request.Builder()
                 .url("http://localhost:" + port + "/app/api/echo")
@@ -590,6 +590,19 @@ public class Http2PriorKnowledgeIntegrationTest {
     }
 
     @Test
+    public void testH2HeadRequest() throws Exception {
+        Request request = new Request.Builder()
+                .url("http://localhost:" + port + "/app/api/send-file")
+                .head()
+                .build();
+        try (Response response = client.newCall(request).execute()) {
+            Assertions.assertEquals(200, response.code());
+            Assertions.assertNotNull(response.header("Content-Length"));
+            Assertions.assertEquals(0, response.body().bytes().length);
+        }
+    }
+
+    @Test
     public void testH2EarlyHints() throws Exception {
         Request request = new Request.Builder()
                 .url("http://localhost:" + port + "/app/api/early-hints")
@@ -636,8 +649,8 @@ public class Http2PriorKnowledgeIntegrationTest {
     @SuppressWarnings("deprecation")
     @Test
     public void testH2RequestFullPost() throws Exception {
-        MediaType mt = MediaType.get("text/plain; charset=utf-8");
-        RequestBody reqBody = RequestBody.create(mt, "post body data");
+        okhttp3.MediaType mt = okhttp3.MediaType.get("text/plain; charset=utf-8");
+        okhttp3.RequestBody reqBody = okhttp3.RequestBody.create(mt, "post body data");
         Request request = new Request.Builder()
                 .url("http://localhost:" + port + "/app/api/req-full?name=hello&name=world")
                 .post(reqBody)

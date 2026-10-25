@@ -66,8 +66,6 @@ public class DownloadExample {
 
     private static void startServer() throws Exception {
         NioConfig config = new NioConfig();
-        config.testMode();
-
         HTTPServer.of(8084, config)
                 .requestHandler(new DownloadHandler())
                 .start();

@@ -4,11 +4,11 @@ import io.github.wycst.wastnet.http.HttpHeaderNormalized;
 import io.github.wycst.wastnet.http.HttpInternalResponse;
 import io.github.wycst.wastnet.http.HttpRequest;
 import io.github.wycst.wastnet.http.HttpResponse;
+import io.github.wycst.wastnet.http.reader.HttpChannelProtocolReader;
+import io.github.wycst.wastnet.http.reader.HttpMessageReader;
 import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketConnection;
 import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketFrame;
 import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketResource;
-import io.github.wycst.wastnet.http.reader.HttpChannelProtocolReader;
-import io.github.wycst.wastnet.http.reader.HttpMessageReader;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Test;
 
@@ -102,14 +102,14 @@ class DefaultUpgradeHandlerTest {
     private void setupBinding(ChannelContext mockCtx) {
         WebSocketConnection mockConn = mock(WebSocketConnection.class);
         WebSocketResource resource = new WebSocketResource();
-        when(mockCtx.binding()).thenReturn(new UpgradeWebSocketHolder(resource, mockConn));
+        when(mockCtx.binding()).thenReturn(new UpgradeWebSocketHolder(resource, mockConn, mockCtx));
     }
 
     @Test
     void testHandleContinuation() throws Throwable {
         ChannelContext mockCtx = mock(ChannelContext.class);
         setupBinding(mockCtx);
-        handler.handle(mockCtx, wsFrame(WebSocketFrame.FrameType.CONTINUATION, new byte[0], true));
+        ((UpgradeWebSocketHolder) mockCtx.binding()).handleFrame(wsFrame(WebSocketFrame.FrameType.CONTINUATION, new byte[0], true));
         verify(mockCtx, atLeastOnce()).binding();
     }
 
@@ -117,7 +117,7 @@ class DefaultUpgradeHandlerTest {
     void testHandleText() throws Throwable {
         ChannelContext mockCtx = mock(ChannelContext.class);
         setupBinding(mockCtx);
-        handler.handle(mockCtx, wsFrame(WebSocketFrame.FrameType.TEXT, "hi".getBytes(), true));
+        ((UpgradeWebSocketHolder) mockCtx.binding()).handleFrame(wsFrame(WebSocketFrame.FrameType.TEXT, "hi".getBytes(), true));
         verify(mockCtx, atLeastOnce()).binding();
     }
 
@@ -125,7 +125,7 @@ class DefaultUpgradeHandlerTest {
     void testHandleBinary() throws Throwable {
         ChannelContext mockCtx = mock(ChannelContext.class);
         setupBinding(mockCtx);
-        handler.handle(mockCtx, wsFrame(WebSocketFrame.FrameType.BINARY, new byte[]{1}, true));
+        ((UpgradeWebSocketHolder) mockCtx.binding()).handleFrame(wsFrame(WebSocketFrame.FrameType.BINARY, new byte[]{1}, true));
         verify(mockCtx, atLeastOnce()).binding();
     }
 
@@ -133,7 +133,7 @@ class DefaultUpgradeHandlerTest {
     void testHandleClose() throws Throwable {
         ChannelContext mockCtx = mock(ChannelContext.class);
         setupBinding(mockCtx);
-        handler.handle(mockCtx, wsFrame(WebSocketFrame.FrameType.CLOSE, new byte[]{0x03, (byte) 0xE8}, true));
+        ((UpgradeWebSocketHolder) mockCtx.binding()).handleFrame(wsFrame(WebSocketFrame.FrameType.CLOSE, new byte[]{0x03, (byte) 0xE8}, true));
         verify(mockCtx, atLeastOnce()).close();
     }
 
@@ -141,7 +141,7 @@ class DefaultUpgradeHandlerTest {
     void testHandleCloseWithReason() throws Throwable {
         ChannelContext mockCtx = mock(ChannelContext.class);
         setupBinding(mockCtx);
-        handler.handle(mockCtx, wsFrame(WebSocketFrame.FrameType.CLOSE, new byte[]{0x03, (byte) 0xE8, 'o', 'k'}, true));
+        ((UpgradeWebSocketHolder) mockCtx.binding()).handleFrame(wsFrame(WebSocketFrame.FrameType.CLOSE, new byte[]{0x03, (byte) 0xE8, 'o', 'k'}, true));
         verify(mockCtx, atLeastOnce()).close();
     }
 
@@ -149,7 +149,7 @@ class DefaultUpgradeHandlerTest {
     void testHandlePing() throws Throwable {
         ChannelContext mockCtx = mock(ChannelContext.class);
         setupBinding(mockCtx);
-        handler.handle(mockCtx, wsFrame(WebSocketFrame.FrameType.PING, new byte[0], true));
+        ((UpgradeWebSocketHolder) mockCtx.binding()).handleFrame(wsFrame(WebSocketFrame.FrameType.PING, new byte[0], true));
         verify(mockCtx, atLeastOnce()).binding();
     }
 
@@ -157,7 +157,7 @@ class DefaultUpgradeHandlerTest {
     void testHandlePingWithData() throws Throwable {
         ChannelContext mockCtx = mock(ChannelContext.class);
         setupBinding(mockCtx);
-        handler.handle(mockCtx, wsFrame(WebSocketFrame.FrameType.PING, "data".getBytes(), true));
+        ((UpgradeWebSocketHolder) mockCtx.binding()).handleFrame(wsFrame(WebSocketFrame.FrameType.PING, "data".getBytes(), true));
         verify(mockCtx, atLeastOnce()).binding();
     }
 
@@ -165,15 +165,8 @@ class DefaultUpgradeHandlerTest {
     void testHandlePong() throws Throwable {
         ChannelContext mockCtx = mock(ChannelContext.class);
         setupBinding(mockCtx);
-        handler.handle(mockCtx, wsFrame(WebSocketFrame.FrameType.PONG, new byte[0], true));
+        ((UpgradeWebSocketHolder) mockCtx.binding()).handleFrame(wsFrame(WebSocketFrame.FrameType.PONG, new byte[0], true));
         verify(mockCtx, atLeastOnce()).binding();
-    }
-
-    @Test
-    void testHandleBindingNullReturnsEarly() throws Throwable {
-        ChannelContext mockCtx = mock(ChannelContext.class);
-        when(mockCtx.binding()).thenReturn(null);
-        handler.handle(mockCtx, wsFrame(WebSocketFrame.FrameType.TEXT, "x".getBytes(), true));
     }
 
     @Test
@@ -182,8 +175,8 @@ class DefaultUpgradeHandlerTest {
         WebSocketConnection mockConn = mock(WebSocketConnection.class);
         doThrow(new RuntimeException("boom")).when(mockConn).updateActiveTime();
         WebSocketResource resource = new WebSocketResource();
-        when(mockCtx.binding()).thenReturn(new UpgradeWebSocketHolder(resource, mockConn));
-        handler.handle(mockCtx, wsFrame(WebSocketFrame.FrameType.TEXT, "hi".getBytes(), true));
+        when(mockCtx.binding()).thenReturn(new UpgradeWebSocketHolder(resource, mockConn, mockCtx));
+        ((UpgradeWebSocketHolder) mockCtx.binding()).handleFrame(wsFrame(WebSocketFrame.FrameType.TEXT, "hi".getBytes(), true));
         verify(mockConn, atLeastOnce()).close(anyInt(), anyString());
     }
 
@@ -263,8 +256,8 @@ class DefaultUpgradeHandlerTest {
                 throw new RuntimeException("second boom");
             }
         };
-        when(mockCtx.binding()).thenReturn(new UpgradeWebSocketHolder(resource, mockConn));
-        handler.handle(mockCtx, wsFrame(WebSocketFrame.FrameType.TEXT, "hi".getBytes(), true));
+        when(mockCtx.binding()).thenReturn(new UpgradeWebSocketHolder(resource, mockConn, mockCtx));
+        ((UpgradeWebSocketHolder) mockCtx.binding()).handleFrame(wsFrame(WebSocketFrame.FrameType.TEXT, "hi".getBytes(), true));
         verify(mockConn, atLeastOnce()).close(anyInt(), anyString());
     }
 
@@ -345,7 +338,7 @@ class DefaultUpgradeHandlerTest {
         ChannelContext mockCtx = mock(ChannelContext.class);
         WebSocketConnection mockConn = mock(WebSocketConnection.class);
         WebSocketResource resource = mock(WebSocketResource.class);
-        when(mockCtx.binding()).thenReturn(new UpgradeWebSocketHolder(resource, mockConn));
+        when(mockCtx.binding()).thenReturn(new UpgradeWebSocketHolder(resource, mockConn, mockCtx));
         handler.onClosed(mockCtx);
         verify(resource, atLeastOnce()).handleOnClose(mockCtx);
     }
@@ -372,8 +365,8 @@ class DefaultUpgradeHandlerTest {
         ChannelContext mockCtx = mock(ChannelContext.class);
         WebSocketConnection mockConn = mock(WebSocketConnection.class);
         WebSocketResource resource = mock(WebSocketResource.class);
-        when(mockCtx.binding()).thenReturn(new UpgradeWebSocketHolder(resource, mockConn));
-        handler.handle(mockCtx, wsFrame(WebSocketFrame.FrameType.CLOSE, new byte[]{0x03}, true));
+        when(mockCtx.binding()).thenReturn(new UpgradeWebSocketHolder(resource, mockConn, mockCtx));
+        ((UpgradeWebSocketHolder) mockCtx.binding()).handleFrame(wsFrame(WebSocketFrame.FrameType.CLOSE, new byte[]{0x03}, true));
         verify(mockCtx, atLeastOnce()).close();
     }
 }

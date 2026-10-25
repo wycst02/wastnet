@@ -1,6 +1,5 @@
 package io.github.wycst.wastnet.http;
 
-import io.github.wycst.wastnet.http.HttpOptions;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import io.github.wycst.wastnet.socket.tcp.NioConfig;

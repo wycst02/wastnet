@@ -2,9 +2,7 @@ package io.github.wycst.wastnet.http;
 
 import io.github.wycst.wastnet.http.handler.HttpExceptionHandler;
 import io.github.wycst.wastnet.http.handler.HttpRequestHandler;
-import io.github.wycst.wastnet.http.proxy.H2H1ProxyAdapter;
-import io.github.wycst.wastnet.http.proxy.HttpProxyConnection;
-import io.github.wycst.wastnet.http.proxy.HttpProxyWorker;
+import io.github.wycst.wastnet.http.proxy.*;
 import io.github.wycst.wastnet.http.reader.HttpChannelProtocolReader;
 import io.github.wycst.wastnet.http.reader.HttpMessageReader;
 import io.github.wycst.wastnet.http.upgrade.UpgradeHandler;
@@ -12,11 +10,7 @@ import io.github.wycst.wastnet.http.upgrade.UpgradeHolder;
 import io.github.wycst.wastnet.socket.channel.ChannelReader;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import io.github.wycst.wastnet.socket.handler.IdleStateHandler;
-import io.github.wycst.wastnet.socket.tcp.ChannelContext;
-import io.github.wycst.wastnet.socket.tcp.ConnectionFilter;
-import io.github.wycst.wastnet.socket.tcp.NioConfig;
-import io.github.wycst.wastnet.socket.tcp.PEMSSLContextFactory;
-import io.github.wycst.wastnet.socket.tcp.SSLContextFactory;
+import io.github.wycst.wastnet.socket.tcp.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -160,10 +154,10 @@ public class SmallClassTest {
         SocketChannel ch = SocketChannel.open();
         ch.configureBlocking(false);
         ChannelContext ctx = new ChannelContext(ch, 4096);
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
         // busy starts true; use reflection to reset for test
-        Field busyField = H2H1ProxyAdapter.class.getDeclaredField("busy");
+        java.lang.reflect.Field busyField = H2H1ProxyAdapter.class.getDeclaredField("busy");
         busyField.setAccessible(true);
         ((java.util.concurrent.atomic.AtomicBoolean) busyField.get(adapter)).set(false);
         assertTrue(adapter.tryAcquire());
@@ -176,7 +170,7 @@ public class SmallClassTest {
         SocketChannel ch = SocketChannel.open();
         ch.configureBlocking(false);
         ChannelContext ctx = new ChannelContext(ch, 4096);
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
         // isTarget=false should return immediately
         adapter.onData(ByteBuffer.allocate(10), ctx, false, conn);
@@ -386,8 +380,8 @@ public class SmallClassTest {
     }
 
     @Test
-    public void testHttpserverUpgradeHandler() {
-        HTTPServer s = HTTPServer.of(freePort()).localOnly(true)
+    public void testHttpserverUpgradeAndNonLocalHandler() {
+        HTTPServer s = HTTPServer.of(freePort())
                 .requestHandler(mock(HttpRequestHandler.class))
                 .startupBannerEnabled(false)
                 .start();
@@ -400,15 +394,6 @@ public class SmallClassTest {
         HTTPServer s = HTTPServer.of(freePort())
                 .h2()
                 .applicationProtocols("h2", "http/1.1")
-                .startupBannerEnabled(false)
-                .start();
-        s.shutdown();
-    }
-
-    @Test
-    public void testHttpserverNonLocal() {
-        HTTPServer s = HTTPServer.of(freePort())
-                .requestHandler(mock(HttpRequestHandler.class))
                 .startupBannerEnabled(false)
                 .start();
         s.shutdown();

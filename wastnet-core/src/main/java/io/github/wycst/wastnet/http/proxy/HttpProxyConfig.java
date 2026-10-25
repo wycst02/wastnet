@@ -90,7 +90,7 @@ public class HttpProxyConfig {
      * @param rewrite rewrite function
      * @return this config for chaining
      */
-    public HttpProxyConfig rewrite(RewriteFunction rewrite) {
+    public HttpProxyConfig rewrite(HttpProxyConfig.RewriteFunction rewrite) {
         if (rewrite != null) {
             this.rewriteRule = RewriteRule.function(rewrite);
         }

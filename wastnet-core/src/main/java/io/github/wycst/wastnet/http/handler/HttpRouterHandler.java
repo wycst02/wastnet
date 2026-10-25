@@ -388,10 +388,10 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
      * <ol>
      *   <li>Iterate all handlers in {@code exactRoutes} / {@code routes} and call
      *       {@link ClearableHandler#clear()} on each that implements it.
-     *       {@link HttpProxyRoute#clear()} closes
+     *       {@link io.github.wycst.wastnet.http.proxy.HttpProxyRoute#clear()} closes
      *       <b>proxy connections</b> (clientCtx / targetCtx TCP channels) for its route.</li>
      *   <li>Clear route maps ({@code exactRoutes.clear()}, {@code routes.clear()}).</li>
-     *   <li>If a custom {@link HttpProxyWorkerManager} exists,
+     *   <li>If a custom {@link io.github.wycst.wastnet.http.proxy.HttpProxyWorkerManager} exists,
      *       call {@code shutdown()}:
      *       <ul>
      *         <li>Stops all proxy worker threads.</li>
@@ -403,7 +403,7 @@ public class HttpRouterHandler extends DefaultUpgradeHandler
      * </ol>
      *
      * <p>Note: routes registered via {@code new HttpProxyRoute(config)} use the static
-     * {@link HttpProxyWorkerManager#GLOBAL_WORKER_MANAGER},
+     * {@link io.github.wycst.wastnet.http.proxy.HttpProxyWorkerManager#GLOBAL_WORKER_MANAGER},
      * which is never shut down (relies on JVM exit).</p>
      */
     @Override

@@ -1,7 +1,10 @@
 package io.github.wycst.wastnet.examples.http.mvc;
 
 import io.github.wycst.wastnet.http.SseEmitter;
-import io.github.wycst.wastnet.http.annotation.*;
+import io.github.wycst.wastnet.http.annotation.Controller;
+import io.github.wycst.wastnet.http.annotation.PathParam;
+import io.github.wycst.wastnet.http.annotation.RequestParam;
+import io.github.wycst.wastnet.http.annotation.Sse;
 
 import java.io.IOException;
 

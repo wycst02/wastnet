@@ -82,7 +82,7 @@ public class HttpResourceRouteTest {
         try {
             // Create an actual file to serve
             File testFile = new File(tempDir, "test.txt");
-            Files.write(testFile.toPath(), "hello".getBytes());
+            java.nio.file.Files.write(testFile.toPath(), "hello".getBytes());
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
             final HttpStatus[] capturedStatus = {null};
             handler.handle("/test.txt", MockHttpTestBase.mockRequest(HttpMethod.GET),
@@ -98,7 +98,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File indexFile = new File(tempDir, "index.html");
-            Files.write(indexFile.toPath(), "<html></html>".getBytes());
+            java.nio.file.Files.write(indexFile.toPath(), "<html></html>".getBytes());
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
             final HttpStatus[] capturedStatus = {null};
             handler.handle("/", MockHttpTestBase.mockRequest(HttpMethod.GET),
@@ -114,7 +114,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File indexFile = new File(tempDir, "index.html");
-            Files.write(indexFile.toPath(), "<html></html>".getBytes());
+            java.nio.file.Files.write(indexFile.toPath(), "<html></html>".getBytes());
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
             handler.earlyHints("<style.css>; rel=preload; as=style");
             final HttpStatus[] capturedStatus = {null};
@@ -212,7 +212,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File testFile = new File(tempDir, "style.css");
-            Files.write(testFile.toPath(), "body {}".getBytes());
+            java.nio.file.Files.write(testFile.toPath(), "body {}".getBytes());
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
             handler.cacheControl("text/css", "public, max-age=31536000");
             final HttpStatus[] capturedStatus = {null};
@@ -229,7 +229,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File testFile = new File(tempDir, "photo.png");
-            Files.write(testFile.toPath(), new byte[100]);
+            java.nio.file.Files.write(testFile.toPath(), new byte[100]);
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
             handler.cacheControl("image/*", "public, max-age=2592000");
             final HttpStatus[] capturedStatus = {null};
@@ -246,7 +246,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File testFile = new File(tempDir, "data.bin");
-            Files.write(testFile.toPath(), new byte[50]);
+            java.nio.file.Files.write(testFile.toPath(), new byte[50]);
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
             // rules exist but don't match text/html or application/octet-stream
             handler.cacheControl("image/*", "public, max-age=2592000");
@@ -273,9 +273,9 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File testFile = new File(tempDir, "app.js");
-            Files.write(testFile.toPath(), "var x=1;".getBytes());
+            java.nio.file.Files.write(testFile.toPath(), "var x=1;".getBytes());
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
-            handler.cacheEnabled(false);
+            handler.cacheControlEnabled(false);
             handler.cacheControl("application/javascript", "public, max-age=31536000");
             final HttpStatus[] capturedStatus = {null};
             handler.handle("/app.js", MockHttpTestBase.mockRequest(HttpMethod.GET),
@@ -293,7 +293,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File indexFile = new File(tempDir, "index.html");
-            Files.write(indexFile.toPath(), "home".getBytes());
+            java.nio.file.Files.write(indexFile.toPath(), "home".getBytes());
             HttpResourceRoute handler = new HttpResourceRoute(tempDir.getAbsolutePath());
             final HttpStatus[] capturedStatus = {null};
             handler.handle("/", MockHttpTestBase.mockRequest(HttpMethod.GET),
@@ -327,7 +327,7 @@ public class HttpResourceRouteTest {
         File tempDir = createTempDir("res-");
         try {
             File testFile = new File(tempDir, "test.txt");
-            Files.write(testFile.toPath(), "hello".getBytes());
+            java.nio.file.Files.write(testFile.toPath(), "hello".getBytes());
             HttpResourceRoute handler = new HttpResourceRoute("/", tempDir.getAbsolutePath());
             final HttpStatus[] capturedStatus = {null};
             // Double // prefix triggers the while loop in handle()

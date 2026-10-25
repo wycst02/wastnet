@@ -211,7 +211,7 @@ public class TCPClient<M> extends NioEngine<TCPClient<M>> {
             if (ctx == null) {
                 (ctx = SSLContext.getInstance("TLS")).init(null, ChannelSSLContext.TRUST_ALL_MANAGERS, null);
             }
-            return new ChannelSSLRunner(worker, new ChannelSSLContext(channel, new SSLEngineContext(ctx, sslCipherSuites, nioConfig.getApplicationProtocols(), nioConfig.getEnabledProtocols(), true)), nioConfig);
+            return ChannelSSLRunner.createClientRunner(worker, channel, nioConfig, ctx, sslCipherSuites);
         } else {
             return new ChannelRunner(worker, channel, nioConfig);
         }

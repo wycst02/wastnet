@@ -56,7 +56,7 @@ public class MockHttpTestBase {
             @Override public String getHeader(String name, boolean caseSensitive) { return null; }
             @Override public boolean containsHeader(String name) { return false; }
             @Override public Object getRawHeader(String name) { return null; }
-            @Override public List<String> getFullHeader(String name) { return null; }
+            @Override public java.util.List<String> getFullHeader(String name) { return null; }
             @Override public Set<String> getHeaderNames() { return Collections.emptySet(); }
             @Override public String getUriParameter(String name) { return null; }
             @Override public String getQueryString() { return null; }

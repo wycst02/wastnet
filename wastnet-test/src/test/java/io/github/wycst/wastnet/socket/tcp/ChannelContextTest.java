@@ -3,7 +3,7 @@ package io.github.wycst.wastnet.socket.tcp;
 import io.github.wycst.wastnet.socket.channel.ChannelWriter;
 import io.github.wycst.wastnet.socket.handler.IdleStateHandler;
 import io.github.wycst.wastnet.socket.handler.IdleStateHandlerTrigger;
-import io.github.wycst.wastnet.socket.tcp.ChannelWorker;
+import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -14,9 +14,11 @@ import java.net.SocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -28,7 +30,7 @@ import static org.mockito.Mockito.*;
 @org.junit.jupiter.api.condition.DisabledOnJre(org.junit.jupiter.api.condition.JRE.JAVA_8)
 public class ChannelContextTest {
 
-    private SocketChannel realChannel;
+    private java.nio.channels.SocketChannel realChannel;
     private ChannelContext ctx;
     private java.net.ServerSocket serverSocket;
 
@@ -37,7 +39,7 @@ public class ChannelContextTest {
         // 使用真实连接的 SocketChannel（isOpen()/isConnected() 自然返回 true）
         // Mock 无法 stub isOpen()（final 方法），不同 JDK 行为不一致
         serverSocket = new java.net.ServerSocket(0);
-        realChannel = SocketChannel.open(
+        realChannel = java.nio.channels.SocketChannel.open(
                 new java.net.InetSocketAddress("127.0.0.1", serverSocket.getLocalPort()));
         realChannel.configureBlocking(false);
         ctx = new ChannelContext(1L, realChannel, 1024);
@@ -586,7 +588,7 @@ public class ChannelContextTest {
     public void testSetReadKeyAndReader() {
         ctx.setReadKey(null);
         Assertions.assertNull(ctx.reader());
-        ctx.setReadKey(mock(SelectionKey.class));
+        ctx.setReadKey(mock(java.nio.channels.SelectionKey.class));
     }
 
     // ==================== channelRead triggers idle on success ====================
@@ -824,5 +826,99 @@ public class ChannelContextTest {
         ctx.close();
         // after close, attributes map has been cleared (and reset to null)
         Assertions.assertNull(ctx.getAttribute("k"));
+    }
+
+    // ==================== sync task queue (syncMode) ====================
+
+    private static class RecordingHandler implements ChannelHandler<Object> {
+        final AtomicReference<Object> handled = new AtomicReference<>();
+        final AtomicBoolean onExceptionCalled = new AtomicBoolean();
+        final CountDownLatch latch = new CountDownLatch(1);
+
+        @Override
+        public void onHandle(ChannelContext ctx, Object message) throws IOException {
+            handled.set(message);
+            latch.countDown();
+        }
+
+        @Override
+        public void onException(ChannelContext context, Throwable cause) throws IOException {
+            onExceptionCalled.set(true);
+        }
+    }
+
+    private static final class ThrowingHandler extends RecordingHandler {
+        @Override
+        public void onHandle(ChannelContext ctx, Object message) throws IOException {
+            throw new IOException("boom");
+        }
+    }
+
+    private static ChannelContext newSyncContext() throws IOException {
+        ChannelContext ctx = new ChannelContext(1L, SocketChannel.open(), 8192);
+        NioConfig nioConfig = new NioConfig();
+        nioConfig.syncMode(true);
+        ctx.setNioConfig(nioConfig);
+        return ctx;
+    }
+
+    @Test
+    public void testInitSyncTaskQueueAndRunTaskAndStopViaClose() throws Exception {
+        ChannelContext ctx = newSyncContext();
+        RecordingHandler handler = new RecordingHandler();
+        ctx.setChannelHandler(handler);
+        ctx.initSyncTaskQueueIfNeeded(16);
+        CountDownLatch taskDone = new CountDownLatch(1);
+        ctx.runTask(taskDone::countDown);
+        Assertions.assertTrue(taskDone.await(5, TimeUnit.SECONDS));
+        ctx.close();
+    }
+
+    @Test
+    public void testInvokeHandleAsyncInlineCallsOnHandle() throws Exception {
+        ChannelContext ctx = newSyncContext();
+        RecordingHandler handler = new RecordingHandler();
+        ctx.setChannelHandler(handler);
+        ctx.invokeHandleAsync("hello");
+        Assertions.assertTrue(handler.latch.await(5, TimeUnit.SECONDS));
+        Assertions.assertTrue(handler.handled.get() instanceof String);
+    }
+
+    @Test
+    public void testInvokeHandleAsyncDispatchHandleOnWorker() throws Exception {
+        ChannelContext ctx = newSyncContext();
+        RecordingHandler handler = new RecordingHandler();
+        ctx.setChannelHandler(handler);
+        NioEngine engine = new NioEngine(9999);
+        ChannelWorker worker = new ChannelWorker(engine);
+        ctx.setWorker(worker);
+        ChannelWorker.workerThreadTl.set(Thread.currentThread());
+        try {
+            ctx.invokeHandleAsync("async-msg");
+            Assertions.assertTrue(handler.latch.await(5, TimeUnit.SECONDS));
+            Assertions.assertTrue(handler.handled.get() instanceof String);
+        } finally {
+            ChannelWorker.workerThreadTl.remove();
+            engine.shutdown();
+        }
+    }
+
+    @Test
+    public void testInvokeHandleAsyncDispatchHandleExceptionGoesToOnException() throws Exception {
+        ChannelContext ctx = newSyncContext();
+        ThrowingHandler handler = new ThrowingHandler();
+        ctx.setChannelHandler(handler);
+        NioEngine engine = new NioEngine(9999);
+        ChannelWorker worker = new ChannelWorker(engine);
+        ctx.setWorker(worker);
+        ChannelWorker.workerThreadTl.set(Thread.currentThread());
+        try {
+            ctx.invokeHandleAsync("async-msg");
+            Thread.sleep(500);
+            Assertions.assertTrue(handler.onExceptionCalled.get());
+        } finally {
+            ChannelWorker.workerThreadTl.remove();
+            engine.shutdown();
+        }
     }
 }

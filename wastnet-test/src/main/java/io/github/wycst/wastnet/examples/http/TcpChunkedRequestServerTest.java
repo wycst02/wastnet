@@ -37,7 +37,6 @@ public class TcpChunkedRequestServerTest {
      */
     public static void startTestServer() throws Exception {
         NioConfig nioConfig = new NioConfig();
-        nioConfig.testMode();
         nioConfig.setWorkerNum(4);
 
         HTTPServer.of(8080, nioConfig)

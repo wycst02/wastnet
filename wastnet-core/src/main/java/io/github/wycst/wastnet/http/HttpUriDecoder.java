@@ -2,6 +2,7 @@ package io.github.wycst.wastnet.http;
 
 import io.github.wycst.wastnet.util.Utils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 public final class HttpUriDecoder {
@@ -80,7 +81,7 @@ public final class HttpUriDecoder {
 
     public void codec(byte b) {
         if (codecState == 0) {
-            // ? or '#' : split index of uri and paramepter
+            // '?' begins the query string (splits uri and parameters); '#' starts a fragment (ignored)
             // %: begin of coder (%hex)
             switch (b) {
                 case '?': {
@@ -203,7 +204,7 @@ public final class HttpUriDecoder {
     }
 
     private String contentAsString() {
-        return asciiMode ? contentBa.toISO_8859_1_string() : contentBa.toString(Utils.UTF_8);
+        return asciiMode ? contentBa.toISO_8859_1_string() : contentBa.toString(StandardCharsets.UTF_8);
     }
 
     private void nextParam(String key, String value) {

@@ -21,6 +21,7 @@ import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import io.github.wycst.wastnet.util.Utils;
 
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
@@ -79,13 +80,13 @@ public abstract class HttpBodyDecoder {
      */
     private Charset parseCharset() {
         if (contentType.isEmpty()) {
-            return Utils.UTF_8;
+            return StandardCharsets.UTF_8;
         }
         String charsetName = extractContentTypeParam("charset=");
         if (charsetName != null) {
-            return Utils.forCharsetName(charsetName.toLowerCase(), Utils.UTF_8);
+            return Utils.forCharsetName(charsetName.toLowerCase(), StandardCharsets.UTF_8);
         }
-        return Utils.UTF_8;
+        return StandardCharsets.UTF_8;
     }
 
     /**

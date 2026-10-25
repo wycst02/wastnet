@@ -1,6 +1,9 @@
 package io.github.wycst.wastnet.routerfixtures;
 
-import io.github.wycst.wastnet.http.*;
+import io.github.wycst.wastnet.http.HttpMethod;
+import io.github.wycst.wastnet.http.HttpResponse;
+import io.github.wycst.wastnet.http.MultipartField;
+import io.github.wycst.wastnet.http.SseEmitter;
 import io.github.wycst.wastnet.http.annotation.*;
 
 import java.lang.annotation.ElementType;
@@ -14,7 +17,7 @@ import java.util.List;
  * Fixture controllers/components for {@code AnnotationRouterHandler} tests.
  * Kept in an isolated package (NOT under {@code http.annotation}) so the existing
  * full-package scan in {@code AnnotationPackageTest} is not disturbed.
- * Nested types are discovered by {@link PackageScanner}.
+ * Nested types are discovered by {@link io.github.wycst.wastnet.http.annotation.PackageScanner}.
  */
 public class RouterFixtures {
 
@@ -318,6 +321,64 @@ public class RouterFixtures {
 
         public NoValueDep getNv() {
             return nv;
+        }
+    }
+
+    // ============ duplicate exact-route fixtures ============
+
+    @Controller("/dup")
+    public static class DupGetController {
+        @Endpoint(value = "/res", allowMethods = HttpMethod.GET)
+        public void get() {
+        }
+    }
+
+    @Controller("/dup")
+    public static class DupPostController {
+        @Endpoint(value = "/res", allowMethods = HttpMethod.POST)
+        public void post() {
+        }
+    }
+
+    @Controller("/dup")
+    public static class DupSameGetControllerA {
+        @Endpoint(value = "/same", allowMethods = HttpMethod.GET)
+        public void get() {
+        }
+    }
+
+    @Controller("/dup")
+    public static class DupSameGetControllerB {
+        @Endpoint(value = "/same", allowMethods = HttpMethod.GET)
+        public void get() {
+        }
+    }
+
+    @Controller("/dup")
+    public static class DupAnyController {
+        @Endpoint("/any")
+        public void any() {
+        }
+    }
+
+    @Controller("/dup")
+    public static class DupAnyGetController {
+        @Endpoint(value = "/any", allowMethods = HttpMethod.GET)
+        public void get() {
+        }
+    }
+
+    @Controller("/dup")
+    public static class DupAnyAnyControllerA {
+        @Endpoint("/anyany")
+        public void any() {
+        }
+    }
+
+    @Controller("/dup")
+    public static class DupAnyAnyControllerB {
+        @Endpoint(value = "/anyany", allowMethods = HttpMethod.POST)
+        public void post() {
         }
     }
 }

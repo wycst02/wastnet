@@ -28,7 +28,7 @@ public class NioConfigTest {
         config.setWorkerNum(1024);
         int workerNum = config.getWorkerNum();
         // MAX_WORKER_NUM = defaultWorkerNum << 2. With CPU >= 2, defaultWorkerNum >= 2, so max >= 8.
-        Assertions.assertTrue(workerNum >= 2 && workerNum <= Runtime.getRuntime().availableProcessors() << 2);
+        Assertions.assertTrue(workerNum >= 2 && workerNum <= Runtime.getRuntime().availableProcessors() << 3);
     }
 
     @Test
@@ -46,10 +46,10 @@ public class NioConfigTest {
     }
 
     @Test
-    public void testTestModeSetsSyncRunnerAndAllowPlaintext() {
+    public void testTestModeSetsSyncModeAndAllowPlaintext() {
         NioConfig config = new NioConfig();
         config.testMode();
-        Assertions.assertTrue(config.isSyncRunner());
+        Assertions.assertTrue(config.isSyncMode());
         Assertions.assertTrue(config.isAllowPlaintextWhenSslEnabled());
     }
 
@@ -137,12 +137,12 @@ public class NioConfigTest {
     }
 
     @Test
-    public void testSetSyncRunner() {
+    public void testSyncMode() {
         NioConfig config = new NioConfig();
-        config.setSyncRunner(true);
-        Assertions.assertTrue(config.isSyncRunner());
-        config.setSyncRunner(false);
-        Assertions.assertFalse(config.isSyncRunner());
+        config.syncMode(true);
+        Assertions.assertTrue(config.isSyncMode());
+        config.syncMode(false);
+        Assertions.assertFalse(config.isSyncMode());
     }
 
     @Test

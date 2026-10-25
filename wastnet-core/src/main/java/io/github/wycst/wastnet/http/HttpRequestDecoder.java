@@ -18,9 +18,9 @@ package io.github.wycst.wastnet.http;
 import io.github.wycst.wastnet.log.Log;
 import io.github.wycst.wastnet.log.LogFactory;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
-import io.github.wycst.wastnet.util.Utils;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 
 /**
@@ -35,8 +35,8 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
     static final byte HEADER_KEY = 0;
     static final byte HEADER_VALUE = 1;
     static final byte BODY_MODE_NORMAL = 0;
-    static final byte BODY_MODE_STREAM = 1;
-    static final byte BODY_MODE_CHUNKED = 2;
+    static final byte BODY_MODE_STREAM_CL = 1;
+    static final byte BODY_MODE_STREAM_CHUNKED = 2;
     static final byte STATE_INIT = 0;
     static final byte STATE_READ_HEADER = 1;
     static final byte STATE_READ_BOUNDARY = 2;
@@ -49,7 +49,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
     private static final short K_HOST           = (short)('s' << 8 | 't');
     private static final short K_EXPECT         = (short)('c' << 8 | 't');
     private static final short K_TRANSFER_ENCODING = (short)('n' << 8 | 'g');
-    private static final byte[] CONTINUE_RESPONSE = "HTTP/1.1 100 Continue\r\n\r\n".getBytes(Utils.ISO_8859_1);
+    private static final byte[] CONTINUE_RESPONSE = "HTTP/1.1 100 Continue\r\n\r\n".getBytes(StandardCharsets.ISO_8859_1);
 
     final ChannelContext ctx;
     final HttpUriDecoder uriDecoder = new HttpUriDecoder(false);
@@ -71,6 +71,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
     private boolean expectLF; // Expecting \n after \r in boundary
     private boolean expectContinue; // Expect: 100-continue detected
     private boolean chunked; // Transfer-Encoding: chunked detected
+    private boolean pipelined; // Per request: true when this request is part of a pipeline (more requests follow in the same read batch).
     private long requestStartTime; // Request decode start time for timeout check
 
     // Hot-path configuration snapshot resolved from ctx at construction time (read-only).
@@ -116,7 +117,6 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
 
     public void decode(byte[] buf, int offset, int len, ChannelContext ctx) throws IOException {
         if (len == 0) return;
-        boolean completed = false;
         final int endIndex = offset + len;
         while (true) {
             int next;
@@ -128,7 +128,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
                 return;
             }
             if (readState == STATE_COMPLETED) {
-                completed = true;
+                pipelined = next < endIndex;
                 try {
                     onDecoded(ctx);
                 } finally {
@@ -142,7 +142,6 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
             }
             break;
         }
-        if (completed) ctx.flush();
     }
 
     /**
@@ -458,7 +457,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
     protected int readBody(byte[] buf, int offset, int limit) {
         final int bodySize = httpBuf.size(), len = limit - offset;
         if (chunked) {
-            completedBody(buf, offset, len, bodySize, BODY_MODE_CHUNKED);
+            completedBody(buf, offset, len, bodySize, BODY_MODE_STREAM_CHUNKED);
             return limit;
         }
         if (contentLength <= 0 /*|| bodySize == contentLength*/) { // bodySize always < contentLength
@@ -479,7 +478,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
                     httpBuf.write(buf, offset, len);
                 }
             } else {
-                completedBody(buf, offset, len, bodySize, BODY_MODE_STREAM);
+                completedBody(buf, offset, len, bodySize, BODY_MODE_STREAM_CL);
             }
         }
         return limit;
@@ -520,14 +519,19 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
             return;
         }
         if (bodyMode == BODY_MODE_NORMAL) {
-            ctx.invokeHandle(new HttpDefaultRequest(method, startLineMiddle, uriDecoder.getUri(), uriDecoder.getParameters(), version, headers, body, contentLength, contentType, ctx));
-        } else if (bodyMode == BODY_MODE_STREAM) {
-            ctx.invokeHandle(new HttpStreamRequest(method, startLineMiddle, uriDecoder.getUri(), uriDecoder.getParameters(), version, headers, body, contentLength, contentType, ctx));
+            ctx.invokeHandle(new HttpDefaultRequest(method, startLineMiddle, uriDecoder.getUri(), uriDecoder.getParameters(), version, headers, body, contentLength, contentType, ctx).pipelined(pipelined));
+        } else if (bodyMode == BODY_MODE_STREAM_CL) {
+            ctx.invokeHandleAsync(new HttpStreamRequest(method, startLineMiddle, uriDecoder.getUri(), uriDecoder.getParameters(), version, headers, body, contentLength, contentType, ctx).pipelined(pipelined));
         } else {
             if(hasContentLength) {
                 headers.remove(HttpHeaderNormalized.getContentLength()); // RFC 7230 §3.3.3: a sender MUST NOT transmit both Content-Length and Transfer-Encoding
             }
-            ctx.invokeHandle(new HttpChunkedRequest(method, startLineMiddle, uriDecoder.getUri(), uriDecoder.getParameters(), version, headers, body, -1, contentType, ctx));
+            HttpRequest chunkedRequest = new HttpChunkedRequest(method, startLineMiddle, uriDecoder.getUri(), uriDecoder.getParameters(), version, headers, body, -1, contentType, ctx).pipelined(pipelined);
+            if (HttpUnsafe.endsWithChunkEnd(body)) {
+                ctx.invokeHandle(chunkedRequest);        // body complete in buffer: handle inline on worker
+            } else {
+                ctx.invokeHandleAsync(chunkedRequest);   // otherwise: offload to the async pool
+            }
         }
     }
 
@@ -537,7 +541,7 @@ public class HttpRequestDecoder extends HttpMessageDecoder {
             ctx.close();
             return;
         }
-        ctx.invokeHandle(new HttpBadRequest(HttpMethod.fromString(startLineValues[0]), startLineMiddle, uriDecoder.getUri(), uriDecoder.getParameters(), HttpVersion.of(startLineValues[2]), headers, body, contentLength, contentType, ctx).stream(bodyMode != BODY_MODE_NORMAL).chunked(bodyMode == BODY_MODE_CHUNKED).status(status));
+        ctx.invokeHandle(new HttpBadRequest(HttpMethod.fromString(startLineValues[0]), startLineMiddle, uriDecoder.getUri(), uriDecoder.getParameters(), HttpVersion.of(startLineValues[2]), headers, body, contentLength, contentType, ctx).stream(bodyMode != BODY_MODE_NORMAL).chunked(bodyMode == BODY_MODE_STREAM_CHUNKED).status(status));
         ctx.flush();
         if (status == HttpStatus.REQUEST_TIMEOUT)
             ctx.close(); // Defensive close: no Connection: close header sent to potentially malicious client

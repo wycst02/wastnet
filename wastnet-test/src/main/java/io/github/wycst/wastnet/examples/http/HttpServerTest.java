@@ -1,7 +1,6 @@
 package io.github.wycst.wastnet.examples.http;
 
 import io.github.wycst.wastnet.http.HTTPServer;
-import io.github.wycst.wastnet.http.HttpHeaderNames;
 import io.github.wycst.wastnet.http.HttpRequest;
 import io.github.wycst.wastnet.http.HttpResponse;
 import io.github.wycst.wastnet.http.handler.HttpRequestHandler;
@@ -25,12 +24,7 @@ public class HttpServerTest {
                         .sslContext(createSslContext())
                         .h2()
                         .bufferSize(1024 * 16)
-                        .requestHandler(new HttpRequestHandler() {
-                            @Override
-                            public void handle(HttpRequest request, HttpResponse response) throws Throwable {
-                                response.body("aa");
-                            }
-                        }).start();
+                        .requestHandler((request, response) -> response.body("aa")).start();
     }
 
     private static SSLContext createSslContext() throws Exception {

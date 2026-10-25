@@ -17,6 +17,7 @@ public class MethodRouteInfo {
     private final Class<? extends Annotation> annotationType;
     private final ContentType responseType;
     private String[] interceptorNames;
+    private boolean async;
 
     /**
      * @param path         endpoint path (e.g. "/users/{id}")
@@ -95,7 +96,19 @@ public class MethodRouteInfo {
     }
 
     /** Set endpoint interceptor bean names declared by {@link WithInterceptor}. */
-    public void setInterceptorNames(String[] interceptorNames) {
+    public MethodRouteInfo interceptorNames(String[] interceptorNames) {
         this.interceptorNames = interceptorNames;
+        return this;
+    }
+
+    /** @return whether the endpoint is dispatched asynchronously (see {@link Endpoint#async()}) */
+    public boolean isAsync() {
+        return async;
+    }
+
+    /** Set whether the endpoint is dispatched asynchronously. */
+    public MethodRouteInfo async(boolean async) {
+        this.async = async;
+        return this;
     }
 }

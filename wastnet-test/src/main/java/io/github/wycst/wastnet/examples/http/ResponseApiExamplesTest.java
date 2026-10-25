@@ -31,7 +31,6 @@ public class ResponseApiExamplesTest {
      */
     public static void testAllExamples() throws Exception {
         NioConfig nioConfig = new NioConfig();
-        nioConfig.testMode();
         nioConfig.setWorkerNum(4);
 
         HTTPServer httpServer = HTTPServer.of(8080, nioConfig)
@@ -229,7 +228,6 @@ public class ResponseApiExamplesTest {
      */
     public static void testBasicResponse() throws Exception {
         NioConfig config = new NioConfig();
-        config.testMode();
 
         HTTPServer.of(8081, config)
                 .requestHandler(new HttpRequestHandler() {
@@ -249,8 +247,6 @@ public class ResponseApiExamplesTest {
      */
     public static void testAsyncResponse() throws Exception {
         NioConfig config = new NioConfig();
-        config.testMode();
-
         HTTPServer.of(8082, config)
                 .requestHandler(new HttpRequestHandler() {
                     public void handle(HttpRequest request, HttpResponse response) throws Throwable {

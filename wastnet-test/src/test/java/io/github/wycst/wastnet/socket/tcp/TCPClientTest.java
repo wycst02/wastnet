@@ -3,7 +3,8 @@ package io.github.wycst.wastnet.socket.tcp;
 import io.github.wycst.wastnet.socket.channel.ChannelCodec;
 import io.github.wycst.wastnet.socket.channel.LengthFrameCodec;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -146,7 +147,7 @@ public class TCPClientTest {
         }, "tcp-test-server-" + port);
         serverThread.setDaemon(true);
         serverThread.start();
-        Thread.sleep(100);
+        Thread.sleep(20);
         return port;
     }
 
@@ -215,7 +216,7 @@ public class TCPClientTest {
             Assertions.assertTrue(client.isConnected());
 
             client.send("hello");
-            Thread.sleep(500);
+            Thread.sleep(150);
             Assertions.assertNotNull(received.get(), "Should receive echoed data");
             Assertions.assertEquals("hello", new String(received.get()));
         } finally {
@@ -289,7 +290,7 @@ public class TCPClientTest {
 
             // Stop server
             stopTestServer();
-            Thread.sleep(300);
+            Thread.sleep(100);
 
             // Reconnect should fail
             Assertions.assertThrows(IOException.class, client::reconnect);
@@ -320,7 +321,7 @@ public class TCPClientTest {
                 accepted.close();
             }
 
-            Thread.sleep(500);
+            Thread.sleep(150);
         } finally {
             client.close();
             stopTestServer();
@@ -347,7 +348,7 @@ public class TCPClientTest {
 
             // Stop server
             stopTestServer();
-            Thread.sleep(300);
+            Thread.sleep(100);
 
             // Restart server on same port (may fail due to TIME_WAIT)
             // This is best-effort — if bind succeeds, test reconnect
@@ -385,7 +386,7 @@ public class TCPClientTest {
 
             // Close server → triggers close listener → auto-reconnect
             stopTestServer();
-            Thread.sleep(500);
+            Thread.sleep(150);
 
             // Reconnect attempt was submitted (may fail since server is gone)
             // The key assertion: close listener ran without throwing
@@ -423,14 +424,14 @@ public class TCPClientTest {
                     byte[] realBody = new byte[bodyLen];
                     System.arraycopy(buf, 0, realBody, 0, bodyLen);
                     byte[] header = java.nio.ByteBuffer.allocate(4).putInt(bodyLen).array();
-                    OutputStream out = accepted.getOutputStream();
+                    java.io.OutputStream out = accepted.getOutputStream();
                     out.write(header); out.write(realBody); out.flush();
                 }
             } catch (Exception ignored) {}
         }, "tcp-test-server-" + port);
         serverThread.setDaemon(true);
         serverThread.start();
-        Thread.sleep(200);
+        Thread.sleep(50);
         return acceptServer.getLocalPort();
     }
 }

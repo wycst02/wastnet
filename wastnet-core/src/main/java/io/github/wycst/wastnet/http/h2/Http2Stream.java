@@ -631,9 +631,7 @@ public abstract class Http2Stream {
 
     /** Flush buffered bytes under the channel lock, safe against concurrent writes. */
     void flushCtx() throws IOException {
-        synchronized (ctx) {
-            ctx.flush();
-        }
+        reader.forceFlush(ctx);
     }
 
     /**

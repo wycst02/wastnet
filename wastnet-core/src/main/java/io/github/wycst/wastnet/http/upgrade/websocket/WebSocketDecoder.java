@@ -16,7 +16,6 @@
 package io.github.wycst.wastnet.http.upgrade.websocket;
 
 import io.github.wycst.wastnet.env.RuntimeEnv;
-import io.github.wycst.wastnet.http.HttpConf;
 import io.github.wycst.wastnet.http.HttpMessageDecoder;
 import io.github.wycst.wastnet.http.upgrade.UpgradeWebSocketHolder;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
@@ -24,12 +23,13 @@ import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.Objects;
 
 /**
  * Stateless WebSocket frame decoder for RFC 6455.
  *
  * <p>Parses frame headers (FIN, opcode, mask, extended length), decodes
- * payload, and dispatches decoded frames to {@link ChannelContext#invokeHandle}.
+ * payload, and dispatches decoded frames to {@link UpgradeWebSocketHolder#handleFrame}.
  * Supports three continuation strategies: MERGE (default), BATCH, STREAM.
  *
  * <p>This decoder is stateless — all per-connection state (strategy, max payload
@@ -39,149 +39,157 @@ public class WebSocketDecoder extends HttpMessageDecoder {
 
     @Override
     public void decode(byte[] buf, int offset, int len, ChannelContext ctx) throws IOException {
-        final UpgradeWebSocketHolder holder = (UpgradeWebSocketHolder) ctx.binding();
-        final int maxPayloadSize = holder != null ? holder.resource.getMaxPayloadSize() : HttpConf.MAX_WS_FRAME_SIZE;
-        final int maxContinuations = holder != null ? holder.resource.getMaxContinuations() : HttpConf.MAX_WS_CONTINUATIONS;
-        final long fragmentMergeTimeoutMs = holder != null ? holder.resource.getFragmentMergeTimeoutMs() : HttpConf.MAX_WS_FRAGMENT_MERGE_TIMEOUT_MS;
-        final WebSocketResource.ContinuationStrategy strategy = holder != null ? holder.resource.getContinuationStrategy() : WebSocketResource.ContinuationStrategy.MERGE;
+        // decode() runs only after the handshake binds the holder to ctx (never cleared); fail fast here instead of NPE on holder.resource.
+        final UpgradeWebSocketHolder holder = Objects.requireNonNull((UpgradeWebSocketHolder) ctx.binding(),
+                "WebSocket holder must be bound to the context before decoding frames");
+        
+        final int maxPayloadSize = holder.resource.getMaxPayloadSize();
+        final int maxContinuations = holder.resource.getMaxContinuations();
+        final long fragmentMergeTimeoutMs = holder.resource.getFragmentMergeTimeoutMs();
+        final WebSocketResource.ContinuationStrategy strategy = holder.resource.getContinuationStrategy();
         int i = offset, rem = len;
         WebSocketFrame targetFrame = null;
         int continuationCount = 0;
         long mergeDeadline = 0;
-        do {
-            long payloadLenLong;
-            int maskOffset = i + 2;
-            if (rem < 6) {
-                buf = read(ctx, buf, i + rem, 6 - rem);
-                rem = 6;
-            }
-            byte firSign = buf[i], secSign = buf[i + 1];
-            boolean fin = firSign < 0; // ==> fin & 0x80 != 0
-            final int opcode = firSign & 0x7F;  // 0x7F captures bits 0-6 (opcode + RSV1/2/3)
-            if (opcode > 15) {                   // RFC 6455: opcode > 15 is reserved or RSV≠0
-                handleWebSocketError(ctx, 1002, "Protocol Error");
-                return;
-            }
-            if ((secSign & 0x80) == 0) { // Protocol error: client frames must include mask (RFC 6455 §5.1)
-                handleWebSocketError(ctx, 1002, "Protocol Error");
-                return;
-            }
-            int baseLen = secSign & 0x7F;
-            if (baseLen < 126) {
-                payloadLenLong = baseLen;
-                rem -= 6;
-            } else if (baseLen == 126) { // 126 -> continue read 2 bytes for len
-                if (rem < 8) {
-                    buf = read(ctx, buf, i + rem, 8 - rem);
-                    rem = 8;
+        try {
+            do {
+                long payloadLenLong;
+                int maskOffset = i + 2;
+                if (rem < 6) {
+                    buf = read(ctx, buf, i + rem, 6 - rem);
+                    rem = 6;
                 }
-                payloadLenLong = ((buf[i + 2] & 0xFF) << 8) | (buf[i + 3] & 0xFF);
-                maskOffset += 2;
-                rem -= 8;
-            } else { // 127 -> continue read 8 bytes for len
-                if (rem < 14) {
-                    buf = read(ctx, buf, i + rem, 14 - rem);
-                    rem = 14;
-                }
-                if (buf[i + 2] < 0) { // RFC 6455 §5.2: MSB of the 64-bit length MUST be 0
+                byte firSign = buf[i], secSign = buf[i + 1];
+                boolean fin = firSign < 0; // ==> fin & 0x80 != 0
+                final int opcode = firSign & 0x7F;  // 0x7F captures bits 0-6 (opcode + RSV1/2/3)
+                if (opcode > 15) {                   // RFC 6455: opcode > 15 is reserved or RSV≠0
                     handleWebSocketError(ctx, 1002, "Protocol Error");
                     return;
                 }
-                payloadLenLong = ((buf[i + 2] & 0xFFL) << 56) |
-                        ((buf[i + 3] & 0xFFL) << 48) |
-                        ((buf[i + 4] & 0xFFL) << 40) |
-                        ((buf[i + 5] & 0xFFL) << 32) |
-                        ((buf[i + 6] & 0xFFL) << 24) |
-                        ((buf[i + 7] & 0xFFL) << 16) |
-                        ((buf[i + 8] & 0xFFL) << 8) |
-                        (buf[i + 9] & 0xFFL);
-                maskOffset += 8;
-                rem -= 14;
-            }
-            // Unified max-payload check across all three length encodings (RFC 6455 §5.2)
-            if (payloadLenLong > maxPayloadSize) {
-                handleWebSocketError(ctx, 1009, "Message Too Big"); // Message Too Big
-                return;
-            }
-            int payloadLen = (int) payloadLenLong;
-            int payloadOffset = maskOffset + 4;
-            if (opcode >= 0x8 && payloadLen > 125) { // RFC 6455 §5.5: control payload <= 125, else 1002
-                handleWebSocketError(ctx, 1002, "Protocol Error");
-                return;
-            }
-            byte[] payload = new byte[payloadLen];
-            if (payloadLen > 0) {
-                if (rem >= payloadLen) {
-                    System.arraycopy(buf, payloadOffset, payload, 0, payloadLen);
-                    rem -= payloadLen;
-                } else {
-                    if (rem > 0) {
-                        System.arraycopy(buf, payloadOffset, payload, 0, rem);
+                if ((secSign & 0x80) == 0) { // Protocol error: client frames must include mask (RFC 6455 §5.1)
+                    handleWebSocketError(ctx, 1002, "Protocol Error");
+                    return;
+                }
+                int baseLen = secSign & 0x7F;
+                if (baseLen < 126) {
+                    payloadLenLong = baseLen;
+                    rem -= 6;
+                } else if (baseLen == 126) { // 126 -> continue read 2 bytes for len
+                    if (rem < 8) {
+                        buf = read(ctx, buf, i + rem, 8 - rem);
+                        rem = 8;
                     }
-                    readInternal(ctx, payload, rem, payloadLen - rem);
-                    rem = 0;
-                }
-                unmask(buf, payload, maskOffset);
-            }
-            WebSocketFrame frame = new WebSocketFrame(WebSocketFrame.FrameType.valueOf(opcode), payload, fin);
-
-            if (strategy == WebSocketResource.ContinuationStrategy.STREAM) { // STREAM: dispatch every frame individually
-                ctx.invokeHandle(frame);
-                if (rem == 0) return;
-                i = payloadOffset + payloadLen;
-                continue;
-            }
-            if (targetFrame == null) { // BATCH / MERGE: accumulate continuation frames
-                // Protocol error: first frame cannot be a continuation frame, and control frames
-                // MUST NOT be fragmented (RFC 6455 §5.5) — reject fragmented control frames here.
-                if (opcode == 0x0 || (opcode >= 0x8 && !fin)) {
-                    handleWebSocketError(ctx, 1002, "Protocol Error");
-                    return;
-                }
-                targetFrame = frame;
-                continuationCount = 0;
-                mergeDeadline = System.currentTimeMillis() + fragmentMergeTimeoutMs;
-            } else {
-                if (opcode != 0x0) { // Protocol error: the next must be continuation frame
-                    if (opcode >= 0x8 && fin) { // Control frames allowed between continuation frames (RFC 6455 §5.4)
-                        ctx.invokeHandle(frame);
-                        if (rem == 0) return;
-                        i = payloadOffset + payloadLen;
-                        continue;
+                    payloadLenLong = ((buf[i + 2] & 0xFF) << 8) | (buf[i + 3] & 0xFF);
+                    maskOffset += 2;
+                    rem -= 8;
+                } else { // 127 -> continue read 8 bytes for len
+                    if (rem < 14) {
+                        buf = read(ctx, buf, i + rem, 14 - rem);
+                        rem = 14;
                     }
+                    if (buf[i + 2] < 0) { // RFC 6455 §5.2: MSB of the 64-bit length MUST be 0
+                        handleWebSocketError(ctx, 1002, "Protocol Error");
+                        return;
+                    }
+                    payloadLenLong = ((buf[i + 2] & 0xFFL) << 56) |
+                            ((buf[i + 3] & 0xFFL) << 48) |
+                            ((buf[i + 4] & 0xFFL) << 40) |
+                            ((buf[i + 5] & 0xFFL) << 32) |
+                            ((buf[i + 6] & 0xFFL) << 24) |
+                            ((buf[i + 7] & 0xFFL) << 16) |
+                            ((buf[i + 8] & 0xFFL) << 8) |
+                            (buf[i + 9] & 0xFFL);
+                    maskOffset += 8;
+                    rem -= 14;
+                }
+                // Unified max-payload check across all three length encodings (RFC 6455 §5.2)
+                if (payloadLenLong > maxPayloadSize) {
+                    handleWebSocketError(ctx, 1009, "Message Too Big"); // Message Too Big
+                    return;
+                }
+                int payloadLen = (int) payloadLenLong;
+                int payloadOffset = maskOffset + 4;
+                if (opcode >= 0x8 && payloadLen > 125) { // RFC 6455 §5.5: control payload <= 125, else 1002
                     handleWebSocketError(ctx, 1002, "Protocol Error");
                     return;
                 }
-                long mergeLength = ((long) targetFrame.getData().length) + payload.length;
-                if (mergeLength > maxPayloadSize) {
-                    if (strategy == WebSocketResource.ContinuationStrategy.BATCH) {
-                        // Flush intermediate accumulated frame (always fin=false), start new batch with current payload
-                        ctx.invokeHandle(targetFrame);
-                        targetFrame = frame;
-                        continuationCount = 0;
-                        mergeDeadline = System.currentTimeMillis() + fragmentMergeTimeoutMs;
+                byte[] payload = new byte[payloadLen];
+                if (payloadLen > 0) {
+                    if (rem >= payloadLen) {
+                        System.arraycopy(buf, payloadOffset, payload, 0, payloadLen);
+                        rem -= payloadLen;
                     } else {
-                        handleWebSocketError(ctx, 1009, "Message Too Big"); // Message Too Big
-                        return;
+                        if (rem > 0) {
+                            System.arraycopy(buf, payloadOffset, payload, 0, rem);
+                        }
+                        readInternal(ctx, payload, rem, payloadLen - rem);
+                        rem = 0;
                     }
-                } else {
-                    // Defense: limit continuation count and deadline to prevent fragmentation attacks
-                    if (++continuationCount > maxContinuations || System.currentTimeMillis() > mergeDeadline) {
-                        handleWebSocketError(ctx, 1009, "Message Too Big");
-                        return;
-                    }
-                    targetFrame = targetFrame.merge(frame, fin);
+                    unmask(buf, payload, maskOffset);
                 }
-            }
-            if (fin) {
-                ctx.invokeHandle(targetFrame);
-                targetFrame = null;
-                continuationCount = 0;
-                mergeDeadline = 0;
-                if (rem == 0) return;
-            }
-            i = rem == 0 ? 0 : payloadOffset + payloadLen;
-        } while (true);
+                WebSocketFrame frame = new WebSocketFrame(WebSocketFrame.FrameType.valueOf(opcode), payload, fin);
+
+                if (strategy == WebSocketResource.ContinuationStrategy.STREAM) { // STREAM: handle every frame individually
+                    holder.handleFrame(frame);
+                    if (rem == 0) return;
+                    i = payloadOffset + payloadLen;
+                    continue;
+                }
+                if (targetFrame == null) { // BATCH / MERGE: accumulate continuation frames
+                    // Protocol error: first frame cannot be a continuation frame, and control frames
+                    // MUST NOT be fragmented (RFC 6455 §5.5) — reject fragmented control frames here.
+                    if (opcode == 0x0 || (opcode >= 0x8 && !fin)) {
+                        handleWebSocketError(ctx, 1002, "Protocol Error");
+                        return;
+                    }
+                    targetFrame = frame;
+                    continuationCount = 0;
+                    mergeDeadline = System.currentTimeMillis() + fragmentMergeTimeoutMs;
+                } else {
+                    if (opcode != 0x0) { // Protocol error: the next must be continuation frame
+                        if (opcode >= 0x8 && fin) { // Control frames allowed between continuation frames (RFC 6455 §5.4)
+                            holder.handleFrame(frame);
+                            if (rem == 0) return;
+                            i = payloadOffset + payloadLen;
+                            continue;
+                        }
+                        handleWebSocketError(ctx, 1002, "Protocol Error");
+                        return;
+                    }
+                    long mergeLength = ((long) targetFrame.getData().length) + payload.length;
+                    if (mergeLength > maxPayloadSize) {
+                        if (strategy == WebSocketResource.ContinuationStrategy.BATCH) {
+                            // Flush intermediate accumulated frame (always fin=false), start new batch with current payload
+                            holder.handleFrame(targetFrame);
+                            targetFrame = frame;
+                            continuationCount = 0;
+                            mergeDeadline = System.currentTimeMillis() + fragmentMergeTimeoutMs;
+                        } else {
+                            handleWebSocketError(ctx, 1009, "Message Too Big"); // Message Too Big
+                            return;
+                        }
+                    } else {
+                        // Defense: limit continuation count and deadline to prevent fragmentation attacks
+                        if (++continuationCount > maxContinuations || System.currentTimeMillis() > mergeDeadline) {
+                            handleWebSocketError(ctx, 1009, "Message Too Big");
+                            return;
+                        }
+                        targetFrame = targetFrame.merge(frame, fin);
+                    }
+                }
+                if (fin) {
+                    holder.handleFrame(targetFrame);
+                    targetFrame = null;
+                    continuationCount = 0;
+                    mergeDeadline = 0;
+                    if (rem == 0) return;
+                }
+                i = rem == 0 ? 0 : payloadOffset + payloadLen;
+            } while (true);
+        } finally {
+            // channelWrite swallows write failures and closes the channel internally; flushSync never propagates IOException
+            ctx.flushSync();
+        }
     }
 
     /**
@@ -209,19 +217,21 @@ public class WebSocketDecoder extends HttpMessageDecoder {
     private void unmask(byte[] src, byte[] dst, int maskOffset) {
         byte m0 = src[maskOffset], m1 = src[maskOffset + 1], m2 = src[maskOffset + 2], m3 = src[maskOffset + 3];
         int len = dst.length, aligned = len & ~7;
-        if (useNativeUnmask()) {
-            int mask32 = ByteBuffer.wrap(src).order(ByteOrder.nativeOrder()).getInt(maskOffset);
-            long mask64 = ((long) mask32 << 32) | (mask32 & 0xFFFFFFFFL);
-            ByteBuffer bb = ByteBuffer.wrap(dst).order(ByteOrder.nativeOrder());
-            for (int i = 0; i < aligned; i += 8) {
-                bb.putLong(i, bb.getLong(i) ^ mask64);
-            }
-        } else {
-            for (int i = 0; i < aligned; i += 8) {
-                dst[i]     ^= m0; dst[i + 1] ^= m1;
-                dst[i + 2] ^= m2; dst[i + 3] ^= m3;
-                dst[i + 4] ^= m0; dst[i + 5] ^= m1;
-                dst[i + 6] ^= m2; dst[i + 7] ^= m3;
+        if (aligned > 0) {
+            if (useNativeUnmask()) {
+                int mask32 = ByteBuffer.wrap(src).order(ByteOrder.nativeOrder()).getInt(maskOffset);
+                long mask64 = ((long) mask32 << 32) | (mask32 & 0xFFFFFFFFL);
+                ByteBuffer bb = ByteBuffer.wrap(dst).order(ByteOrder.nativeOrder());
+                for (int i = 0; i < aligned; i += 8) {
+                    bb.putLong(i, bb.getLong(i) ^ mask64);
+                }
+            } else {
+                for (int i = 0; i < aligned; i += 8) {
+                    dst[i]     ^= m0; dst[i + 1] ^= m1;
+                    dst[i + 2] ^= m2; dst[i + 3] ^= m3;
+                    dst[i + 4] ^= m0; dst[i + 5] ^= m1;
+                    dst[i + 6] ^= m2; dst[i + 7] ^= m3;
+                }
             }
         }
         switch (len & 7) {

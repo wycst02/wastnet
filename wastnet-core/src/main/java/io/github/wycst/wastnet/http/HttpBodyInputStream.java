@@ -65,6 +65,8 @@ public class HttpBodyInputStream extends InputStream {
         this.readedLength = readedBytes.length;
         this.ctx = ctx;
         this.readTimeoutMs = ctx.option(SocketOptions.READ_TIMEOUT_MS);
+        // Hand the socket read to the handler thread while it reads the body.
+        ctx.setReadHandover(true);
     }
 
     protected final int next() throws IOException {
@@ -208,7 +210,12 @@ public class HttpBodyInputStream extends InputStream {
         if (completed) {
             return;
         }
-        complete0();
+        try {
+            complete0();
+        } finally {
+            // Body done: hand the socket read back to the worker.
+            ctx.setReadHandover(false);
+        }
     }
 
     private void completeAndClose() {

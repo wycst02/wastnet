@@ -11,6 +11,7 @@ import java.io.InputStream;
 import java.io.Serializable;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
+import java.util.Objects;
 import java.util.concurrent.ScheduledFuture;
 
 /**
@@ -49,42 +50,32 @@ final class WebSocketConnectionImpl implements WebSocketConnection {
 
     @Override
     public void sendText(String message) throws IOException {
-        if (closed) {
-            throw new IllegalStateException("WebSocket connection is closed");
-        }
-        if (message == null) {
-            throw new IllegalArgumentException("Message cannot be null");
-        }
+        requireOpen();
         response.sendText(message);
     }
 
     @Override
+    public void sendText(byte[] data) throws IOException {
+        requireOpen();
+        response.sendText(data);
+    }
+
+    @Override
     public void sendBinary(byte[] data) throws IOException {
-        if (closed) {
-            throw new IllegalStateException("WebSocket connection is closed");
-        }
-        if (data == null) {
-            throw new IllegalArgumentException("Data cannot be null");
-        }
+        requireOpen();
         response.sendBinary(data);
     }
 
     @Override
     public void sendFile(File file) throws IOException {
-        if (file == null) {
-            throw new IllegalArgumentException("File cannot be null");
-        }
+        Objects.requireNonNull(file, "File cannot be null");
         sendInputStream(Files.newInputStream(file.toPath()));
     }
 
     @Override
     public void sendInputStream(InputStream in) throws IOException {
-        if (closed) {
-            throw new IllegalStateException("WebSocket connection is closed");
-        }
-        if (in == null) {
-            throw new IllegalArgumentException("InputStream cannot be null");
-        }
+        requireOpen();
+        Objects.requireNonNull(in, "InputStream cannot be null");
         try {
             final int chunkSize = getChunkSize(), headerLen = WebSocketUtils.frameHeaderLength(chunkSize), frameLen = headerLen + chunkSize;
             byte[] buf = new byte[frameLen];
@@ -153,17 +144,13 @@ final class WebSocketConnectionImpl implements WebSocketConnection {
 
     @Override
     public void ping() throws IOException {
-        if (closed) {
-            throw new IllegalStateException("WebSocket connection is closed");
-        }
+        requireOpen();
         response.writeFlush(PING_FRAME);
     }
 
     @Override
     public void pong() throws IOException {
-        if (closed) {
-            throw new IllegalStateException("WebSocket connection is closed");
-        }
+        requireOpen();
         response.writeFlush(PONG_FRAME);
     }
 
@@ -331,6 +318,12 @@ final class WebSocketConnectionImpl implements WebSocketConnection {
                     scheduleDetectionTask(remaining);
                 }
             };
+        }
+    }
+
+    private void requireOpen() {
+        if (closed) {
+            throw new IllegalStateException("WebSocket connection is closed");
         }
     }
 }

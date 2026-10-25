@@ -1,7 +1,6 @@
 package io.github.wycst.wastnet.http.upgrade;
 
 import io.github.wycst.wastnet.http.HttpRequest;
-import io.github.wycst.wastnet.http.HttpUpgradeMessage;
 import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketResource;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 
@@ -16,15 +15,6 @@ import java.io.IOException;
  * @author wangyc
  */
 public interface UpgradeHandler {
-
-    /**
-     * Handle upgrade message after protocol switch.
-     *
-     * @param ctx             channel context
-     * @param upgradeMessage  upgrade message (WebSocket frame or h2c data)
-     * @throws Throwable if handling fails
-     */
-    void handle(ChannelContext ctx, HttpUpgradeMessage upgradeMessage) throws Throwable;
 
     /**
      * Register a WebSocket resource for the given path.

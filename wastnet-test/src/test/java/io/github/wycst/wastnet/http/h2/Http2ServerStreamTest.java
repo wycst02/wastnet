@@ -837,8 +837,9 @@ public class Http2ServerStreamTest {
         f.stream.submit();
 
         verify(f.ctx).runAsync(any(Runnable.class));
-        // handovered=false -> finally block calls completeStream -> removeStream
-        verify(f.reader).removeStream(1);
+        // submit() schedules the handler runnable and balances inflightRequests in its finally;
+        // stream completion is now deferred to Http2Response.complete(), so removeStream is not called here.
+        assertEquals(0, f.reader.inflightRequests.get());
     }
 
     @Test

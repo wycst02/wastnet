@@ -39,6 +39,7 @@ public abstract class HttpDecodedRequest extends HttpInternalRequest {
     protected final String contentType;
 
     private String queryStringCache;
+    private boolean pipelined;
 
     public HttpDecodedRequest(HttpMethod method, byte[] uriAsciiBytes, String requestUri, Map<String, List<String>> parameters, HttpVersion httpVersion, Map<String, Object> headers, byte[] bodyData, long contentLength, String contentType, ChannelContext ctx) {
         super(ctx);
@@ -156,6 +157,16 @@ public abstract class HttpDecodedRequest extends HttpInternalRequest {
     @Override
     public final HttpVersion getHttpVersion() {
         return httpVersion;
+    }
+
+    final HttpDecodedRequest pipelined(boolean pipelined) {
+        this.pipelined = pipelined;
+        return this;
+    }
+
+    @Override
+    public final boolean isPipelined() {
+        return pipelined;
     }
 
     @Override
@@ -311,6 +322,8 @@ public abstract class HttpDecodedRequest extends HttpInternalRequest {
         for (String headerName : headerNames) {
             String value = getHeader(headerName);
             if (value != null) {
+                HttpHeaderUtils.requireNoCRLF(headerName, "Forwarded header name must not contain CR or LF");
+                HttpHeaderUtils.requireNoCRLF(value, "Forwarded header value must not contain CR or LF");
                 headerBuilder.append(headerName).append(": ").append(value).append("\r\n");
             }
         }

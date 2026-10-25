@@ -231,7 +231,7 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
      */
     @Override
     public void setChunkedEncoding() {
-        if (headersSent) return;
+        if (headersSent || isHeadRequest) return;
         if (hasExplicitContentLength) {
             throw new IllegalStateException("Cannot set chunked encoding when Content-Length is already set");
         }
@@ -263,7 +263,19 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
     protected void sendFile0(File file, long fileSize, String mimeType, boolean shouldCompress) throws IOException {
         if (shouldCompress) {
             try {
-                compressAndSendFile(file);
+                // small file: compressed in-memory and committed; large file falls through
+                if (tryCompressAndSendSmall(file, fileSize)) {
+                    return;
+                }
+                // For large files, use streaming compression with chunked encoding
+                setChunkedEncoding();
+                ensureHeadersSent();
+                try (FileInputStream fis = new FileInputStream(file)) {
+                    streamingGzipCompress(fis);
+                }
+                // Send chunked end marker
+                ctx.write(CHUNKED_END_MARKER);
+                ctx.flush();
             } catch (IOException e) {
                 log.warn("Failed to compress file {}: {}", file, e.getMessage());
                 responseState = STATE_CORRUPTED;
@@ -294,44 +306,8 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
         // Mark response as completed
         responseState = STATE_COMPLETED;
         resetInternal();
+        finish();
     }
-
-    /**
-     * Compress and send the file content with GZIP compression
-     * For large files, uses streaming compression with chunked encoding to prevent OOM
-     *
-     * @param file the file to compress and send
-     * @throws IOException if an I/O error occurs
-     */
-    private void compressAndSendFile(File file) throws IOException {
-        final long fileSize = file.length();
-
-        // Set Content-Encoding header for all compressed responses
-        directlyPutHeader(HttpHeaderNormalized.getContentEncoding(), HttpHeaderValues.GZIP);
-
-        // For small files, use in-memory compression
-        if (fileSize <= bodyMemoryThreshold()) {
-            byte[] fileContent = readFileContent(file, (int) fileSize);
-            byte[] compressedContent = gzipCompress(fileContent);
-            setContentLength(compressedContent.length);
-            bodyBuf.replace(compressedContent);
-            commit();
-            return;
-        }
-
-        // For large files, use streaming compression with chunked encoding
-        setChunkedEncoding();
-        ensureHeadersSent();
-
-        try (FileInputStream fis = new FileInputStream(file)) {
-            streamingGzipCompress(fis);
-        }
-
-        // Send chunked end marker
-        ctx.write(CHUNKED_END_MARKER);
-        ctx.flush();
-    }
-
 
     /**
      * Send file using zero-copy transfer (FileChannel.transferTo)
@@ -401,9 +377,7 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
      * Send 404 Not Found response and complete transmission
      */
     protected void notFound() throws IOException {
-        status(HttpStatus.NOT_FOUND);
-        bodyBuf.clear();
-        commit();
+        status(HttpStatus.NOT_FOUND).body("404 not found").commit();
         os = null;
         bodyBuf.reset();
     }
@@ -431,7 +405,7 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
         ensureHeadersSent();
 
         // Send body
-        if (bodyBuf.hasRemaining()) {
+        if (!isHeadRequest && bodyBuf.hasRemaining()) {
             if (!chunked) {
                 if (contentLength >= 0) {
                     long totalSize = flushCount + bodyBuf.size();
@@ -455,6 +429,14 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
         }
     }
 
+    // Terminal cleanup: recycle the request and close the connection when not keep-alive.
+    private void finish() {
+        request.complete();
+        if (!isKeepAlive()) {
+            ctx.close();
+        }
+    }
+
     /**
      * Commit the response and complete transmission
      * For chunked encoding, sends the final chunk marker (0\r\n\r\n)
@@ -467,22 +449,20 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
         if (isSilentlyUnavailable()) {
             return;  // silently ignore, prevent duplicate submission
         }
-        writeBuffered(false);
-        // For chunked encoding, send end marker (outer decode() line 111 handles the final flush)
-        if (chunked) {
-            ctx.write(CHUNKED_END_MARKER);
-        }
-        responseState = STATE_COMPLETED;
-        resetInternal();
-    }
-
-    @Override
-    public void complete() throws IOException {
-        super.complete();
-        // non-keep-alive: super.complete() only buffers, so flush the body before closing to avoid loss
-        if (!isKeepAlive()) {
-            ctx.flush();
-            ctx.close();
+        try {
+            writeBuffered(false);
+            // For chunked encoding, send end marker
+            if (chunked) {
+                ctx.write(CHUNKED_END_MARKER);
+            }
+            responseState = STATE_COMPLETED;
+            resetInternal();
+            // Flush so manual/async (auto-commit off) commits also send; skip when pipelined to coalesce.
+            if (!request.isPipelined()) {
+                ctx.flush();
+            }
+        } finally {
+            finish();
         }
     }
 
@@ -498,7 +478,7 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
      */
     @Override
     public void write(byte[] bytes, int offset, int count) throws IOException {
-        if (bytes == null || count <= 0)
+        if (bytes == null || count <= 0 || isHeadRequest)
             return;
 
         // If either buffer size or incoming data exceeds threshold, flush and write directly
@@ -523,7 +503,7 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
      */
     @Override
     public void writeChunked(byte[] data, int offset, int count) throws IOException {
-        if (data == null) return;
+        if (data == null || isHeadRequest) return;
         if (isSilentlyUnavailable()) {
             return;  // silently ignore
         }
@@ -547,6 +527,7 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
     @Override
     public void earlyHints(String linkHeader) throws IOException {
         if (isSilentlyUnavailable() || headersSent) return;
+        HttpHeaderUtils.requireNoCRLF(linkHeader, "Early hints link header must not contain CR or LF");
         // {httpVersion} 103 Early Hints\r\nLink: {linkHeader}\r\n\r\n
         HttpBuf buf = HttpBuf.of(96);
         buf.write(httpVersion.toString().getBytes());
@@ -589,34 +570,6 @@ public class HttpDefaultResponse extends HttpGenerativeResponse {
      */
     private boolean isSilentlyUnavailable() {
         return responseState != STATE_NOT_STARTED;
-    }
-
-    /**
-     * Attempt to apply auto GZIP compression and send the response
-     * Checks if response meets auto-compression criteria (enabled, client support, size threshold)
-     * If conditions are met, compresses bodyBuf content, sets proper headers (Content-Encoding, Content-Length),
-     * sends the compressed data, and marks response as completed.
-     * If conditions are not met, does nothing and returns false to let caller handle normal commit.
-     *
-     * @return true if auto GZIP was applied and response sent, false otherwise
-     * @throws IOException if compression or I/O error occurs
-     */
-    protected boolean attemptAutoGzipAndSend() throws IOException {
-        boolean isShouldApplyAutoGzip = shouldApplyAutoGzip();
-        if (isShouldApplyAutoGzip) {
-            // Apply GZIP compression (zero-copy: directly access bodyBuf internal array)
-            byte[] compressed = gzipCompress(bodyBuf.getBuf(), bodyBuf.getBegin(), bodyBuf.size());
-            // Set Content-Encoding header
-            directlyPutHeader(HttpHeaderNormalized.getContentEncoding(), HttpHeaderValues.GZIP);
-            directlyPutHeader(HttpHeaderNormalized.getContentLength(), compressed.length);
-            hasExplicitContentLength = true;
-            ensureHeadersSent();
-            ctx.write(compressed);
-            ctx.flush();
-            responseState = STATE_COMPLETED;
-            resetInternal();
-        }
-        return isShouldApplyAutoGzip;
     }
 
 }

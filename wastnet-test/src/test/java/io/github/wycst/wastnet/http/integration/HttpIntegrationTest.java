@@ -1,20 +1,22 @@
 package io.github.wycst.wastnet.http.integration;
 
-import io.github.wycst.wastnet.http.HTTPServer;
-import io.github.wycst.wastnet.http.HttpOptions;
-import io.github.wycst.wastnet.http.HttpRequest;
-import io.github.wycst.wastnet.http.HttpResponse;
-import io.github.wycst.wastnet.http.HttpStatus;
+import io.github.wycst.wastnet.http.*;
 import io.github.wycst.wastnet.http.handler.HttpRoute;
+import io.github.wycst.wastnet.http.handler.HttpResourceRoute;
 import io.github.wycst.wastnet.http.handler.HttpRouterHandler;
 import okhttp3.*;
-import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.io.*;
 import java.net.ServerSocket;
-import java.util.zip.GZIPInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
+
+import java.nio.file.Files;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -266,7 +268,7 @@ public class HttpIntegrationTest {
             }
         });
 
-        // auto-gzip: plain body >= GZIP_MIN_SIZE with client Accept-Encoding gzip triggers attemptAutoGzipAndSend true branch
+        // auto-gzip: plain body >= GZIP_MIN_SIZE with client Accept-Encoding gzip triggers prepareAutoGzip()
         router.get("/auto-gzip", new HttpRoute() {
             public void handle(String path, HttpRequest request, HttpResponse response) throws Throwable {
                 StringBuilder sb = new StringBuilder();
@@ -346,6 +348,29 @@ public class HttpIntegrationTest {
                 response.status(HttpStatus.OK).body(sb.toString().getBytes());
             }
         });
+
+        File resDir = new File(System.getProperty("java.io.tmpdir"), "res-it-" + System.nanoTime());
+        resDir.mkdirs();
+        File resPlainFile = new File(resDir, "hello.txt");
+        Files.write(resPlainFile.toPath(), "hello world".getBytes());
+        File resGzFile = new File(resDir, "hello.txt.gz");
+        try (FileOutputStream resFos = new FileOutputStream(resGzFile);
+             GZIPOutputStream resGz = new GZIPOutputStream(resFos)) {
+            resGz.write("hello world".getBytes());
+        }
+        HttpResourceRoute resource = new HttpResourceRoute("/res", resDir.getAbsolutePath());
+        resource.detectPreCompressed(true).contentCacheEnabled(true);
+        router.resource(resource);
+        File resPlainOnlyFile = new File(resDir, "plain.txt");
+        Files.write(resPlainOnlyFile.toPath(), "plain file content".getBytes());
+        HttpResourceRoute resourceNoCache = new HttpResourceRoute("/res-nocache", resDir.getAbsolutePath());
+        resourceNoCache.detectPreCompressed(true).contentCacheEnabled(false);
+        router.resource(resourceNoCache);
+        router.exactRoute("/head-file", new HttpRoute() {
+            public void handle(String path, HttpRequest request, HttpResponse response) throws Throwable {
+                response.status(HttpStatus.OK).sendFile(resPlainFile);
+            }
+        }, HttpMethod.GET, HttpMethod.HEAD);
 
         server = new HTTPServer(port);
         server.requestHandler(router).bufferSize(1024).option(HttpOptions.GZIP, true).startupBannerEnabled(false).start();
@@ -717,5 +742,54 @@ public class HttpIntegrationTest {
     private static int findFreePort() {
         try (ServerSocket ss = new ServerSocket(0)) { return ss.getLocalPort(); }
         catch (Exception e) { throw new RuntimeException(e); }
+    }
+
+    @Test
+    public void testPreCompressedGzipServed() throws Exception {
+        try (Response resp = get("/app/res/hello.txt", "Accept-Encoding", "gzip")) {
+            assertEquals(200, resp.code());
+            assertEquals("gzip", resp.header("Content-Encoding"));
+            byte[] body = resp.body().bytes();
+            assertTrue(body.length > 0);
+        }
+    }
+
+    @Test
+    public void testPreCompressedCacheHitSecondRequest() throws Exception {
+        try (Response first = get("/app/res/hello.txt", "Accept-Encoding", "gzip");
+             Response second = get("/app/res/hello.txt", "Accept-Encoding", "gzip")) {
+            assertEquals(200, first.code());
+            assertEquals(200, second.code());
+            assertEquals("gzip", second.header("Content-Encoding"));
+        }
+    }
+
+    @Test
+    public void testHeadRequestHasContentLengthNoBody() throws Exception {
+        Request headReq = new Request.Builder().url("http://localhost:" + port + "/app/head-file").head().build();
+        try (Response resp = httpClient.newCall(headReq).execute()) {
+            assertEquals(200, resp.code());
+            assertNotNull(resp.header("Content-Length"));
+            assertEquals(0, resp.body().bytes().length);
+        }
+    }
+
+    @Test
+    public void testPreCompressedServedWithoutContentCache() throws Exception {
+        try (Response resp = get("/app/res-nocache/hello.txt", "Accept-Encoding", "gzip")) {
+            assertEquals(200, resp.code());
+            assertEquals("gzip", resp.header("Content-Encoding"));
+            byte[] body = resp.body().bytes();
+            assertTrue(body.length > 0);
+        }
+    }
+
+    @Test
+    public void testNoPreCompressedSiblingFallsBackToPlain() throws Exception {
+        try (Response resp = get("/app/res/plain.txt", "Accept-Encoding", "gzip")) {
+            assertEquals(200, resp.code());
+            assertNull(resp.header("Content-Encoding"));
+            assertEquals("plain file content", new String(resp.body().bytes(), StandardCharsets.UTF_8));
+        }
     }
 }

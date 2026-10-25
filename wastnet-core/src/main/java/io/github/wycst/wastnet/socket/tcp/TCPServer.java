@@ -142,15 +142,16 @@ public class TCPServer extends NioEngine<TCPServer> {
             prepareFuture.join();
             // Bind/listen first; on Windows WSAEventSelect(FD_ACCEPT) only fires for a listening socket,
             // so the accept key must be registered after listen() or connections are never accepted.
-            serverSocket.bind(localOnly ? new InetSocketAddress("127.0.0.1", port) : new InetSocketAddress(port));
+            serverSocket.bind(localOnly ? new InetSocketAddress("127.0.0.1", port) : new InetSocketAddress(port),
+                    nioConfig.option(SocketOptions.TCP_BACKLOG));
             serverChannel.register(selector, SelectionKey.OP_ACCEPT);
             // Startup diagnostic: surface runtime scheduling config so worker count
             // and CPU affinity mismatches (e.g. container cgroup limits) are visible.
             LOG.info("tcp server starting on port {} with {} io workers (ssl={}, "
-                    + "availableProcessors={}, syncRunner={}, readBuffer={}, writeBuffer={})",
+                    + "availableProcessors={}, syncMode={}, readBuffer={}, writeBuffer={})",
                     port, ioWorkers.length, isSsl(),
                     Runtime.getRuntime().availableProcessors(),
-                    nioConfig.isSyncRunner(),
+                    nioConfig.syncMode,
                     nioConfig.getReadBufferSize(),
                     nioConfig.getWriteBufferSize());
             // Create latch before starting threads: 1 AcceptDispatcher + N workers

@@ -10,9 +10,9 @@ import io.github.wycst.wastnet.log.LogFactory;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
 import io.github.wycst.wastnet.socket.handler.ClearableHandler;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
-import io.github.wycst.wastnet.util.Utils;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
 /**
@@ -30,7 +30,7 @@ public final class HttpServerChannelHandler implements ChannelHandler<HttpMessag
         String body = "Welcome to wastnet v" + HTTPServer.VERSION;
         response.status(HttpStatus.OK)
                 .contentType(HttpHeaderValues.TEXT_PLAIN_UTF8)
-                .body(body.getBytes(Utils.UTF_8));
+                .body(body.getBytes(StandardCharsets.UTF_8));
     };
     private UpgradeHandler upgradeHandler = new DefaultUpgradeHandler();
     private HttpExceptionHandler exceptionHandler;
@@ -144,7 +144,7 @@ public final class HttpServerChannelHandler implements ChannelHandler<HttpMessag
         if (target.isHttpRequest()) {
             HttpRequestLifecycleDelegate delegate = this.delegate;
             HttpRequest request = (HttpRequest) target;
-            HttpResponse response = request.getResponse();
+            HttpInternalResponse response = (HttpInternalResponse) request.getResponse();
             long start = 0L;
             Throwable error = null;
             boolean continued = true;
@@ -157,7 +157,7 @@ public final class HttpServerChannelHandler implements ChannelHandler<HttpMessag
                 if (!continued) {
                     // interceptor has written the response; flush it to the channel, record
                     // completion, then skip the business handler
-                    complete(request, response);
+                    response.complete();
                     return;
                 }
                 if (!request.isBad()) {
@@ -171,7 +171,9 @@ public final class HttpServerChannelHandler implements ChannelHandler<HttpMessag
                         error = throwable;
                         handleApplicationException(request, response, throwable);
                     } finally {
-                        complete(request, response);
+                        if (response.isAutoCommit()) {
+                            response.complete();
+                        }
                     }
                 } else {
                     HttpInternalRequest internalRequest = (HttpInternalRequest) request;
@@ -180,7 +182,7 @@ public final class HttpServerChannelHandler implements ChannelHandler<HttpMessag
                     } else {
                         // if parse fail then ack a bad response
                         handleBadRequest(internalRequest);
-                        request.complete();
+                        response.complete();
                     }
                 }
             } finally {
@@ -189,22 +191,10 @@ public final class HttpServerChannelHandler implements ChannelHandler<HttpMessag
                             System.nanoTime() - start, error);
                 }
             }
-        } else if (target.isUpgrade()) { // -> instanceof HttpUpgradeMessage
-            upgradeHandler.handle(ctx, (HttpUpgradeMessage) target);
-        } // ignore other http message
-    }
-
-    /**
-     * Flush the response to the channel and clear unread request data.
-     *
-     * @param request  HTTP request
-     * @param response HTTP response
-     */
-    private void complete(HttpRequest request, HttpResponse response) throws IOException {
-        // Framework calls complete() to finish response (HttpCompleteResponse specific method)
-        ((HttpInternalResponse) response).complete();
-        // clear unread data
-        request.complete();
+        } else {
+            log.warn("Ignoring unexpected message that is neither an HTTP request (type: {}); it will be dropped",
+                    target.getClass().getName());
+        }
     }
 
     @Override

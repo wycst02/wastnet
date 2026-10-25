@@ -1,17 +1,22 @@
 package io.github.wycst.wastnet.http.proxy;
 
-import io.github.wycst.wastnet.http.*;
-import io.github.wycst.wastnet.http.h2.*;
+import io.github.wycst.wastnet.http.HttpMethod;
+import io.github.wycst.wastnet.http.HttpVersion;
+import io.github.wycst.wastnet.http.h2.Http2HpackCodec;
+import io.github.wycst.wastnet.http.h2.Http2MessageReader;
+import io.github.wycst.wastnet.http.h2.Http2Request;
+import io.github.wycst.wastnet.http.h2.Http2ServerStream;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
-import java.util.*;
+import java.util.LinkedHashMap;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for {@link H2H1ProxyAdapter}.
@@ -59,7 +64,7 @@ public class H2H1ProxyAdapterTest {
 
     private static Http2MessageReader createReader() throws Exception {
         Http2MessageReader reader = mock(Http2MessageReader.class);
-        H2TestHelper.initMockReader(reader);
+        io.github.wycst.wastnet.http.h2.H2TestHelper.initMockReader(reader);
         setFinalInt(reader, "streamInitSendWindowSize", 65535);
         setFinalInt(reader, "maxSendPayloadSize", 16384);
         setFinalInt(reader, "connectSendWindow", 65535);
@@ -130,7 +135,7 @@ public class H2H1ProxyAdapterTest {
     public void testConstructorAndTryAcquire() throws Exception {
         HttpProxyWorker worker = new HttpProxyWorker();
         ChannelContext ctx = createRealCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
         assertNotNull(adapter);
         // After constructor, busy=true → tryAcquire returns false
@@ -143,7 +148,7 @@ public class H2H1ProxyAdapterTest {
     public void testTryAcquireOnReleasedAdapter() throws Exception {
         HttpProxyWorker worker = new HttpProxyWorker();
         ChannelContext ctx = createRealCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
         // busy is true after constructor
         assertFalse(adapter.tryAcquire());
@@ -156,7 +161,7 @@ public class H2H1ProxyAdapterTest {
         HttpProxyWorker worker = new HttpProxyWorker();
         ChannelContext targetCtx = createRealCtx();
         ChannelContext clientCtx = createRealCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
 
         Fixture f = createFixture();
@@ -176,7 +181,7 @@ public class H2H1ProxyAdapterTest {
         HttpProxyWorker worker = new HttpProxyWorker();
         ChannelContext targetCtx = createRealCtx();
         ChannelContext clientCtx = createRealCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
 
         // Use a minimal fixture without stream fields set → sendH1Request will throw
@@ -194,7 +199,7 @@ public class H2H1ProxyAdapterTest {
     public void testOnDataNotTargetReturnsEarly() throws Exception {
         HttpProxyWorker worker = new HttpProxyWorker();
         ChannelContext ctx = createRealCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
         ByteBuffer buf = ByteBuffer.wrap("HTTP/1.1 200 OK\r\n\r\n".getBytes());
         adapter.onData(buf, ctx, false, conn);
@@ -208,7 +213,7 @@ public class H2H1ProxyAdapterTest {
         HttpProxyWorker worker = new HttpProxyWorker();
         ChannelContext clientCtx = createRealCtx();
         ChannelContext targetCtx = createRealCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
 
         // Attach a fixture's request to targetCtx so onHandle can find it
@@ -229,7 +234,7 @@ public class H2H1ProxyAdapterTest {
         HttpProxyWorker worker = new HttpProxyWorker();
         ChannelContext clientCtx = createRealCtx();
         ChannelContext targetCtx = createRealCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
 
         Fixture f = createFixture();
@@ -250,7 +255,7 @@ public class H2H1ProxyAdapterTest {
         HttpProxyWorker worker = new HttpProxyWorker();
         ChannelContext clientCtx = createRealCtx();
         ChannelContext targetCtx = createRealCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
 
         Fixture f = createFixture();
@@ -273,7 +278,7 @@ public class H2H1ProxyAdapterTest {
     public void testReceiveResponseDoesNotThrow() throws Exception {
         HttpProxyWorker worker = new HttpProxyWorker();
         ChannelContext ctx = createRealCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         H2H1ProxyAdapter adapter = new H2H1ProxyAdapter(conn);
         adapter.receiveResponse(ctx);
     }

@@ -429,6 +429,10 @@ public interface HttpResponse /*extends HttpMessage*/ {
      * <p>
      * Note: In async threads, only body data writing is supported, header settings are invalid.
      * Therefore, make sure to set all required headers before entering async thread.
+     * <p>
+     * Note: With auto-commit disabled, a manual {@code commit()} does NOT trigger automatic
+     * GZIP compression, unlike the framework's automatic {@code complete()} which calls
+     * {@code prepareAutoGzip()} first. Compress the body yourself if content compression is needed.
      *
      * @param autoCommit true for automatic commit, false for manual commit
      */

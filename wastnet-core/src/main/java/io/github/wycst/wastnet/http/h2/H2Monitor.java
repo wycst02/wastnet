@@ -51,6 +51,8 @@ public final class H2Monitor {
     private static final AtomicLong TOTAL_RESPONSES = new AtomicLong();
     /** Process-level max response time (ms), measured from stream creation to completion. */
     private static final AtomicLong MAX_RESPONSE_TIME_MS = new AtomicLong();
+    /** Cumulative connection count: incremented once per register, never decremented. */
+    private static final AtomicLong MAX_CONNECTION_COUNT = new AtomicLong();
 
     /** Increment the process-level stream-open counter. */
     public static void incrTotalOpenStreams() {
@@ -89,11 +91,15 @@ public final class H2Monitor {
         SUBMIT_REQUESTS.set(0);
         TOTAL_RESPONSES.set(0);
         MAX_RESPONSE_TIME_MS.set(0);
+        MAX_CONNECTION_COUNT.set(0);
     }
 
     /** Register a live H2 connection. Called after successful handshake. */
     public static void register(long connId, Http2MessageReader r) {
-        if (ENABLED) LIVE.put(connId, r);
+        if (ENABLED) {
+            LIVE.put(connId, r);
+            MAX_CONNECTION_COUNT.incrementAndGet();
+        }
     }
 
     /** Remove a connection. Called on close / GOAWAY / error. */
@@ -137,6 +143,7 @@ public final class H2Monitor {
         }
         m.put("enabled", true);
         m.put("connectionCount", conns.size());
+        m.put("maxConnectionCount", MAX_CONNECTION_COUNT.get());
         m.put("connections", conns);
         m.put("activeStreams", activeStreams);
         m.put("totalOpenStreams", TOTAL_OPEN_STREAMS.get());

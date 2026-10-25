@@ -318,6 +318,16 @@ public final class HttpConf extends Conf {
     public static final boolean HTTP2_STREAM_EARLY;
 
     /**
+     * Expose (write) Date response header for HTTP/2.
+     * RFC 9110 &sect;8.6.1 / RFC 7231 &sect;7.1.1.2 recommend the Date header in responses,
+     * while HTTP/2 (RFC 7540) does not mandate it.
+     * Key: wastnet.http2.date-header.expose
+     * Default: true
+     * @since 1.0.3
+     */
+    public static final boolean HTTP2_EXPOSE_DATE_HEADER;
+
+    /**
      * Maximum HPACK dynamic table size the server advertises and enforces
      * (RFC 7541 §6.2 / §6.3, SETTINGS_HEADER_TABLE_SIZE, identifier 0x1).
      * Key: {@code wastnet.http2.max-header-table-size}
@@ -393,6 +403,7 @@ public final class HttpConf extends Conf {
         HTTP2_FLOW_CONTROL_WAIT_TIMEOUT_MS = Math.max(1000, getPropInt(APP_PROPS, "wastnet.http2.flow-control-wait-timeout-ms", 30000)); // Default: 30000ms, min: 1000ms
         HTTP2_BODY_READ_TIMEOUT_MS = Math.max(1000, getPropInt(APP_PROPS, "wastnet.http2.body-read-timeout-ms", 30000)); // Default: 30000ms, min: 1000ms
         HTTP2_STREAM_EARLY = isPropTrue(APP_PROPS, "wastnet.http2.stream-early", true); // Default: true
+        HTTP2_EXPOSE_DATE_HEADER = isPropTrue(APP_PROPS, "wastnet.http2.date-header.expose", true); // Default: true
         HTTP2_MAX_HEADER_TABLE_SIZE = (int) Math.min(1048576L, Math.max(4096L, getPropSize(APP_PROPS, "wastnet.http2.max-header-table-size", 4096L))); // Default: 4096, min: 4096, max: 1MB
     }
 
@@ -445,6 +456,7 @@ public final class HttpConf extends Conf {
                 "wastnet.http2.flow-control-wait-timeout-ms=" + HTTP2_FLOW_CONTROL_WAIT_TIMEOUT_MS + '\n' +
                 "wastnet.http2.body-read-timeout-ms=" + HTTP2_BODY_READ_TIMEOUT_MS + '\n' +
                 "wastnet.http2.stream-early=" + HTTP2_STREAM_EARLY + '\n' +
+                "wastnet.http2.date-header.expose=" + HTTP2_EXPOSE_DATE_HEADER + '\n' +
                 "wastnet.http2.hpack.huffman.enabled=" + HTTP2_HPACK_HUFFMAN_ENABLED + '\n' +
                 "wastnet.http2.client-rst.window-seconds=" + HTTP2_CLIENT_RST_WINDOW_SECONDS + '\n' +
                 "wastnet.http2.client-rst.max-count=" + HTTP2_CLIENT_RST_MAX_COUNT + '\n' +

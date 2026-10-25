@@ -9,7 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import javax.net.ssl.SSLContext;
 
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
 
 /**
  * Tests for {@link NioEngine}.

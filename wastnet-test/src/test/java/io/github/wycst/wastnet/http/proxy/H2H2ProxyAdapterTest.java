@@ -7,18 +7,14 @@ import io.github.wycst.wastnet.http.h2.*;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Test;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
 import java.util.LinkedHashMap;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 /**
@@ -135,7 +131,7 @@ public class H2H2ProxyAdapterTest {
 
     private static HttpProxyConnection newConn(ChannelContext clientCtx, ChannelContext targetCtx) throws Exception {
         HttpProxyWorker worker = new HttpProxyWorker();
-        return new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker);
+        return new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
     }
 
     private static Http2Request mockRequest(Http2ServerStream stream) {
@@ -221,7 +217,7 @@ public class H2H2ProxyAdapterTest {
         ChannelContext targetCtx = mockCtx(false);
         HttpProxyConnection conn = newConn(clientCtx, targetCtx);
 
-        Http2ClientReader reader = mock(Http2ClientReader.class);
+        Http2ClientReader reader = mock(Http2ClientReader.class); H2TestHelper.initMockReader(reader);
         when(reader.nextStreamId()).thenReturn(1);
         // returning null makes sendH2RequestHeaders NPE -> catch -> sendGatewayError
         when(reader.getOrCreateStream(eq(1), any())).thenReturn(null);
@@ -249,7 +245,7 @@ public class H2H2ProxyAdapterTest {
         ChannelContext targetCtx = mockCtx(true);
         HttpProxyConnection conn = newConn(clientCtx, targetCtx);
 
-        Http2ClientReader reader = mock(Http2ClientReader.class);
+        Http2ClientReader reader = mock(Http2ClientReader.class); H2TestHelper.initMockReader(reader);
         when(reader.nextStreamId()).thenReturn(1);
         when(reader.getOrCreateStream(eq(1), any())).thenReturn(null);
         H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn, reader);
@@ -274,7 +270,7 @@ public class H2H2ProxyAdapterTest {
         ChannelContext ctx = createRealCtx();
         HttpProxyConnection conn = newConn(ctx, ctx);
 
-        Http2ClientReader reader = mock(Http2ClientReader.class);
+        Http2ClientReader reader = mock(Http2ClientReader.class); H2TestHelper.initMockReader(reader);
         H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn, reader);
 
         ByteBuffer buf = ByteBuffer.wrap("HTTP/2 frames".getBytes());
@@ -291,7 +287,7 @@ public class H2H2ProxyAdapterTest {
         ChannelContext targetCtx = createRealCtx();
         HttpProxyConnection conn = newConn(clientCtx, targetCtx);
 
-        Http2ClientReader reader = mock(Http2ClientReader.class);
+        Http2ClientReader reader = mock(Http2ClientReader.class); H2TestHelper.initMockReader(reader);
         H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn, reader);
 
         ByteBuffer buf = ByteBuffer.wrap("HTTP/2 frames".getBytes());
@@ -307,7 +303,7 @@ public class H2H2ProxyAdapterTest {
         ChannelContext targetCtx = createRealCtx();
         HttpProxyConnection conn = newConn(clientCtx, targetCtx);
 
-        Http2ClientReader reader = mock(Http2ClientReader.class);
+        Http2ClientReader reader = mock(Http2ClientReader.class); H2TestHelper.initMockReader(reader);
         H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn, reader);
 
         Http2ClientStream clientStream = mock(Http2ClientStream.class);
@@ -324,7 +320,7 @@ public class H2H2ProxyAdapterTest {
         ChannelContext targetCtx = createRealCtx();
         HttpProxyConnection conn = newConn(clientCtx, targetCtx);
 
-        Http2ClientReader reader = mock(Http2ClientReader.class);
+        Http2ClientReader reader = mock(Http2ClientReader.class); H2TestHelper.initMockReader(reader);
         H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn, reader);
 
         Http2ServerStream serverStream = mock(Http2ServerStream.class);
@@ -345,7 +341,7 @@ public class H2H2ProxyAdapterTest {
         ChannelContext targetCtx = createRealCtx();
         HttpProxyConnection conn = newConn(clientCtx, targetCtx);
 
-        Http2ClientReader reader = mock(Http2ClientReader.class);
+        Http2ClientReader reader = mock(Http2ClientReader.class); H2TestHelper.initMockReader(reader);
         HttpDecodedResponse decoded = new HttpDecodedResponse(HttpVersion.HTTP_2, 200, "OK",
                 new LinkedHashMap<String, Object>(), null, 0, "text/plain");
         when(reader.buildResponse(any())).thenReturn(decoded);
@@ -371,7 +367,7 @@ public class H2H2ProxyAdapterTest {
         ChannelContext targetCtx = createRealCtx();
         HttpProxyConnection conn = newConn(clientCtx, targetCtx);
 
-        Http2ClientReader reader = mock(Http2ClientReader.class);
+        Http2ClientReader reader = mock(Http2ClientReader.class); H2TestHelper.initMockReader(reader);
         when(reader.buildResponse(any())).thenThrow(new RuntimeException("decode failed"));
         H2H2ProxyAdapter adapter = new H2H2ProxyAdapter(conn, reader);
 

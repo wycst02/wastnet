@@ -17,10 +17,12 @@ import java.nio.ByteBuffer;
 import java.nio.channels.SelectionKey;
 import java.nio.channels.SocketChannel;
 import java.util.*;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Channel context representing a TCP connection session.
@@ -48,6 +50,8 @@ public class ChannelContext {
     final SocketChannel channel;
     SelectionKey readKey;
     IdleStateHandlerTrigger idleStateHandlerTrigger;
+    // True while the handler thread owns the socket read (streaming body), so the worker only wakes the reader.
+    volatile boolean readHandover;
     private ChannelHandler<Object> channelHandler;
     private ChannelReader<?> channelReader;
     private ChannelWriter<?> channelWriter;
@@ -70,8 +74,8 @@ public class ChannelContext {
      */
     boolean readReady;
     final ByteBuffer byteBuffer;
-    // Short sleep for busy waiting in worker thread
-    // static final long SHORT_SLEEP_MILLIS = 1;
+    // Per-connection reusable scratch buffer (10 bytes) for small writes under the ctx lock, avoiding per-call allocation.
+    public final byte[] scratchBuf = new byte[10];
     private ChannelWorker worker;
     NioConfig nioConfig;
     /** Connection-level read timeout in milliseconds, resolved from NioConfig (SocketOptions.READ_TIMEOUT_MS). */
@@ -82,6 +86,7 @@ public class ChannelContext {
     /** Fired after readKey.cancel() but before channel.close() — TCP is still writable. */
     private Runnable clearListener;
     private List<Runnable> closeListeners;
+    final static ByteBuffer EMPTY_BUFFER = ByteBuffer.allocate(0);
     /** empty context **/
     public final static ChannelContext EMPTY_CONTEXT = new ChannelContext(0, null, 0);
     static {
@@ -89,24 +94,12 @@ public class ChannelContext {
     }
 
     /**
-     * Create ChannelContext with specified id.
-     *
-     * @param id the context id
-     * @param channel the socket channel
-     * @throws IOException if channel operation fails
-     */
-    ChannelContext(long id, SocketChannel channel) throws IOException {
-        this(id, channel, 0);
-    }
-
-    /**
      * Create ChannelContext with auto-generated id.
      *
      * @param channel the socket channel
      * @param bufferSize the write buffer size
-     * @throws IOException if channel operation fails
      */
-    public ChannelContext(SocketChannel channel, int bufferSize) throws IOException {
+    public ChannelContext(SocketChannel channel, int bufferSize) {
         this(Utils.id(), channel, bufferSize);
     }
 
@@ -120,11 +113,7 @@ public class ChannelContext {
     public ChannelContext(long id, SocketChannel channel, int bufferSize) {
         this.id = id;
         this.channel = channel;
-        if (bufferSize <= 0) {
-            this.byteBuffer = null;
-        } else {
-            this.byteBuffer = ByteBuffer.allocate(bufferSize);
-        }
+        this.byteBuffer = bufferSize <= 0 ? EMPTY_BUFFER : ByteBuffer.allocate(bufferSize);
     }
 
     /** Refreshes the cached timeout values from the currently bound NioConfig (must be called after nioConfig is set). */
@@ -134,7 +123,7 @@ public class ChannelContext {
     }
 
     public int getWriteBufferSize() {
-        return byteBuffer == null ? 0 : byteBuffer.capacity();
+        return byteBuffer.capacity();
     }
 
     final boolean isWorkerThread() {
@@ -211,14 +200,20 @@ public class ChannelContext {
         }
     }
 
+    /**
+     * Close this channel. The actual teardown runs only once: the first caller
+     * wins via an atomic flag and all later/concurrent calls (worker, idle-scan,
+     * shutdown, async business threads) return immediately. This guarantees
+     * {@code onClosed}, connection-count decrement and close listeners fire
+     * exactly once with no double release.
+     */
     public void close() {
-        // Atomic lock-grab: only the first thread to reach here executes the close
-        // logic. Concurrent/duplicate close() calls (worker thread vs idle-scan thread,
-        // shutdown thread, async business thread) all return immediately with no
-        // double onClosed / double decrement / double listeners.
+        // First winner of the atomic flag performs the teardown; others bail out.
         if (!closeResolved.compareAndSet(false, true)) {
             return;
         }
+        stopSyncTaskThread();
+        closeBefore();
         if(readKey != null) readKey.cancel();
         try { channelReader.onClosed(this); } catch (Throwable ignored) { }
         try { channelHandler.onClosed(this); } catch (Throwable ignored) { }
@@ -249,6 +244,10 @@ public class ChannelContext {
         attributes = null;
     }
 
+    /** One-time pre-teardown hook invoked only by the CAS winner; default no-op. */
+    protected void closeBefore() {
+    }
+
     /**
      * Add a listener to be notified when this channel is closed.
      * Multiple listeners can be added and will be notified in order.
@@ -274,24 +273,16 @@ public class ChannelContext {
     }
 
     /**
-     * Register a listener that fires <b>before</b> the TCP socket is closed,
-     * after {@code readKey.cancel()}. The channel is still writable at this point,
-     * so protocol-level close frames (GOAWAY, WebSocket CLOSE) can be sent.
+     * Register a listener that fires <b>before</b> the socket is closed (after
+     * {@code readKey.cancel()}, while the channel is still writable), so protocol
+     * close frames such as GOAWAY or WebSocket CLOSE can be sent.
      * <p>
-     * Unlike {@link #addCloseListener(Runnable)} which fires <i>after</i> the socket
-     * is closed, this listener fires <i>before</i> {@code channel.close()}.
-     * <p>
-     * The listener is executed by {@link #fireClearListener()}, which is called
-     * from {@code closeAllConnections()} during shutdown. It is <b>not</b> triggered
-     * on normal connection teardown (client disconnect, idle timeout, or explicit
-     * {@code connection.close()}).
-     * <p>
-     * Only one clear listener is supported; setting again overwrites the previous one.
-     * <p>
-     * <b>Note:</b> The listener runs synchronously on the thread that calls
-     * {@code closeAllConnections()} (typically the shutdown thread). It <b>must be
-     * lightweight and fast</b> — avoid blocking I/O, long loops, or locking.
-     * A slow listener will delay the entire shutdown sequence.
+     * Unlike {@link #addCloseListener(Runnable)} (which fires <i>after</i>
+     * {@code channel.close()}), this is invoked only by {@link #fireClearListener()}
+     * during shutdown ({@code closeAllConnections()}) — never on normal teardown.
+     * Only one listener is supported; a later call overwrites the previous one.
+     * It runs synchronously on the shutdown thread, so keep it lightweight
+     * (no blocking I/O or heavy work) to avoid stalling shutdown.
      *
      * @param listener the clear listener
      */
@@ -339,24 +330,33 @@ public class ChannelContext {
     }
 
     /**
+     * Hook for the large-data fast path: write data straight to the channel,
+     * bypassing the staging buffer. Subclasses may override to transform the
+     * bytes first (e.g. SSL encryption); the default writes them as-is.
+     *
+     * @param buf the buffer to write (must be in read mode)
+     * @return the number of bytes written
+     * @throws IOException if the write fails
+     */
+    protected int writeDirectToChannel(ByteBuffer buf) throws IOException {
+        return channelWrite(buf);
+    }
+
+    /**
      * Write application data
      *
-     * @param buf the buffer to write
+     * @param buf ensure it is a flipped buffer to write
      * @return the number of bytes written
      * @throws IOException if the channel is closed
      */
     public int write(ByteBuffer buf) throws IOException {
-        if (byteBuffer == null) {
-            return channelWrite(buf);
-        }
-
         // If data size is greater than or equal to buffer capacity, write directly to improve efficiency
         if (buf.remaining() >= byteBuffer.capacity()) {
             // Flush existing data in buffer first
             if (byteBuffer.position() > 0) {
-                flushBuffer();
+                flush();
             }
-            return channelWrite(buf);
+            return writeDirectToChannel(buf);
         }
 
         // Small data handling: complete in at most two operations
@@ -370,7 +370,7 @@ public class ChannelContext {
 
         // Second: if there is still data, flush then transfer
         if (buf.hasRemaining()) {
-            flushBuffer();
+            flush();
             totalWritten += copyBufferData(buf, buf.remaining());
         }
         return totalWritten;
@@ -380,6 +380,13 @@ public class ChannelContext {
     public final void writeSync(ByteBuffer buf) throws IOException {
         synchronized(this) {
             write(buf);
+        }
+    }
+
+    /** Flush buffered bytes under the channel lock, safe against concurrent writes. */
+    public final void flushSync() throws IOException {
+        synchronized(this) {
+            flush();
         }
     }
 
@@ -485,11 +492,13 @@ public class ChannelContext {
     }
 
     /**
-     * Flush buffer data to channel
+     * Flip the given buffer to read mode, write its content to the channel,
+     * then clear it for reuse.
      *
-     * @throws IOException if flush fails
+     * @param byteBuffer the buffer to flush (flipped, written and cleared)
+     * @throws IOException if the underlying write fails
      */
-    private void flushBuffer() throws IOException {
+    final void flushBuffer(ByteBuffer byteBuffer) throws IOException {
         byteBuffer.flip();
         channelWrite(byteBuffer);
         byteBuffer.clear();
@@ -501,9 +510,7 @@ public class ChannelContext {
      * @throws IOException if flush fails
      */
     public void flush() throws IOException {
-        if (byteBuffer != null) {
-            flushBuffer();
-        }
+        flushBuffer(byteBuffer);
     }
 
     /**
@@ -683,6 +690,15 @@ public class ChannelContext {
         }
     }
 
+    // Read handover: while the handler thread reads a streaming body, the worker only wakes the reader and must not read the socket.
+    public final void setReadHandover(boolean handover) {
+        readHandover = handover;
+    }
+
+    public final boolean isReadHandedOver() {
+        return readHandover;
+    }
+
     /**
      * Check if this is an SSL channel
      *
@@ -699,6 +715,17 @@ public class ChannelContext {
      */
     public boolean isChannelClosed() {
         return !channel.isOpen();
+    }
+
+   /**
+     * Returns true once {@code close()} has been invoked. The close is idempotently
+     * resolved (won't execute twice) even if the underlying socket is not yet fully closed.
+     * Use {@link #isChannelClosed()} to test the actual socket-closed state.
+     *
+     * @return true if close has been initiated/resolved, false otherwise
+     */
+    public boolean isCloseResolved() {
+        return closeResolved.get();
     }
 
     /**
@@ -740,6 +767,99 @@ public class ChannelContext {
      */
     public final ScheduledFuture<?> schedule(Runnable runnable, long delayMs) {
         return schedule(runnable, delayMs, TimeUnit.MILLISECONDS);
+    }
+
+    /**
+     * Whether explicit SYNC mode is enabled (e.g. via {@link NioConfig#isSyncMode()}).
+     */
+    public final boolean isSyncMode() {
+        return nioConfig != null && nioConfig.isSyncMode();
+    }
+
+    /**
+     * Whether explicit test mode is enabled (e.g. via {@link NioConfig#testMode()}).
+     */
+    final boolean isTestMode() {
+        return nioConfig != null && nioConfig.testMode;
+    }
+
+    /**
+     * Whether the current thread is the framework's async runner-pool thread,
+     * i.e. it will NOT block the selector/worker thread. When true, an async
+     * task already running here does not need to be offloaded again (offloading would be a
+     * redundant hop and would not protect the selector anyway).
+     */
+    public final boolean isAsyncExecutorThread() {
+        return !isSyncMode() && !isWorkerThread();
+    }
+
+    /**
+     * Sync-mode serial task queue. When sync-mode is on, {@link #runTask(Runnable)}
+     * enqueues tasks here and a dedicated per-context thread drains them serially,
+     * so the decode thread is never blocked (which would deadlock on flow-control
+     * WINDOW_UPDATE frames). Null (and no thread) when sync-mode is off, where all
+     * tasks run asynchronously instead.
+     */
+    private ArrayBlockingQueue<Runnable> syncTaskQueue;
+    private volatile Thread syncTaskThread;
+    /** Queued-but-not-started task count; */
+    private final AtomicInteger pendingTaskCount = new AtomicInteger();
+
+    /**
+     * Lazily start the per-context sync task thread so tasks run serially off the
+     * decode thread (avoids flow-control WINDOW_UPDATE deadlock); no-op off sync-mode.
+     */
+    public final void initSyncTaskQueueIfNeeded(int capacity) {
+        if (isTestMode() || !isSyncMode() || syncTaskThread != null) return;
+        syncTaskQueue = new ArrayBlockingQueue<>(capacity);
+        Thread t = new Thread(() -> {
+            try {
+                while (!Thread.currentThread().isInterrupted()) {
+                    Runnable task = syncTaskQueue.take();
+                    pendingTaskCount.decrementAndGet(); // before run(): last task must see zero and flush
+                    task.run();
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        t.setName("ctx-sync-" + id);
+        t.setDaemon(true);
+        syncTaskThread = t; // assign before start so a concurrent close() can interrupt it
+        t.start();
+    }
+
+    /**
+     * Stop the sync task thread on teardown: interrupt it, then bounded join so
+     * close() won't hang when a task is stuck on an unresponsive socket.
+     */
+    private void stopSyncTaskThread() {
+        if (syncTaskThread == null) return;
+        syncTaskThread.interrupt();
+        if (syncTaskThread != Thread.currentThread()) {
+            try {
+                syncTaskThread.join(1000L);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    /**
+     * Run a task: in sync-mode it is enqueued to the per-context serial task queue
+     * (started on demand), otherwise dispatched asynchronously.
+     */
+    public final void runTask(Runnable runnable) {
+        if (isSyncMode()) {
+            if (syncTaskQueue != null) {
+                syncTaskQueue.add(runnable);
+                pendingTaskCount.incrementAndGet();
+            } else {
+                runnable.run();
+            }
+        } else {
+            runAsync(runnable);
+        }
     }
 
     /**
@@ -1079,5 +1199,33 @@ public class ChannelContext {
      */
     public final <T> void invokeHandle(T message) throws IOException {
         channelHandler.onHandle(this, message);
+    }
+
+    /**
+     * Dispatch the handler asynchronously on the runner pool instead of the calling thread.
+     *
+     * @param message the message to handle
+     */
+    public final <T> void invokeHandleAsync(T message) throws IOException {
+        if (ChannelWorker.isSyncWorkerThread()) {
+            // On the worker/selector thread: offload to the pool so the worker stays free.
+            runAsync(() -> dispatchHandle(message));
+        } else {
+            // No worker or already on a pool (async) thread: run inline to avoid a redundant dispatch.
+            invokeHandle(message);
+        }
+    }
+
+    // invoke the handler and route any failure to onException (best-effort, never throws)
+    private void dispatchHandle(Object message) {
+        try {
+            channelHandler.onHandle(this, message);
+        } catch (Throwable throwable) {
+            try {
+                channelHandler.onException(this, throwable);
+            } catch (Throwable ignored) {
+                // best-effort error handling off the worker thread
+            }
+        }
     }
 }

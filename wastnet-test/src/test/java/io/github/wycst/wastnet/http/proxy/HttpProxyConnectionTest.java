@@ -1,6 +1,6 @@
 package io.github.wycst.wastnet.http.proxy;
 
-import io.github.wycst.wastnet.http.*;
+import io.github.wycst.wastnet.http.HttpRequest;
 import io.github.wycst.wastnet.socket.tcp.ChannelContext;
 import org.junit.jupiter.api.Test;
 
@@ -39,7 +39,7 @@ public class HttpProxyConnectionTest {
     public void testCheckDataReceivedFirstCallSetsFlag() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         assertFalse(conn.dataReceived);
         conn.checkDataReceived(ByteBuffer.allocate(10));
         assertTrue(conn.dataReceived);
@@ -51,7 +51,7 @@ public class HttpProxyConnectionTest {
     public void testCheckDataReceivedSecondCallNoOp() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         conn.dataReceived = true;  // already received
         conn.checkDataReceived(ByteBuffer.allocate(10));
         // no-op, no exception
@@ -63,7 +63,7 @@ public class HttpProxyConnectionTest {
     public void testCheckDataReceivedCancelsTimeout() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         // Schedule a timeout future (use a real one from HttpProxyWorkerManager)
         conn.timeoutFuture = manager.scheduleTimeout(new Runnable() {
             public void run() {
@@ -81,7 +81,7 @@ public class HttpProxyConnectionTest {
     public void testCheckDataReceivedUpgradeDetects101() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         conn.isUpgrade = true;
         conn.clientH2 = false;
         // Buffer starting with "HTTP/1.1 101"
@@ -97,7 +97,7 @@ public class HttpProxyConnectionTest {
     public void testCheckDataReceivedUpgradeInsufficientBytes() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         conn.isUpgrade = true;
         conn.clientH2 = false;
         // Buffer with less than 12 bytes
@@ -114,7 +114,7 @@ public class HttpProxyConnectionTest {
         // Real H1 ChannelContexts → both protocols null → PASSTHROUGH (not H2H1ProxyAdapter)
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         assertFalse(conn.adapter instanceof H2H1ProxyAdapter);
         assertFalse(conn.clientH2);
     }
@@ -125,7 +125,7 @@ public class HttpProxyConnectionTest {
     public void testForwardToTargetWithTimeout() throws Throwable {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
 
         // Create a simplified config with readTimeout
         HttpProxyConfig config = HttpProxyConfig.target("localhost:8080")
@@ -142,7 +142,7 @@ public class HttpProxyConnectionTest {
     public void testForwardToTargetWithoutTimeout() throws Throwable {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
 
         // Config with readTimeout=0 → no timeout scheduling
         HttpProxyConfig config = HttpProxyConfig.target("localhost:8080")
@@ -158,7 +158,7 @@ public class HttpProxyConnectionTest {
     public void testForwardToTargetWithUpgrade() throws Throwable {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
 
         // Config with upgrade=true, but request is not WebSocket → isUpgrade stays false
         HttpProxyConfig config = HttpProxyConfig.target("localhost:8080")
@@ -179,7 +179,7 @@ public class HttpProxyConnectionTest {
     public void testCloseSetsClosed() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         assertFalse(conn.closed);
         conn.close();
         assertTrue(conn.closed);
@@ -191,7 +191,7 @@ public class HttpProxyConnectionTest {
     public void testIsTargetClosed() throws Exception {
         HttpProxyWorker worker = createWorker();
         ChannelContext ctx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", ctx, ctx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         // Channel is still open
         assertFalse(conn.isTargetClosed());
     }
@@ -203,7 +203,7 @@ public class HttpProxyConnectionTest {
         HttpProxyWorker worker = createWorker();
         ChannelContext clientCtx = createCtx();
         ChannelContext targetCtx = createCtx();
-        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker);
+        HttpProxyConnection conn = new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
         // dataReceived is still false → timeoutTask should clean up
         conn.timeoutTask.run();
         assertTrue(conn.closed);

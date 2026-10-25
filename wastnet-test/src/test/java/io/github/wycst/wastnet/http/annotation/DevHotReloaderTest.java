@@ -1,26 +1,29 @@
 package io.github.wycst.wastnet.http.annotation;
 
-import io.github.wycst.wastnet.http.*;
-import io.github.wycst.wastnet.routerfixtures.RouterFixtures.*;
+import io.github.wycst.wastnet.http.HttpMethod;
+import io.github.wycst.wastnet.http.HttpRequest;
+import io.github.wycst.wastnet.http.HttpResponse;
 import io.github.wycst.wastnet.http.handler.HttpRoute;
-import io.github.wycst.wastnet.http.handler.HttpRouterHandler;
+import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketResource;
+import io.github.wycst.wastnet.routerfixtures.RouterFixtures.MyInject;
+import io.github.wycst.wastnet.routerfixtures.RouterFixtures.NamedInjectConfig;
+import io.github.wycst.wastnet.routerfixtures.RouterFixtures.RequestParamController;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.DisabledOnJre;
 import org.junit.jupiter.api.condition.JRE;
-
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.util.*;
-
-import java.io.*;
-import java.nio.file.*;
-import java.lang.reflect.Constructor;
-import java.net.URL;
-import java.net.URLClassLoader;
 import org.junit.jupiter.api.io.TempDir;
 
-import io.github.wycst.wastnet.http.upgrade.websocket.WebSocketResource;
-
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -33,7 +36,7 @@ import static org.mockito.Mockito.*;
  * (exercised directly, since the test lives in the same package and the reloader's members are
  * package-private): dev-environment detection, main-class & default scan-package resolution, the dev
  * {@code WatchService} watcher (start/destroy guards, watch-exclude rules, {@code devWatchLoop}
- * branches via a fake {@link WatchService}), and the {@code RestartClassLoader}
+ * branches via a fake {@link java.nio.file.WatchService}), and the {@code RestartClassLoader}
  * rebuild on {@code reload(Path)}.
  *
  * <p>Skipped on JDK 8 via {@link DisabledOnJre} (the real file-watch / surefire manifest-jar boot
@@ -539,7 +542,7 @@ public class DevHotReloaderTest {
     @Test
     public void testBuildAppLoaderUsesProjectDirs() throws Exception {
         ClassLoader saved = Thread.currentThread().getContextClassLoader();
-        URL jarUrl = Test.class.getProtectionDomain().getCodeSource().getLocation();
+        URL jarUrl = org.junit.jupiter.api.Test.class.getProtectionDomain().getCodeSource().getLocation();
         URLClassLoader onlyJar = new URLClassLoader(new URL[]{jarUrl}, null);
         Thread.currentThread().setContextClassLoader(onlyJar);
         try {
@@ -618,7 +621,7 @@ public class DevHotReloaderTest {
             reloader.startWatcher();
             assertNotNull(reloader.devWatcher);
             reloader.scheduleReload(Paths.get("Foo.class"));
-            Thread.sleep(400);
+            Thread.sleep(100);
             assertNull(reloader.devPendingReload);
         } finally {
             h.hotReloader.destroyWatcher();
@@ -1006,7 +1009,7 @@ public class DevHotReloaderTest {
         assertTrue(ex.getMessage().contains("Cannot resolve dependencies"));
     }
 
-    static class FakeWatchEvent<T> implements WatchEvent<T> {
+    static class FakeWatchEvent<T> implements java.nio.file.WatchEvent<T> {
         private final T context;
 
         FakeWatchEvent(T context) {
@@ -1014,8 +1017,8 @@ public class DevHotReloaderTest {
         }
 
         @Override
-        public Kind<T> kind() {
-            return (Kind<T>) StandardWatchEventKinds.ENTRY_MODIFY;
+        public java.nio.file.WatchEvent.Kind<T> kind() {
+            return (java.nio.file.WatchEvent.Kind<T>) java.nio.file.StandardWatchEventKinds.ENTRY_MODIFY;
         }
 
         @Override
@@ -1029,20 +1032,20 @@ public class DevHotReloaderTest {
         }
     }
 
-    private static final Path WATCH_DIR = Paths.get(".");
+    private static final java.nio.file.Path WATCH_DIR = java.nio.file.Paths.get(".");
 
-    static class FakeWatchKey implements WatchKey {
-        private final Watchable watchable;
-        private final List<? extends WatchEvent<?>> events;
+    static class FakeWatchKey implements java.nio.file.WatchKey {
+        private final java.nio.file.Watchable watchable;
+        private final java.util.List<? extends java.nio.file.WatchEvent<?>> events;
 
-        FakeWatchKey(Watchable watchable, List<? extends WatchEvent<?>> events) {
+        FakeWatchKey(java.nio.file.Watchable watchable, java.util.List<? extends java.nio.file.WatchEvent<?>> events) {
             this.watchable = watchable;
             this.events = events;
         }
 
         @Override
-        public List<WatchEvent<?>> pollEvents() {
-            return (List) events;
+        public java.util.List<java.nio.file.WatchEvent<?>> pollEvents() {
+            return (java.util.List) events;
         }
 
         @Override
@@ -1060,34 +1063,34 @@ public class DevHotReloaderTest {
         }
 
         @Override
-        public Watchable watchable() {
+        public java.nio.file.Watchable watchable() {
             return watchable;
         }
     }
 
-    static class FakeWatchService implements WatchService {
-        private final Deque<WatchKey> keys = new ArrayDeque<>();
+    static class FakeWatchService implements java.nio.file.WatchService {
+        private final java.util.Deque<java.nio.file.WatchKey> keys = new java.util.ArrayDeque<>();
         private boolean throwInterrupted;
         private boolean throwClosed;
 
-        void enqueue(WatchKey k) {
+        void enqueue(java.nio.file.WatchKey k) {
             keys.add(k);
         }
 
         @Override
-        public WatchKey take() throws InterruptedException {
+        public java.nio.file.WatchKey take() throws InterruptedException {
             if (throwInterrupted) throw new InterruptedException();
-            if (throwClosed) throw new ClosedWatchServiceException();
+            if (throwClosed) throw new java.nio.file.ClosedWatchServiceException();
             return keys.poll();
         }
 
         @Override
-        public WatchKey poll() {
+        public java.nio.file.WatchKey poll() {
             return keys.poll();
         }
 
         @Override
-        public WatchKey poll(long timeout, TimeUnit unit) {
+        public java.nio.file.WatchKey poll(long timeout, TimeUnit unit) {
             return keys.poll();
         }
 
@@ -1100,7 +1103,7 @@ public class DevHotReloaderTest {
     public void testDevWatchLoopEventProcessing() {
         FakeWatchService fs1 = new FakeWatchService();
         fs1.enqueue(new FakeWatchKey(WATCH_DIR, Collections.singletonList(
-                new FakeWatchEvent<Path>(Paths.get("note.txt")))));
+                new FakeWatchEvent<java.nio.file.Path>(java.nio.file.Paths.get("note.txt")))));
         AnnotationRouterHandler h1 = new AnnotationRouterHandler();
         ScheduledExecutorService sch1 = Executors.newSingleThreadScheduledExecutor();
         h1.hotReloader.devWatcher = fs1;
@@ -1113,7 +1116,7 @@ public class DevHotReloaderTest {
 
         FakeWatchService fs2 = new FakeWatchService();
         fs2.enqueue(new FakeWatchKey(WATCH_DIR, Collections.singletonList(
-                new FakeWatchEvent<Path>(Paths.get("Foo.class")))));
+                new FakeWatchEvent<java.nio.file.Path>(java.nio.file.Paths.get("Foo.class")))));
         fs2.enqueue(new FakeWatchKey(WATCH_DIR, Collections.singletonList(
                 new FakeWatchEvent<String>("not-a-path"))));
         AnnotationRouterHandler h2 = new AnnotationRouterHandler();
@@ -1129,17 +1132,17 @@ public class DevHotReloaderTest {
 
     @Test
     public void testDevWatchLoopReloadTriggerPaths() {
-        Path target = WATCH_DIR.resolve("app.properties").toAbsolutePath().normalize();
+        java.nio.file.Path target = WATCH_DIR.resolve("app.properties").toAbsolutePath().normalize();
         FakeWatchService fs = new FakeWatchService();
         fs.enqueue(new FakeWatchKey(WATCH_DIR, Collections.singletonList(
-                new FakeWatchEvent<Path>(Paths.get("app.properties")))));
+                new FakeWatchEvent<java.nio.file.Path>(java.nio.file.Paths.get("app.properties")))));
         AnnotationRouterHandler h = new AnnotationRouterHandler();
         ScheduledExecutorService sch = Executors.newSingleThreadScheduledExecutor();
         h.hotReloader.devWatcher = fs;
         h.hotReloader.devScheduler = sch;
         DevHotReloader reloader = h.hotReloader;
         reloader.devPendingReload = null;
-        reloader.setReloadTriggerPaths(Collections.singleton(target.toString()));
+        reloader.setReloadTriggerPaths(java.util.Collections.singleton(target.toString()));
         reloader.devWatchLoop();
         assertNotNull(reloader.devPendingReload);
         sch.shutdownNow();

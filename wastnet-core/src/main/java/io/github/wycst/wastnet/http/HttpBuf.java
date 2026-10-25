@@ -16,10 +16,10 @@
 package io.github.wycst.wastnet.http;
 
 import io.github.wycst.wastnet.env.RuntimeEnv;
-import io.github.wycst.wastnet.util.Utils;
 
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 /**
@@ -524,7 +524,7 @@ public final class HttpBuf {
      * @return the string representation
      */
     public String toString() {
-        if(count <= 8192) return toString(Utils.ISO_8859_1);
+        if(count <= 8192) return toString(StandardCharsets.ISO_8859_1);
         return super.toString();
     }
 

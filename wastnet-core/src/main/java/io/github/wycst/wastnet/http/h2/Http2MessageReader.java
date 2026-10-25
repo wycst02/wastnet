@@ -33,6 +33,7 @@ import java.util.Arrays;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -194,6 +195,9 @@ public abstract class Http2MessageReader extends HttpMessageReader<HttpMessage> 
     volatile String lastCloseReason;
 
     final AtomicBoolean flushPending = new AtomicBoolean();
+    private volatile boolean handling;
+    /** Requests submitted but not finished yet; >1 means another response is coming, so flushing can wait. */
+    final AtomicInteger inflightRequests = new AtomicInteger();
 
     int currentMaxStreamId;
     int nextFrameLength;
@@ -312,26 +316,35 @@ public abstract class Http2MessageReader extends HttpMessageReader<HttpMessage> 
      */
     @Override
     public void decode(ChannelContext ctx, byte[] buf, int offset, int len) {
-        while (valid) {
+        try {
+            while (valid) {
+                try {
+                    if (len < 9) {
+                        buf = read(ctx, buf, offset + len, 9 - len);
+                        len = 9;
+                    }
+                    Http2Frame frame = readNextMessageFrame(ctx, buf, offset, len);
+                    if (frame != null) {
+                        handling = true;
+                        handleFrame(ctx, frame);
+                    }
+                    offset += nextFrameLength;
+                    len -= nextFrameLength;
+                    if (len < 1) return;
+                } catch (Throwable e) {
+                    if (DEBUG) {
+                        LOG.error("Http2MessageReader decode error, hexBytes: " + Utils.printHexString(Arrays.copyOfRange(buf, offset, offset + len), ' '));
+                    }
+                    LOG.error("Http2MessageReader decode error", e);
+                    closeConnection(ctx, 1); // PROTOCOL_ERROR (fallback: unknown frame type / decode failure)
+                    return;
+                }
+            }
+        } finally {
+            handling = false;
             try {
-                if (len < 9) {
-                    buf = read(ctx, buf, offset + len, 9 - len);
-                    len = 9;
-                }
-                Http2Frame frame = readNextMessageFrame(ctx, buf, offset, len);
-                if (frame != null) {
-                    handleFrame(ctx, frame);
-                }
-                offset += nextFrameLength;
-                len -= nextFrameLength;
-                if (len < 1) return;
-            } catch (Throwable e) {
-                if (DEBUG) {
-                    LOG.error("Http2MessageReader decode error, hexBytes: " + Utils.printHexString(Arrays.copyOfRange(buf, offset, offset + len), ' '));
-                }
-                LOG.error("Http2MessageReader decode error", e);
-                closeConnection(ctx, 1); // PROTOCOL_ERROR (fallback: unknown frame type / decode failure)
-                return;
+                ctx.flushSync();
+            } catch (IOException ignored) {
             }
         }
     }
@@ -687,13 +700,17 @@ public abstract class Http2MessageReader extends HttpMessageReader<HttpMessage> 
 
     // ==================== Deferred flush ====================
     final void signalFlush(ChannelContext ctx) throws IOException {
+        if (handling || inflightRequests.get() > 1) return; // >1: a sibling response will join this batch
+        forceFlush(ctx);
+    }
+
+    // ==================== force flush use CAS ====================
+    final void forceFlush(ChannelContext ctx) throws IOException {
         if (!flushPending.compareAndSet(false, true)) return;
-        synchronized (ctx) {
-            try {
-                ctx.flush();
-            } finally {
-                flushPending.set(false);
-            }
+        try {
+            ctx.flushSync();
+        } finally {
+            flushPending.set(false);
         }
     }
 

@@ -1,11 +1,5 @@
 package io.github.wycst.wastnet.log;
 
-import io.github.wycst.wastnet.log.Log;
-import io.github.wycst.wastnet.log.LogFactory;
-import io.github.wycst.wastnet.log.LogFormatter;
-import io.github.wycst.wastnet.log.LogImpl;
-import io.github.wycst.wastnet.log.LogLevel;
-import io.github.wycst.wastnet.log.RotatingFileHandler;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -58,7 +52,7 @@ public class LogTest {
 
         // Wait for the background batched flush (1s cadence) to commit the in-memory buffer to disk
         // before asserting on the files.
-        Thread.sleep(1500);
+        Thread.sleep(1100); // must exceed the 1s batched-flush cadence
 
         String accessContent = new String(Files.readAllBytes(accessFile.toPath()));
         String errorContent = new String(Files.readAllBytes(errorFile.toPath()));

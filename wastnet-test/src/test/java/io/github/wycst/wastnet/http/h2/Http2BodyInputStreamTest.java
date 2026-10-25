@@ -272,7 +272,7 @@ public class Http2BodyInputStreamTest {
         reader.start();
 
         // Give reader time to enter wait()
-        Thread.sleep(200);
+        Thread.sleep(50);
         // endStream() wakes up the reader via notifyAll()
         is.endStream();
         reader.join(3000);

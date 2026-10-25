@@ -11,8 +11,10 @@ import java.nio.channels.ServerSocketChannel;
 import java.nio.channels.SocketChannel;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * tests for WebSocketResponse.
@@ -24,13 +26,13 @@ class WebSocketResponseTest {
     @Test
     void testSendTextNull() {
         WebSocketResponse resp = new WebSocketResponse(mock(HttpRequest.class), mock(ChannelContext.class));
-        assertThrows(IllegalArgumentException.class, () -> resp.sendText(null));
+        assertThrows(NullPointerException.class, () -> resp.sendText((String) null));
     }
 
     @Test
     void testSendBinaryNull() {
         WebSocketResponse resp = new WebSocketResponse(mock(HttpRequest.class), mock(ChannelContext.class));
-        assertThrows(IllegalArgumentException.class, () -> resp.sendBinary(null));
+        assertThrows(NullPointerException.class, () -> resp.sendBinary(null));
     }
 
     // ==================== Real channel tests (needed for writeFlush) ====================
@@ -56,7 +58,7 @@ class WebSocketResponseTest {
             server.configureBlocking(false);
             ctx = new ChannelContext(client, 4096);
             WebSocketResource resource = new WebSocketResource().maxPayloadSize(maxPayloadSize);
-            ctx.binding(new UpgradeWebSocketHolder(resource, null));
+            ctx.binding(new UpgradeWebSocketHolder(resource, null, ctx));
         }
 
         void close() {

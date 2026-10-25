@@ -1,6 +1,5 @@
 package io.github.wycst.wastnet.util;
 
-import io.github.wycst.wastnet.socket.conf.Conf;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 

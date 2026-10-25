@@ -1,6 +1,8 @@
 package io.github.wycst.wastnet.examples.http.mvc;
 
-import io.github.wycst.wastnet.http.annotation.*;
+import io.github.wycst.wastnet.http.annotation.Endpoint;
+import io.github.wycst.wastnet.http.annotation.RequestHeader;
+import io.github.wycst.wastnet.http.annotation.RestController;
 
 import java.util.HashMap;
 import java.util.Map;

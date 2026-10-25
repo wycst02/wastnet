@@ -2,8 +2,8 @@ package io.github.wycst.wastnet.http.proxy;
 
 import io.github.wycst.wastnet.http.HttpDecodedResponse;
 import io.github.wycst.wastnet.http.HttpRequest;
-import io.github.wycst.wastnet.http.HttpVersion;
 import io.github.wycst.wastnet.http.HttpRequestDecoder;
+import io.github.wycst.wastnet.http.HttpVersion;
 import io.github.wycst.wastnet.http.h2.Http2ClientReader;
 import io.github.wycst.wastnet.http.h2.Http2ClientStream;
 import io.github.wycst.wastnet.socket.handler.ChannelHandler;
@@ -75,7 +75,7 @@ public class H1H2ProxyAdapterTest {
 
     private static HttpProxyConnection newConn(ChannelContext clientCtx, ChannelContext targetCtx) throws Exception {
         HttpProxyWorker worker = new HttpProxyWorker();
-        return new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker);
+        return new HttpProxyConnection(1L, "route", clientCtx, targetCtx, worker, new HttpProxyRoute(HttpProxyConfig.target("http://example.com")));
     }
 
     // Decode a real HttpDecodedRequest (mocking parent-class methods is unsupported).

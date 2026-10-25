@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
@@ -74,27 +75,10 @@ public class UtilsTest {
         Assertions.assertEquals("%21%40%24%25%5E", Utils.encodeUriPath("!@$%^"));
     }
 
-    // ==================== forCharsetName ====================
-
-    @Test
-    public void testForCharsetNameValid() {
-        Assertions.assertSame(Utils.UTF_8, Utils.forCharsetName("UTF-8"));
-        Assertions.assertEquals("ISO-8859-1", Utils.forCharsetName("ISO_8859_1").name());
-    }
-
-    @Test
-    public void testForCharsetNameInvalid() {
-        try {
-            Utils.forCharsetName("NO_SUCH_CHARSET");
-            Assertions.fail("expected IllegalArgumentException");
-        } catch (IllegalArgumentException expected) {
-            Assertions.assertTrue(expected.getMessage().contains("Unsupported charset"));
-        }
-    }
 
     @Test
     public void testForCharsetNameWithDefault() {
-        Charset def = Charset.forName("UTF-8");
+        Charset def = StandardCharsets.UTF_8;
         Assertions.assertSame(def, Utils.forCharsetName("UTF-8", def));
         // invalid name falls back to default
         Assertions.assertSame(def, Utils.forCharsetName("BAD", def));

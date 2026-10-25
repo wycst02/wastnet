@@ -15,8 +15,10 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.channels.SocketChannel;
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 /**
@@ -41,7 +43,7 @@ public class ChannelRunnerTest {
         clientChannel = SocketChannel.open();
         clientChannel.connect(new InetSocketAddress("127.0.0.1", port));
         clientChannel.configureBlocking(false);
-        Thread.sleep(100);
+        Thread.sleep(20);
 
         nioConfig = new NioConfig();
         nioConfig.setReadBufferSize(1024);
@@ -60,7 +62,6 @@ public class ChannelRunnerTest {
     public void testConstructorSimpleMethods() throws Exception {
         ChannelRunner runner = new ChannelRunner(null, clientChannel, nioConfig);
         Assertions.assertFalse(runner.isRunFlag());
-        Assertions.assertFalse(runner.predictSync());
     }
 
     @Test
@@ -98,7 +99,7 @@ public class ChannelRunnerTest {
 
     @Test
     public void testCreateReadByteBuffer() throws Exception {
-        nioConfig.setSyncRunner(false);
+        nioConfig.syncMode(false);
         ChannelRunner runner = new ChannelRunner(null, clientChannel, nioConfig);
         Assertions.assertNotNull(runner.createReadByteBuffer());
     }
@@ -137,7 +138,7 @@ public class ChannelRunnerTest {
     @Test
     public void testChannelReadReturnsMinusOne() throws Exception {
         serverSide.close();
-        Thread.sleep(100);
+        Thread.sleep(20);
         ChannelRunner runner = new ChannelRunner(null, clientChannel, nioConfig);
         int ret = runner.handleChannelRead();
         Assertions.assertEquals(-1, ret);
@@ -150,7 +151,7 @@ public class ChannelRunnerTest {
         ChannelRunner runner = new ChannelRunner(null, clientChannel, nioConfig);
         // Close the server side so channel is effectively closed
         serverSide.close();
-        Thread.sleep(100);
+        Thread.sleep(20);
         runner.run0();
         // Should release without error
         Assertions.assertTrue(runner.closed);
@@ -276,22 +277,22 @@ public class ChannelRunnerTest {
                 .startupBannerEnabled(false)
                 .start();
         try {
-            Thread.sleep(200);
+            Thread.sleep(50);
 
             // Connect a plain SocketChannel and send an HTTP request
             SocketChannel plainChannel = SocketChannel.open();
-            plainChannel.connect(new InetSocketAddress("127.0.0.1", httpPort));
+            plainChannel.connect(new java.net.InetSocketAddress("127.0.0.1", httpPort));
             plainChannel.configureBlocking(false);
             String req = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
-            plainChannel.write(ByteBuffer.wrap(req.getBytes()));
-            Thread.sleep(200);
+            plainChannel.write(java.nio.ByteBuffer.wrap(req.getBytes()));
+            Thread.sleep(50);
 
             // Create ChannelSSLRunner with allowPlaintextWhenSslEnabled
             NioConfig config = new NioConfig();
             config.setReadBufferSize(4096);
             config.setAllowPlaintextWhenSslEnabled(true);
             config.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS, 2000L);
-            ChannelReader mockReader = mock(ChannelReader.class);
+            ChannelReader<?> mockReader = mock(ChannelReader.class);
             config.setChannelReader(mockReader);
             SSLContext sslCtx = SSLContext.getInstance("TLS");
             sslCtx.init(null, null, null);
@@ -312,34 +313,96 @@ public class ChannelRunnerTest {
         }
     }
 
-    // ==================== sslHandShake: timeout (connected but no data) ====================
+    // ==================== sslHandShake: suspend on no data / mid-handshake deadline ====================
 
     @Test
-    public void testSSLHandshakeTimeout() throws Exception {
-        // Start a silent server (accepts but doesn't send data)
-        ServerSocket silentServer = new ServerSocket(0);
-        int port = silentServer.getLocalPort();
-        // Connect then read returns 0 (no data from server) → spin loop → timeout
+    public void testSSLHandshakeSuspendsWithoutData() throws Exception {
+        // Silent peer accepts but never sends anything; its FIN later simulates the next OP_READ event.
+        java.net.ServerSocket silentServer = new java.net.ServerSocket(0);
         SocketChannel ch = SocketChannel.open();
-        ch.connect(new InetSocketAddress("127.0.0.1", port));
+        ch.connect(new InetSocketAddress("127.0.0.1", silentServer.getLocalPort()));
         ch.configureBlocking(false);
-        Thread.sleep(100);
+        Socket silentSide = silentServer.accept();
+        Thread.sleep(20);
 
-        SSLContext sslCtx = SSLContext.getInstance("TLS");
+        javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
         sslCtx.init(null, null, null);
         SSLEngineContext engineCtx = new SSLEngineContext(sslCtx, null, null, false);
         ChannelSSLContext sslChannelCtx = new ChannelSSLContext(ch, engineCtx);
         NioConfig config = new NioConfig();
         config.setReadBufferSize(4096);
-        config.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS, 100L);  // short timeout triggers return -1
+        config.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS, 100L);
         ChannelReader mockReader = mock(ChannelReader.class);
         config.setChannelReader(mockReader);
-        ChannelSSLRunner runner = new ChannelSSLRunner(null, sslChannelCtx, config);
 
-        runner.beforeReady();
-        Assertions.assertTrue(runner.closed);
-        ch.close();
-        silentServer.close();
+        ChannelSSLRunner runner = new ChannelSSLRunner(null, sslChannelCtx, config);
+        try {
+            runner.beforeReady();
+            // Suspended: connection alive, no application data dispatched
+            Assertions.assertTrue(ch.isOpen());
+            verify(mockReader, never()).decode(any(), any());
+
+            // Survives well past the configured deadline: non-blocking mode arms no timeout of its own
+            Thread.sleep(100);
+            Assertions.assertTrue(ch.isOpen());
+            verify(mockReader, never()).decode(any(), any());
+
+            // Next OP_READ after peer FIN drives re-entry → EOF → connection released
+            silentSide.close();
+            Thread.sleep(20);
+            runner.beforeReady();
+            Assertions.assertFalse(ch.isOpen());
+        } finally {
+            silentSide.close();
+            ch.close();
+            silentServer.close();
+        }
+    }
+
+    @Test
+    public void testSSLHandshakePartialRecordDeadlineOnReentry() throws Exception {
+        // Raw peer sends only a 5-byte TLS record header (contentType=22, declares 100 body bytes):
+        // engine must suspend on BUFFER_UNDERFLOW instead of spinning; the absolute deadline
+        // is enforced on the next OP_READ re-entry.
+        java.nio.channels.ServerSocketChannel ssc = java.nio.channels.ServerSocketChannel.open();
+        ssc.bind(new InetSocketAddress("127.0.0.1", 0));
+        Socket rawPeer = new Socket();
+        rawPeer.connect(new InetSocketAddress("127.0.0.1", ((InetSocketAddress) ssc.getLocalAddress()).getPort()));
+        SocketChannel ch = ssc.accept();
+        ch.configureBlocking(false);
+        rawPeer.getOutputStream().write(new byte[]{22, 3, 3, 0, 100});
+        rawPeer.getOutputStream().flush();
+        Thread.sleep(50); // let the partial record land in the socket buffer
+
+        javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
+        sslCtx.init(null, null, null);
+        SSLEngineContext engineCtx = new SSLEngineContext(sslCtx, null, null, false);
+        ChannelSSLContext sslChannelCtx = new ChannelSSLContext(ch, engineCtx);
+        NioConfig config = new NioConfig();
+        config.setReadBufferSize(4096);
+        config.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS, 100L);
+        ChannelReader mockReader = mock(ChannelReader.class);
+        config.setChannelReader(mockReader);
+
+        ChannelSSLRunner runner = new ChannelSSLRunner(null, sslChannelCtx, config);
+        try {
+            runner.beforeReady();
+            // Suspended on the partial record: alive, no ServerHello flight sent, no app data dispatched
+            Assertions.assertTrue(ch.isOpen());
+            Assertions.assertEquals(0, rawPeer.getInputStream().available());
+            verify(mockReader, never()).decode(any(), any());
+
+            Thread.sleep(200); // deadline passes while suspended; nothing self-closes the channel (must exceed SSL_HANDSHAKE_TIMEOUT_MS=100)
+            Assertions.assertTrue(ch.isOpen());
+
+            // Next OP_READ re-entry drives the engine → absolute deadline check → release
+            runner.beforeReady();
+            Assertions.assertFalse(ch.isOpen());
+        } finally {
+            rawPeer.close();
+            ch.close();
+            ssc.close();
+        }
     }
 
     // ==================== sslHandShake: first read returns -1 (channel closed) ====================
@@ -347,15 +410,15 @@ public class ChannelRunnerTest {
     @Test
     public void testSSLHandshakeChannelClosedFirstRead() throws Exception {
         // Connect then close → first channelRead detects closed channel → size == -1
-        ServerSocket ss = new ServerSocket(0);
+        java.net.ServerSocket ss = new java.net.ServerSocket(0);
         int port = ss.getLocalPort();
         SocketChannel ch = SocketChannel.open();
-        ch.connect(new InetSocketAddress("127.0.0.1", port));
-        Thread.sleep(100);
+        ch.connect(new java.net.InetSocketAddress("127.0.0.1", port));
+        Thread.sleep(20);
         ch.close();  // close channel BEFORE beforeReady
         ss.close();
 
-        SSLContext sslCtx = SSLContext.getInstance("TLS");
+        javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
         sslCtx.init(null, null, null);
         SSLEngineContext engineCtx = new SSLEngineContext(sslCtx, null, null, false);
         ChannelSSLContext sslChannelCtx = new ChannelSSLContext(ch, engineCtx);
@@ -373,42 +436,49 @@ public class ChannelRunnerTest {
 
     @Test
     public void testSSLAllowPlaintextWithTlsData() throws Exception {
-        // allowPlaintextWhenSslEnabled=true but data starts with byte 22 (TLS)
-        // → isMaybePlaintext returns false → goes to doHandshake()
-        int sslPort = findFreePort();
-        HTTPServer sslServer = HTTPServer.of(sslPort)
-                .pemSSL("cert/cert.pem", "cert/server.pem")
-                .requestHandler((request, response) -> response.body("ok".getBytes()))
-                .startupBannerEnabled(false)
-                .start();
+        // allowPlaintextWhenSslEnabled=true but incoming data starts with byte 22 (a real TLS ClientHello)
+        // → isMaybePlaintext=false → doHandshake() runs; the cert-less server engine fails → release
+        java.nio.channels.ServerSocketChannel ssc = java.nio.channels.ServerSocketChannel.open();
+        ssc.bind(new InetSocketAddress("127.0.0.1", 0));
+        int sslPort = ((InetSocketAddress) ssc.getLocalAddress()).getPort();
+
+        javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
+        sslCtx.init(null, null, null);
+        NioConfig config = new NioConfig();
+        config.setReadBufferSize(4096);
+        config.setAllowPlaintextWhenSslEnabled(true);
+        config.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS, 3000L);
+        ChannelReader mockReader = mock(ChannelReader.class);
+        config.setChannelReader(mockReader);
+
+        ChannelWorker worker = new ChannelWorker(new NioEngine<>(1, config));
+        // Real TLS client: sends ClientHello as soon as the handshake starts
+        Socket tlsClient = javax.net.ssl.SSLSocketFactory.getDefault().createSocket();
+        tlsClient.connect(new InetSocketAddress("127.0.0.1", sslPort));
+        Thread handshakeThread = new Thread(() -> {
+            try {
+                ((javax.net.ssl.SSLSocket) tlsClient).startHandshake();
+            } catch (Exception ignored) {
+            }
+        });
+        handshakeThread.setDaemon(true);
+        handshakeThread.start();
+
+        SocketChannel ch = ssc.accept();
+        ch.configureBlocking(false);
+        Thread.sleep(50); // wait for ClientHello to land in the socket buffer
         try {
-            Thread.sleep(200);
-            SocketChannel ch = SocketChannel.open();
-            ch.connect(new InetSocketAddress("127.0.0.1", sslPort));
-            ch.configureBlocking(false);
-            Thread.sleep(200); // wait for server to send TLS ServerHello
+            ChannelSSLRunner runner = new ChannelSSLRunner(worker, ch, config, sslCtx, null);
 
-            // Create runner with allowPlaintext=true, server-mode SSLEngine
-            SSLContext sslCtx = SSLContext.getInstance("TLS");
-            sslCtx.init(null, null, null);
-            NioConfig config = new NioConfig();
-            config.setReadBufferSize(4096);
-            config.setAllowPlaintextWhenSslEnabled(true);
-            config.option(SocketOptions.SSL_HANDSHAKE_TIMEOUT_MS, 3000L);
-            ChannelReader mockReader = mock(ChannelReader.class);
-            config.setChannelReader(mockReader);
-
-            ChannelSSLRunner runner = new ChannelSSLRunner(null, ch, config, sslCtx, null);
-
-            // sslHandShake reads TLS data (byte 22) → isMaybePlaintext=false
-            // → doHandshake() is called (will fail, engine mode mismatch → catch → return -1)
+            // TLS data (byte 22) skips the plaintext branch and enters doHandshake(), which fails
             runner.beforeReady();
-
-            // Handshake fails but the branch was taken: closed=true
             Assertions.assertTrue(runner.closed);
-            ch.close();
         } finally {
-            sslServer.shutdown();
+            worker.selector.close();
+            if (worker.scheduledExecutorService != null) worker.scheduledExecutorService.shutdownNow();
+            tlsClient.close();
+            ch.close();
+            ssc.close();
         }
     }
 
@@ -421,7 +491,7 @@ public class ChannelRunnerTest {
         SocketChannel ch = SocketChannel.open();
         ch.configureBlocking(false);
 
-        SSLContext sslCtx = SSLContext.getInstance("TLS");
+        javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
         sslCtx.init(null, null, null);
         SSLEngineContext engineCtx = new SSLEngineContext(sslCtx, null, null, false);
         ChannelSSLContext sslChannelCtx = new ChannelSSLContext(ch, engineCtx);
@@ -435,11 +505,181 @@ public class ChannelRunnerTest {
         ch.close();
     }
 
+    // ==================== sslHandShake: exception path with error logging on ====================
+
+    @Test
+    public void testSSLHandshakeFailureWithErrorLogEnabled() throws Exception {
+        SocketChannel ch = SocketChannel.open();
+        ch.configureBlocking(false);
+
+        javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
+        sslCtx.init(null, null, null);
+        SSLEngineContext engineCtx = new SSLEngineContext(sslCtx, null, null, false);
+        ChannelSSLContext sslChannelCtx = new ChannelSSLContext(ch, engineCtx);
+        NioConfig config = new NioConfig();
+        config.setReadBufferSize(4096);
+        config.setPrintSSLErrorLog(true);
+        ChannelSSLRunner runner = new ChannelSSLRunner(null, sslChannelCtx, config);
+
+        runner.beforeReady();
+        Assertions.assertTrue(runner.closed);
+        ch.close();
+    }
+
+    // ==================== createClientRunner: synchronous client handshake ====================
+
+    @Test
+    public void testCreateClientRunnerServesEncryptedResponse() throws Exception {
+        int sslPort = findFreePort();
+        HTTPServer sslServer = HTTPServer.of(sslPort)
+                .pemSSL("cert/cert.pem", "cert/server.pem")
+                .requestHandler((request, response) -> response.body("plain-ok".getBytes()))
+                .startupBannerEnabled(false)
+                .start();
+        SocketChannel ch = null;
+        try {
+            Thread.sleep(50);
+            ch = SocketChannel.open();
+            ch.connect(new InetSocketAddress("127.0.0.1", sslPort));
+            ch.configureBlocking(false);
+
+            NioConfig config = new NioConfig();
+            config.setReadBufferSize(4096);
+            ChannelReader mockReader = mock(ChannelReader.class);
+            doAnswer(inv -> {
+                ByteBuffer buf = inv.getArgument(1);
+                if (buf.remaining() >= 2) {
+                    ChannelSSLContext c = inv.getArgument(0);
+                    buf.get(); // advance past position 0 so readFully takes its residue branch
+                    c.readFully(new byte[1], 0, 1, 2000);
+                } else {
+                    buf.get(new byte[buf.remaining()]);
+                }
+                return null;
+            }).when(mockReader).decode(any(), any());
+            config.setChannelReader(mockReader);
+
+            javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
+            sslCtx.init(null, ChannelSSLContext.TRUST_ALL_MANAGERS, null);
+
+            ChannelSSLRunner runner = ChannelSSLRunner.createClientRunner(null, ch, config, sslCtx, null);
+
+            // Encrypted round trip proves the client handshake completed and the runner is in SSL mode
+            ChannelSSLContext sctx = (ChannelSSLContext) runner.ctx;
+            sctx.write(ByteBuffer.wrap("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n".getBytes()));
+            sctx.flush();
+            for (int i = 0; i < 20; i++) {
+                runner.handleChannelRead();
+                Thread.sleep(20);
+            }
+            // residue flag kept the read loop going: decode ran more than once on the response flight
+            verify(mockReader, atLeast(2)).decode(any(), any());
+            sctx.close();
+        } finally {
+            if (ch != null) try { ch.close(); } catch (Exception ignored) {}
+            sslServer.shutdown();
+        }
+    }
+
+    // ==================== plaintext fallback: drain loop fills packetInBuf completely ====================
+
+    private static SocketChannel connectRawPeerPair(java.net.Socket rawPeer) throws Exception {
+        java.nio.channels.ServerSocketChannel ssc = java.nio.channels.ServerSocketChannel.open();
+        ssc.bind(new InetSocketAddress("127.0.0.1", 0));
+        rawPeer.connect(new InetSocketAddress("127.0.0.1",
+                ((InetSocketAddress) ssc.getLocalAddress()).getPort()));
+        SocketChannel ch = ssc.accept();
+        ch.configureBlocking(false);
+        ssc.close();
+        return ch;
+    }
+
+    private static SSLEngineContext newServerEngineCtx() throws Exception {
+        javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
+        sslCtx.init(null, null, null);
+        return new SSLEngineContext(sslCtx, null, null);
+    }
+
+    /** First read fills the whole packet buffer: drain, read again, drain the remainder, return 0. */
+    @Test
+    public void testSSLPlaintextDrainRefillsBuffer() throws Exception {
+        Socket rawPeer = new Socket();
+        SocketChannel ch = connectRawPeerPair(rawPeer);
+        SSLEngineContext engineCtx = newServerEngineCtx();
+        int capacity = engineCtx.packetInBuf.capacity();
+        byte[] payload = new byte[capacity + 100];
+        Arrays.fill(payload, (byte) 'P');
+        rawPeer.getOutputStream().write(payload);
+        rawPeer.getOutputStream().flush();
+        Thread.sleep(50);
+
+        NioConfig config = new NioConfig();
+        config.setReadBufferSize(4096);
+        config.setAllowPlaintextWhenSslEnabled(true);
+        ChannelReader mockReader = mock(ChannelReader.class);
+        AtomicInteger decodedBytes = new AtomicInteger();
+        doAnswer(inv -> {
+            ByteBuffer buf = inv.getArgument(1);
+            decodedBytes.addAndGet(buf.remaining());
+            return null;
+        }).when(mockReader).decode(any(), any());
+        config.setChannelReader(mockReader);
+
+        ChannelSSLRunner runner = new ChannelSSLRunner(null, new ChannelSSLContext(ch, engineCtx), config);
+        try {
+            Assertions.assertTrue(runner.beforeReady());
+            Assertions.assertFalse(runner.isSSL);
+            // both the full buffer and the 100-byte tail were drained in two decode cycles
+            verify(mockReader, times(2)).decode(any(), any());
+            Assertions.assertEquals(payload.length, decodedBytes.get());
+        } finally {
+            rawPeer.close();
+            ch.close();
+        }
+    }
+
+    /** First read fills the whole packet buffer and the peer EOFs: second read returns -1 → release. */
+    @Test
+    public void testSSLPlaintextDrainEofAfterFullBuffer() throws Exception {
+        Socket rawPeer = new Socket();
+        SocketChannel ch = connectRawPeerPair(rawPeer);
+        SSLEngineContext engineCtx = newServerEngineCtx();
+        int capacity = engineCtx.packetInBuf.capacity();
+        byte[] payload = new byte[capacity];
+        Arrays.fill(payload, (byte) 'P');
+        rawPeer.getOutputStream().write(payload);
+        rawPeer.shutdownOutput(); // FIN follows the full payload
+        Thread.sleep(50);
+
+        NioConfig config = new NioConfig();
+        config.setReadBufferSize(4096);
+        config.setAllowPlaintextWhenSslEnabled(true);
+        ChannelReader mockReader = mock(ChannelReader.class);
+        AtomicInteger decodedBytes = new AtomicInteger();
+        doAnswer(inv -> {
+            ByteBuffer buf = inv.getArgument(1);
+            decodedBytes.addAndGet(buf.remaining());
+            return null;
+        }).when(mockReader).decode(any(), any());
+        config.setChannelReader(mockReader);
+
+        ChannelSSLRunner runner = new ChannelSSLRunner(null, new ChannelSSLContext(ch, engineCtx), config);
+        try {
+            Assertions.assertFalse(runner.beforeReady()); // -1 from the post-drain read → handshake code -1
+            Assertions.assertTrue(runner.closed);
+            verify(mockReader, times(1)).decode(any(), any());
+            Assertions.assertEquals(capacity, decodedBytes.get());
+        } finally {
+            rawPeer.close();
+            ch.close();
+        }
+    }
+
     // ==================== Helper ====================
 
     private static int findFreePort() {
         try {
-            ServerSocket ss = new ServerSocket(0);
+            java.net.ServerSocket ss = new java.net.ServerSocket(0);
             int p = ss.getLocalPort();
             ss.close();
             return p;
