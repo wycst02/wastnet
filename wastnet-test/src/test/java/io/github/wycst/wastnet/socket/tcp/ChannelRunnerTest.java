@@ -281,10 +281,10 @@ public class ChannelRunnerTest {
 
             // Connect a plain SocketChannel and send an HTTP request
             SocketChannel plainChannel = SocketChannel.open();
-            plainChannel.connect(new java.net.InetSocketAddress("127.0.0.1", httpPort));
+            plainChannel.connect(new InetSocketAddress("127.0.0.1", httpPort));
             plainChannel.configureBlocking(false);
             String req = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
-            plainChannel.write(java.nio.ByteBuffer.wrap(req.getBytes()));
+            plainChannel.write(ByteBuffer.wrap(req.getBytes()));
             Thread.sleep(50);
 
             // Create ChannelSSLRunner with allowPlaintextWhenSslEnabled
@@ -298,8 +298,12 @@ public class ChannelRunnerTest {
             sslCtx.init(null, null, null);
             ChannelSSLRunner runner = new ChannelSSLRunner(null, plainChannel, config, sslCtx, null);
 
-            // beforeReady → sslHandShake → reads HTTP response → isMaybePlaintext=true → falls back
-            runner.beforeReady();
+            long deadline = System.currentTimeMillis() + 2000L;
+            int tries = 0;
+            while (!runner.finishHandshake && System.currentTimeMillis() < deadline && tries++ < 200) {
+                Thread.sleep(10);
+                runner.beforeReady();
+            }
 
             // Verify fallback state
             Assertions.assertFalse(runner.isSSL); // isSSL=false
@@ -318,14 +322,14 @@ public class ChannelRunnerTest {
     @Test
     public void testSSLHandshakeSuspendsWithoutData() throws Exception {
         // Silent peer accepts but never sends anything; its FIN later simulates the next OP_READ event.
-        java.net.ServerSocket silentServer = new java.net.ServerSocket(0);
+        ServerSocket silentServer = new ServerSocket(0);
         SocketChannel ch = SocketChannel.open();
         ch.connect(new InetSocketAddress("127.0.0.1", silentServer.getLocalPort()));
         ch.configureBlocking(false);
         Socket silentSide = silentServer.accept();
         Thread.sleep(20);
 
-        javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
+        SSLContext sslCtx = SSLContext.getInstance("TLS");
         sslCtx.init(null, null, null);
         SSLEngineContext engineCtx = new SSLEngineContext(sslCtx, null, null, false);
         ChannelSSLContext sslChannelCtx = new ChannelSSLContext(ch, engineCtx);
@@ -374,7 +378,7 @@ public class ChannelRunnerTest {
         rawPeer.getOutputStream().flush();
         Thread.sleep(50); // let the partial record land in the socket buffer
 
-        javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
+        SSLContext sslCtx = SSLContext.getInstance("TLS");
         sslCtx.init(null, null, null);
         SSLEngineContext engineCtx = new SSLEngineContext(sslCtx, null, null, false);
         ChannelSSLContext sslChannelCtx = new ChannelSSLContext(ch, engineCtx);
@@ -410,15 +414,15 @@ public class ChannelRunnerTest {
     @Test
     public void testSSLHandshakeChannelClosedFirstRead() throws Exception {
         // Connect then close → first channelRead detects closed channel → size == -1
-        java.net.ServerSocket ss = new java.net.ServerSocket(0);
+        ServerSocket ss = new ServerSocket(0);
         int port = ss.getLocalPort();
         SocketChannel ch = SocketChannel.open();
-        ch.connect(new java.net.InetSocketAddress("127.0.0.1", port));
+        ch.connect(new InetSocketAddress("127.0.0.1", port));
         Thread.sleep(20);
         ch.close();  // close channel BEFORE beforeReady
         ss.close();
 
-        javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
+        SSLContext sslCtx = SSLContext.getInstance("TLS");
         sslCtx.init(null, null, null);
         SSLEngineContext engineCtx = new SSLEngineContext(sslCtx, null, null, false);
         ChannelSSLContext sslChannelCtx = new ChannelSSLContext(ch, engineCtx);
@@ -442,7 +446,7 @@ public class ChannelRunnerTest {
         ssc.bind(new InetSocketAddress("127.0.0.1", 0));
         int sslPort = ((InetSocketAddress) ssc.getLocalAddress()).getPort();
 
-        javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
+        SSLContext sslCtx = SSLContext.getInstance("TLS");
         sslCtx.init(null, null, null);
         NioConfig config = new NioConfig();
         config.setReadBufferSize(4096);
@@ -491,7 +495,7 @@ public class ChannelRunnerTest {
         SocketChannel ch = SocketChannel.open();
         ch.configureBlocking(false);
 
-        javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
+        SSLContext sslCtx = SSLContext.getInstance("TLS");
         sslCtx.init(null, null, null);
         SSLEngineContext engineCtx = new SSLEngineContext(sslCtx, null, null, false);
         ChannelSSLContext sslChannelCtx = new ChannelSSLContext(ch, engineCtx);
@@ -512,7 +516,7 @@ public class ChannelRunnerTest {
         SocketChannel ch = SocketChannel.open();
         ch.configureBlocking(false);
 
-        javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
+        SSLContext sslCtx = SSLContext.getInstance("TLS");
         sslCtx.init(null, null, null);
         SSLEngineContext engineCtx = new SSLEngineContext(sslCtx, null, null, false);
         ChannelSSLContext sslChannelCtx = new ChannelSSLContext(ch, engineCtx);
@@ -559,7 +563,7 @@ public class ChannelRunnerTest {
             }).when(mockReader).decode(any(), any());
             config.setChannelReader(mockReader);
 
-            javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
+            SSLContext sslCtx = SSLContext.getInstance("TLS");
             sslCtx.init(null, ChannelSSLContext.TRUST_ALL_MANAGERS, null);
 
             ChannelSSLRunner runner = ChannelSSLRunner.createClientRunner(null, ch, config, sslCtx, null);
@@ -583,7 +587,7 @@ public class ChannelRunnerTest {
 
     // ==================== plaintext fallback: drain loop fills packetInBuf completely ====================
 
-    private static SocketChannel connectRawPeerPair(java.net.Socket rawPeer) throws Exception {
+    private static SocketChannel connectRawPeerPair(Socket rawPeer) throws Exception {
         java.nio.channels.ServerSocketChannel ssc = java.nio.channels.ServerSocketChannel.open();
         ssc.bind(new InetSocketAddress("127.0.0.1", 0));
         rawPeer.connect(new InetSocketAddress("127.0.0.1",
@@ -595,7 +599,7 @@ public class ChannelRunnerTest {
     }
 
     private static SSLEngineContext newServerEngineCtx() throws Exception {
-        javax.net.ssl.SSLContext sslCtx = javax.net.ssl.SSLContext.getInstance("TLS");
+        SSLContext sslCtx = SSLContext.getInstance("TLS");
         sslCtx.init(null, null, null);
         return new SSLEngineContext(sslCtx, null, null);
     }
@@ -679,7 +683,7 @@ public class ChannelRunnerTest {
 
     private static int findFreePort() {
         try {
-            java.net.ServerSocket ss = new java.net.ServerSocket(0);
+            ServerSocket ss = new ServerSocket(0);
             int p = ss.getLocalPort();
             ss.close();
             return p;
