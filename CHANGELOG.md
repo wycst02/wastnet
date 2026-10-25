@@ -11,6 +11,33 @@
 
 ---
 
+## [1.0.3] - 2026-10-25
+
+### Added
+
+- MVC 支持 `@Endpoint(async = true)` 异步端点。
+- `H2Monitor` 新增 `maxConnectionCount`（历史累计创建的 H2 连接数）。
+- SSL 握手支持阻塞与非阻塞两种模式。
+- 静态资源路由新增预压缩文件探测 `detectPreCompressed(boolean)`、内容缓存 `contentCacheEnabled(boolean)` 与 `Cache-Control` 开关 `cacheControlEnabled(boolean)`。
+- 新增 HTTP/2 响应 `Date` 头开关 `wastnet.http2.date-header.expose`（默认 `true`）。
+
+### Changed
+
+- MVC 默认内置 TEXT / HTML / XML 使用一致的转换器。
+- 响应头 CRLF 校验由分散处理收敛为统一入口 `HttpHeaderUtils.requireNoCRLF`。
+- HEAD 请求按 RFC 7231 §4.3.2 处理：仅写响应头，不写响应体。
+- 性能优化：HTTP/2 压测场景、静态资源访问、WebSocket 连接常驻内存占用。
+- 响应写出链路、H2 消息读取与流处理、反向代理层、协议升级处理重构。
+- 单元测试与示例增强。
+
+### Fixed
+
+- HTTP/1.x `Connection: close` 连接关闭处理。
+- Bad Request / 408 响应处理。
+- 非 Keep-Alive 场景响应处理。
+
+---
+
 ## [1.0.2] - 2026-09-29
 
 ### Added

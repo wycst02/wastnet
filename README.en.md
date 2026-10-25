@@ -67,14 +67,14 @@
 <dependency>
     <groupId>io.github.wycst</groupId>
     <artifactId>wastnet-core</artifactId>
-    <version>1.0.2</version>
+    <version>1.0.3</version>
 </dependency>
 
 <!-- Annotation-based MVC: add wastnet-mvc (includes wastnet-core) -->
 <dependency>
     <groupId>io.github.wycst</groupId>
     <artifactId>wastnet-mvc</artifactId>
-    <version>1.0.2</version>
+    <version>1.0.3</version>
 </dependency>
 ```
 

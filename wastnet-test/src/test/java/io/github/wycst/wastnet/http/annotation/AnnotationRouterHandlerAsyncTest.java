@@ -25,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+@EnabledForJreRange(min = JRE.JAVA_9)
 public class AnnotationRouterHandlerAsyncTest {
 
     private static final String PKG = "io.github.wycst.wastnet.http.annotation.asyncfixture";

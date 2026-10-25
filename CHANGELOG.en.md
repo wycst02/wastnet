@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.3] - 2026-10-25
+
+### Added
+
+- MVC supports `@Endpoint(async = true)` async endpoints.
+- `H2Monitor` adds `maxConnectionCount` (total H2 connections created historically).
+- SSL handshake supports both blocking and non-blocking modes.
+- Static resource route adds pre-compressed detection `detectPreCompressed(boolean)`, content cache `contentCacheEnabled(boolean)` and the `Cache-Control` switch `cacheControlEnabled(boolean)`.
+- New HTTP/2 `Date` response header switch `wastnet.http2.date-header.expose` (default `true`).
+
+### Changed
+
+- MVC uses a consistent converter for the built-in TEXT / HTML / XML handling.
+- Response header CRLF validation consolidated from scattered checks into a single entry point `HttpHeaderUtils.requireNoCRLF`.
+- HEAD requests follow RFC 7231 §4.3.2: headers only, no body.
+- Performance improvements: HTTP/2 (benchmark scenarios), static resource serving, WebSocket per-connection memory footprint.
+- Rework of the response writing path, H2 message reading and stream processing, reverse proxy layer and protocol upgrade handling.
+- Test suite and examples expanded.
+
+### Fixed
+
+- HTTP/1.x `Connection: close` connection close handling.
+- Bad Request / 408 response handling.
+- Non-Keep-Alive response handling.
+
+---
+
 ## [1.0.2] - 2026-09-29
 
 ### Added
